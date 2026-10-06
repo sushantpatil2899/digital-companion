@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('companion', {
   release: () => ipcRenderer.send('release'),
   contextMenu: () => ipcRenderer.send('context-menu'),
   setTrayIcon: (dataUrl) => ipcRenderer.send('tray-icon', dataUrl),
+  setBattery: (b) => ipcRenderer.send('battery', b),
 });

@@ -1,9 +1,14 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor } = require('electron');
 const { Companion, TUNING } = require('./companion');
+const { ContextTracker } = require('./context');
 const { px } = require('./px');
+
+const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
+const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
 
 // Entries for the "Do something…" menu: [activity, label].
 const ACTIVITY_MENU = [
@@ -50,6 +55,114 @@ let lastTick = 0;
 let ignoringMouse = null;
 let press = null; // { x, y, t } while the mouse button is down on him
 let lastWinPos = { x: NaN, y: NaN };
+let tracker = null;
+let contextTimer = null;
+let saveTimer = null;
+let suspendedAt = null;
+let brainWin = null;
+let brainTimer = null;
+
+// --------------------------------------------------------------- memory
+
+function brainFile() {
+  return path.join(app.getPath('userData'), 'brain.json');
+}
+
+function loadBrain() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(brainFile(), 'utf8'));
+    const elapsed = Math.max(0, (Date.now() - (saved.savedAt || Date.now())) / 1000);
+    companion.restore(saved, elapsed);
+  } catch {
+    // First run (or unreadable file): start fresh.
+  }
+}
+
+function saveBrain() {
+  if (!companion) return;
+  try {
+    const file = brainFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(companion.serialize(), null, 2));
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    console.error('Could not save brain:', e.message);
+  }
+}
+
+// --------------------------------------------------------------- context
+
+function startContext() {
+  tracker = new ContextTracker();
+  const refresh = () => {
+    if (!companion) return;
+    let idle = 0;
+    try {
+      idle = powerMonitor.getSystemIdleTime();
+    } catch {
+      // Not available on this platform: treat you as present.
+    }
+    companion.setContext(tracker.update(idle));
+  };
+  powerMonitor.on('lock-screen', () => tracker.setLocked(true));
+  powerMonitor.on('unlock-screen', () => tracker.setLocked(false));
+  powerMonitor.on('suspend', () => {
+    tracker.setSuspended(true);
+    suspendedAt = Date.now();
+    saveBrain();
+  });
+  powerMonitor.on('resume', () => {
+    tracker.setSuspended(false);
+    // He "slept" while the Mac did.
+    if (suspendedAt && companion) companion.catchUp((Date.now() - suspendedAt) / 1000);
+    suspendedAt = null;
+  });
+  powerMonitor.on('on-battery', () => tracker.setOnBattery(true));
+  powerMonitor.on('on-ac', () => tracker.setOnBattery(false));
+  try {
+    tracker.setOnBattery(powerMonitor.isOnBatteryPower());
+  } catch {
+    // ignore
+  }
+  refresh();
+  contextTimer = setInterval(refresh, CONTEXT_MS);
+  saveTimer = setInterval(saveBrain, SAVE_MS);
+}
+
+// --------------------------------------------------------------- brain view
+
+function showBrain() {
+  if (brainWin && !brainWin.isDestroyed()) {
+    brainWin.show();
+    brainWin.focus();
+    return;
+  }
+  brainWin = new BrowserWindow({
+    width: 380,
+    height: 560,
+    title: "Togepi's brain",
+    resizable: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'brain-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
+  const send = () => {
+    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', companion.brainSnapshot());
+  };
+  brainWin.webContents.on('did-finish-load', send);
+  brainTimer = setInterval(send, 1000);
+  brainWin.on('closed', () => {
+    clearInterval(brainTimer);
+    brainTimer = null;
+    brainWin = null;
+  });
+}
 
 function boundsForPoint(point) {
   const display = screen.getDisplayNearestPoint({ x: px(point.x), y: px(point.y) });
@@ -69,6 +182,7 @@ function createWindow() {
     // Drop in from a bit above the floor so he lands on startup.
     y: bounds.floor - 260,
   });
+  loadBrain();
 
   win = new BrowserWindow({
     width: WIN_W,
@@ -106,6 +220,7 @@ function createWindow() {
   win.once('ready-to-show', () => {
     win.showInactive();
     startLoop();
+    startContext();
   });
   win.on('closed', () => {
     win = null;
@@ -195,6 +310,11 @@ ipcMain.on('release', () => {
   // Otherwise it was a long pet; he stays happy for a moment on his own.
 });
 
+// Battery level from the renderer (navigator.getBattery()).
+ipcMain.on('battery', (_e, b) => {
+  if (tracker && b && typeof b.level === 'number') tracker.setBattery({ level: b.level, charging: !!b.charging });
+});
+
 ipcMain.on('context-menu', () => {
   press = null;
   buildMenu().popup({ window: win });
@@ -272,7 +392,7 @@ function buildMenu() {
       label: sleeping ? 'Wake up' : 'Take a nap',
       click: () => {
         if (sleeping) companion.pat();
-        else if (companion.isGrounded()) companion.enter('sleep', 60);
+        else companion.doActivity('sleep');
         refreshTrayMenu();
       },
     },
@@ -287,6 +407,7 @@ function buildMenu() {
       },
     },
   ];
+  items.push({ label: 'Show his brain…', click: showBrain });
   if (process.platform === 'darwin' || process.platform === 'win32') {
     items.push({
       label: 'Start at login',
@@ -312,5 +433,6 @@ if (!app.requestSingleInstanceLock()) {
       if (companion) companion.setBounds(boundsForPoint({ x: companion.x, y: companion.y - 10 }));
     });
   });
+  app.on('before-quit', saveBrain);
   app.on('window-all-closed', () => app.quit());
 }

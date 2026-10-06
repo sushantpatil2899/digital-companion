@@ -41,10 +41,12 @@ test('wanders around on his own and stays on screen', () => {
   assert.ok(minX >= bounds.left + c.halfWidth && maxX <= bounds.right - c.halfWidth);
 });
 
-test('gets sleepy when left alone', () => {
+test('falls asleep once he gets tired', () => {
   const c = new Companion({ bounds, rng: seeded(3) });
+  run(c, 2);
+  c.needs.energy = 0.15;
   let slept = false;
-  for (let i = 0; i < 60 * 600 && !slept; i++) {
+  for (let i = 0; i < 60 * 120 && !slept; i++) {
     c.update(1 / 60);
     slept = c.state === 'sleep';
   }
@@ -200,15 +202,17 @@ test('three hard throws within a minute make him angry, then he stomps off', () 
   assert.ok(!c.snapshot().grumpy);
 });
 
-test('gets sad when ignored for a long time; a pat cheers him up', () => {
+test('gets sad when lonely and he can\'t find you; a pat cheers him up', () => {
   const c = new Companion({ bounds, rng: seeded(9) });
+  for (let i = 0; i < 60 * 3; i++) c.update(1 / 60);
+  c.needs.affection = 0.05;
+  c.mood = -0.4;
   let sad = false;
-  for (let i = 0; i < 60 * 1200 && !sad; i++) {
+  for (let i = 0; i < 60 * 120 && !sad; i++) {
     c.update(1 / 60);
     sad = c.state === 'sad';
   }
   assert.ok(sad);
-  assert.ok(c.time > 300);
   c.pat();
   assert.strictEqual(c.state, 'happy');
 });

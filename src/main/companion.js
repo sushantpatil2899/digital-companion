@@ -5,6 +5,11 @@
 //
 // Coordinates are screen pixels (DIP). `x`/`y` is the position of the
 // character's feet (bottom-centre of the body).
+//
+// What he decides to do next comes from his needs, mood and context; see
+// src/main/brain.js.
+
+const brain = require('./brain');
 
 const TUNING = {
   gravity: 2600, // px/s^2
@@ -22,8 +27,6 @@ const TUNING = {
   angryThrows: 3, // this many throws ...
   angryWindow: 60, // ... within this many seconds make him angry
   stayPutFor: 600, // seconds "Stay put" lasts before he wanders again
-  sleepAfter: 90, // seconds without interaction before he gets sleepy
-  sadAfter: 300, // seconds without interaction before he may get sad
   petToHappy: 0.3, // seconds of holding before hearts start appearing
   curiousAfter: 1.5, // seconds the cursor lingers near him before he gets curious
   curiousCooldown: 25,
@@ -32,23 +35,6 @@ const TUNING = {
   waveAway: 30, // seconds the cursor must be far away before he waves on its return
 };
 
-// Things he does on his own, with how likely each one is.
-const ACTIVITIES = [
-  ['walk', 30],
-  ['run', 5],
-  ['idle', 15],
-  ['sit', 10],
-  ['lookAround', 5],
-  ['jump', 5],
-  ['talk', 7],
-  ['eat', 5],
-  ['flower', 5],
-  ['play', 6],
-  ['adventure', 3],
-  ['backView', 4],
-];
-// What he may do while "stay put" is on.
-const STAY_ACTIVITIES = ['idle', 'sit', 'lookAround', 'talk', 'eat', 'flower', 'backView'];
 // Activities that move him around (asking for one ends "Stay put").
 const MOVING_ACTIVITIES = ['walk', 'run', 'play', 'adventure', 'jump'];
 // Activities you can ask for from the menu.
@@ -62,6 +48,7 @@ const HIT = { cy: 70, rx: 60, ry: 72 };
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
 
 const STATES = [
+  'sign',
   'idle',
   'walk',
   'run',
@@ -125,7 +112,19 @@ class Companion {
 
     this.time = 0;
     this.lastInteraction = 0;
-    this.happiness = 0.5; // 0..1, purely cosmetic
+    this.needs = brain.defaultNeeds();
+    this.mood = 0.3; // -1 grumpy .. 1 cheerful
+    this.context = brain.defaultContext();
+    this.lastActivity = null;
+    this.lastScores = [];
+    this.lastCursor = null;
+    this.afterMove = null; // state to enter when the current walk/run arrives
+    this.pendingGreet = null; // 'return' | 'morning' | 'plugged' | 'eventSoon' | 'eventEnded'
+    this.lastGreetDay = null;
+    this.lastSeekAt = -Infinity;
+    this.lastSadAt = -Infinity;
+    this.ignoredAsks = 0; // times he asked for attention and didn't get any
+    this.lastAttentionAt = -Infinity;
     this.petting = 0; // seconds of continuous petting
     this.lastPet = -Infinity;
     this.pausedUntil = 0; // "Stay put": no wandering until this time
@@ -163,6 +162,8 @@ class Companion {
 
   enter(state, duration) {
     if (!STATES.includes(state)) throw new Error(`unknown state ${state}`);
+    // A planned "then do X when you arrive" only survives the walk/run it belongs to.
+    if (state !== 'walk' && state !== 'run') this.afterMove = null;
     this.state = state;
     this.stateTime = 0;
     this.stateDuration = duration != null ? duration : 0;
@@ -170,6 +171,26 @@ class Companion {
 
   emit(name) {
     this.events.push(name);
+  }
+
+  /** 0..1 version of mood, used by the renderer for blush. */
+  get happiness() {
+    return (this.mood + 1) / 2;
+  }
+
+  applyEffect(name, scale = 1) {
+    const e = brain.EFFECTS[name];
+    if (e) this.mood = brain.apply(this.needs, this.mood, e, scale);
+    // Any attention from you means he no longer has to keep asking (for a while).
+    if (e && e.affection > 0) {
+      this.ignoredAsks = 0;
+      this.lastAttentionAt = this.time;
+    }
+  }
+
+  /** How much longer he waits between asks after being ignored: 1, 2, 4, 8. */
+  backoff() {
+    return 2 ** Math.min(this.ignoredAsks, 3);
   }
 
   drainEvents() {
@@ -256,8 +277,10 @@ class Companion {
     this.enter('fall');
     if (speed > TUNING.throwSpeed) {
       this.throwTimes.push(this.time);
+      this.applyEffect('throw');
       this.emit('throw');
     } else {
+      this.applyEffect('drop');
       this.emit('drop');
     }
   }
@@ -268,7 +291,7 @@ class Companion {
     this.lastInteraction = this.time;
     this.lastPet = this.time;
     this.petting += dt;
-    this.happiness = clamp(this.happiness + dt * 0.15, 0, 1);
+    this.applyEffect('hugPerSecond', dt);
     if (this.state === 'sleep') {
       // Gentle petting doesn't wake him fully; he snuggles into a hug.
       if (this.petting > 2.5) this.enter('hug', 1.5);
@@ -293,11 +316,12 @@ class Companion {
     this.lastInteraction = this.time;
     if (this.state === 'sleep') {
       this.petting = 0;
+      this.applyEffect('pat'); // woken up, but it's still attention
       this.enter('surprised', 0.9);
       this.emit('wake');
       return;
     }
-    this.happiness = clamp(this.happiness + 0.05, 0, 1);
+    this.applyEffect('pat');
     this.vx = 0;
     this.grumpyUntil = 0;
     if (this.state === 'happy') {
@@ -320,6 +344,8 @@ class Companion {
       return;
     }
     this.endStayPut(); // you're sending him somewhere, so he's no longer staying put
+    this.applyEffect('attention');
+    this.afterMove = null;
     this.facing = this.targetX > this.x ? 1 : -1;
     this.enter('run');
   }
@@ -330,10 +356,11 @@ class Companion {
     this.lastInteraction = this.time;
     this.grumpyUntil = 0;
     this.vx = 0;
+    this.applyEffect('attention');
     if (MOVING_ACTIVITIES.includes(name)) this.endStayPut();
     if (name === 'sleep') {
-      this.enter('sleep', 60);
-      this.emit('sleep');
+      this.startActivity('sleep');
+      this.stateDuration = Math.max(this.stateDuration, 60);
     } else if (name === 'wave') {
       this.enter('wave', 2.2);
       this.emit('wave');
@@ -352,8 +379,11 @@ class Companion {
    */
   update(dt, cursor) {
     dt = Math.min(dt, 0.05); // avoid huge steps after the machine sleeps
+    if (!(dt > 0)) return;
     this.time += dt;
     this.stateTime += dt;
+    if (cursor) this.lastCursor = { x: cursor.x, y: cursor.y };
+    this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context);
     // Petting "charge" fades once the rubbing stops.
     if (this.time - this.lastPet > 0.4) this.petting = Math.max(0, this.petting - dt * 2);
     // Tell the menu once when "Stay put" runs out.
@@ -478,7 +508,7 @@ class Companion {
           run: TUNING.runSpeed,
           play: TUNING.playSpeed,
           adventure: TUNING.adventureSpeed,
-        }[this.state];
+        }[this.state] * this.speedFactor();
         const dir = Math.sign(this.targetX - this.x);
         this.facing = dir || this.facing;
         this.vx = dir * speed;
@@ -487,16 +517,30 @@ class Companion {
         if (arrived || this.x <= minX || this.x >= maxX) {
           this.x = clamp(arrived ? this.targetX : this.x, minX, maxX);
           this.vx = 0;
-          this.chooseNext();
+          if (this.afterMove) {
+            const next = this.afterMove;
+            this.afterMove = null;
+            this.enter(next.state, next.duration);
+            if (next.event) this.emit(next.event);
+          } else {
+            this.chooseNext();
+          }
         }
         break;
       }
       case 'sleep':
         this.vx = 0;
-        if (this.stateTime > this.stateDuration) {
-          // Wakes up on his own and says hi.
-          this.enter('wave', 2.2);
-          this.emit('wave');
+        // Keep sleeping while you're away; otherwise wake once rested (or the nap is over).
+        const night = this.context.hour >= 22 || this.context.hour < 6;
+        const rested = !night && this.needs.energy > 0.97 && this.stateTime > 20;
+        if (!this.context.userAway && (this.stateTime > this.stateDuration || rested)) {
+          // Wakes up on his own: a proper nap ends with a wave, a short doze with a look around.
+          if (this.stateTime > 180) {
+            this.enter('wave', 2.2);
+            this.emit('wave');
+          } else {
+            this.enter('lookAround', 2);
+          }
         }
         break;
       case 'angry':
@@ -518,6 +562,7 @@ class Companion {
         if (this.stateTime >= this.stateDuration) this.chooseNext();
     }
 
+    if (this.pendingGreet && this.isFreeForReaction()) this.react(this.pendingGreet);
     if (cursor) this.reactToCursor(dt, cursor);
 
     // Look towards the cursor when it's close and he's not busy.
@@ -566,43 +611,156 @@ class Companion {
     }
   }
 
-  /** Pick the next autonomous behaviour. */
+  /** Pick the next autonomous behaviour from his needs, mood and context. */
   chooseNext() {
-    const r = this.rng();
-    const idleFor = this.time - this.lastInteraction;
+    const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
+      paused: this.paused,
+      cursorKnown: !!this.lastCursor,
+      last: this.lastActivity,
+      seekReady:
+        this.time - this.lastSeekAt >= brain.NEEDS.seekCooldown * this.backoff() &&
+        this.time - this.lastAttentionAt >= brain.NEEDS.attentionGrace,
+      sadReady: this.time - this.lastSadAt >= brain.NEEDS.sadCooldown * this.backoff(),
+      rng: this.rng,
+    });
+    this.lastScores = scored.slice(0, 6);
+    const choice = brain.pick(scored, this.rng);
+    this.startActivity(choice.name);
+  }
 
-    if (this.paused) {
-      const pick = STAY_ACTIVITIES[Math.floor(r * STAY_ACTIVITIES.length)];
-      this.startActivity(pick);
+  // ---------------------------------------------------------------- context
+
+  /** Latest context from the ContextTracker (src/main/context.js). */
+  setContext(ctx) {
+    const prev = this.context;
+    this.context = { ...brain.defaultContext(), ...ctx };
+    // Remember one-shot happenings until he's free to react to them.
+    if (ctx.justReturned) this.pendingGreet = 'return';
+    else if (ctx.justPluggedIn) this.pendingGreet = this.pendingGreet || 'plugged';
+    if (ctx.eventSoon) this.pendingGreet = 'eventSoon';
+    if (ctx.eventEnded) this.pendingGreet = this.pendingGreet || 'eventEnded';
+    // First time he sees you on a new day: say good morning.
+    if (ctx.day && !ctx.userAway && ctx.hour >= 5 && this.lastGreetDay !== ctx.day) {
+      if (this.lastGreetDay) this.pendingGreet = this.pendingGreet || 'morning';
+      this.lastGreetDay = ctx.day;
+    }
+    // Wake up when you come back (or when your meeting is about to start).
+    if (this.state === 'sleep' && prev.userAway && !ctx.userAway) this.enter('surprised', 0.9);
+  }
+
+  /** Not busy with you / in the air, so he can react to something. */
+  isFreeForReaction() {
+    return this.isGrounded() && !['hug', 'happy', 'angry', 'surprised', 'land', 'confused'].includes(this.state);
+  }
+
+  react(kind) {
+    this.pendingGreet = null;
+    switch (kind) {
+      case 'return':
+        // You're back! Run over (unless told to stay put) and wave.
+        this.applyEffect('attention');
+        this.emit('welcomeBack');
+        this.goToCursorThen({ state: 'wave', duration: 2.2, event: 'wave' }, 'run');
+        break;
+      case 'morning':
+        this.emit(this.context.hour < 12 ? 'goodMorning' : 'hello');
+        this.enter('wave', 2.5);
+        this.emit('wave');
+        break;
+      case 'plugged':
+        this.applyEffect('pluggedIn');
+        this.emit('charging');
+        this.enter('happy', 1.5);
+        break;
+      case 'eventSoon':
+        this.emit('eventSoon');
+        this.enter('sign', 6);
+        break;
+      case 'eventEnded':
+        this.emit('eventEnded');
+        this.enter('wave', 2);
+        break;
+      default:
+    }
+  }
+
+  /** Walk/run to below the cursor, then enter `then`; just do `then` if he can't move. */
+  goToCursorThen(then, gait = 'walk') {
+    const minX = this.bounds.left + this.halfWidth;
+    const maxX = this.bounds.right - this.halfWidth;
+    if (!this.lastCursor || this.paused || this.context.quiet) {
+      this.enter(then.state, then.duration);
+      if (then.event) this.emit(then.event);
       return;
     }
-
-    if (idleFor > TUNING.sadAfter && r < 0.2) {
-      this.enter('sad', rand(6, 10, this.rng));
-      this.emit('sad');
+    this.targetX = clamp(this.lastCursor.x, minX, maxX);
+    if (Math.abs(this.targetX - this.x) < 30) {
+      this.enter(then.state, then.duration);
+      if (then.event) this.emit(then.event);
       return;
     }
-    if (idleFor > TUNING.sleepAfter && r < 0.35) {
-      this.enter('sleep', rand(20, 60, this.rng));
-      this.emit('sleep');
-      return;
-    }
+    this.afterMove = then;
+    this.facing = this.targetX > this.x ? 1 : -1;
+    this.enter(gait);
+  }
 
-    const total = ACTIVITIES.reduce((sum, [, w]) => sum + w, 0);
-    let pick = this.rng() * total;
-    for (const [name, weight] of ACTIVITIES) {
-      pick -= weight;
-      if (pick < 0) {
-        this.startActivity(name);
-        return;
-      }
+  /** Slower when tired or the battery is low. */
+  speedFactor() {
+    let f = 1;
+    const c = this.context;
+    if (c.onBattery && c.batteryLevel != null && c.batteryLevel < 0.2) f *= 0.75;
+    if (this.needs.energy < 0.2) f *= 0.8;
+    return f;
+  }
+
+  /** Time passed without the simulation running (app closed, Mac asleep). */
+  catchUp(seconds) {
+    this.mood = brain.catchUp(this.needs, this.mood, seconds);
+  }
+
+  // ---------------------------------------------------------------- memory
+
+  serialize() {
+    return {
+      v: 1,
+      savedAt: Date.now(),
+      needs: { ...this.needs },
+      mood: this.mood,
+      lastGreetDay: this.lastGreetDay,
+    };
+  }
+
+  /** Restore saved state; `elapsed` = seconds since it was saved. */
+  restore(saved, elapsed = 0) {
+    if (!saved || saved.v !== 1 || !saved.needs) return false;
+    for (const k of Object.keys(this.needs)) {
+      const v = saved.needs[k];
+      if (typeof v === 'number' && Number.isFinite(v)) this.needs[k] = clamp(v, 0, 1);
     }
-    this.startActivity('idle');
+    if (typeof saved.mood === 'number' && Number.isFinite(saved.mood)) this.mood = clamp(saved.mood, -1, 1);
+    if (typeof saved.lastGreetDay === 'string') this.lastGreetDay = saved.lastGreetDay;
+    this.catchUp(elapsed);
+    return true;
+  }
+
+  /** Everything the "brain" debug view shows. */
+  brainSnapshot() {
+    return {
+      state: this.state,
+      needs: { ...this.needs },
+      mood: this.mood,
+      context: { ...this.context },
+      paused: this.paused,
+      stayPutLeft: this.stayPutLeft(),
+      scores: this.lastScores.map((s) => ({ name: s.name, score: Math.round(s.score * 100) / 100, why: s.why })),
+    };
   }
 
   /** Start one activity (used by chooseNext and doActivity). */
   startActivity(name) {
     const rng = this.rng;
+    this.lastActivity = name;
+    this.applyEffect(name);
     switch (name) {
       case 'walk':
         this.startMove('walk', 80, 600);
@@ -650,6 +808,27 @@ class Companion {
       case 'backView':
         this.enter('backView', rand(3, 5, rng));
         break;
+      case 'sleep': {
+        // Nap until rested: longer when more tired, and much longer at night.
+        const night = this.context.hour >= 22 || this.context.hour < 6;
+        const nap = 20 + (1 - this.needs.energy) * 420;
+        this.enter('sleep', night ? Math.max(600, nap * 4) : nap);
+        this.emit('sleep');
+        break;
+      }
+      case 'sad':
+        this.lastSadAt = this.time;
+        this.enter('sad', rand(6, 10, rng));
+        this.emit('sad');
+        break;
+      case 'seek':
+        // Lonely: go and stand under your cursor hoping for attention.
+        this.lastSeekAt = this.time;
+        this.lastSadAt = this.time; // the sad face at the end counts as a sad spell
+        this.ignoredAsks += 1; // reset as soon as you give him attention
+        this.emit('lonely');
+        this.goToCursorThen({ state: 'sad', duration: rand(4, 7, rng) });
+        break;
       default:
         throw new Error(`unknown activity ${name}`);
     }
@@ -671,6 +850,7 @@ class Companion {
     }
     this.targetX = clamp(this.x + dir * distance, minX, maxX);
     this.facing = dir;
+    this.afterMove = null;
     this.enter(kind);
   }
 
@@ -686,6 +866,9 @@ class Companion {
       grabOffset: this.grabOffset,
       stateDuration: this.stateDuration,
       happiness: this.happiness,
+      mood: this.mood,
+      energy: this.needs.energy,
+      eventTitle: this.context.nextEvent ? this.context.nextEvent.title : null,
       petting: this.petting,
       grumpy: this.time < this.grumpyUntil,
       time: this.time,

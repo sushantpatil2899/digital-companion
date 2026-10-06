@@ -85,6 +85,24 @@ function handleEvent(name) {
     case 'grab':
       spawn('text', 34, HEAD_TOP + 8, { text: '!', vy: -30, max: 0.6, size: 20 });
       break;
+    case 'goodMorning':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Good morning!', vy: -12, max: 2.2, size: 14 });
+      break;
+    case 'hello':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Hi again!', vy: -12, max: 2, size: 14 });
+      break;
+    case 'welcomeBack':
+      spawn('text', 0, HEAD_TOP - 10, { text: "You're back!", vy: -12, max: 2, size: 14 });
+      break;
+    case 'charging':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Yum, power!', vy: -12, max: 1.8, size: 14 });
+      break;
+    case 'lonely':
+      spawn('text', 30, HEAD_TOP + 4, { text: '…', vy: -15, max: 1.5, size: 18 });
+      break;
+    case 'eventEnded':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'All done!', vy: -12, max: 1.8, size: 14 });
+      break;
     case 'wake':
       spawn('text', 32, HEAD_TOP + 8, { text: '!?', vy: -30, max: 0.8, size: 18 });
       break;
@@ -552,4 +570,21 @@ canvas.addEventListener('contextmenu', (e) => {
   g.scale(0.52, 0.52);
   drawCharacter(g, { ...defaultPose(), lookX: 0, lookY: 0.3 });
   window.companion.setTrayIcon(c.toDataURL('image/png'));
+})();
+
+// ------------------------------------------------------------ battery
+
+// Battery level and charging state, for his brain (tired when it's low,
+// perks up when you plug in). Not every machine has a battery.
+(async function watchBattery() {
+  if (!navigator.getBattery) return;
+  try {
+    const battery = await navigator.getBattery();
+    const send = () => window.companion.setBattery({ level: battery.level, charging: battery.charging });
+    battery.addEventListener('levelchange', send);
+    battery.addEventListener('chargingchange', send);
+    send();
+  } catch {
+    // No battery information: he just won't react to it.
+  }
 })();

@@ -1,0 +1,223 @@
+'use strict';
+
+// Togepi's "brain": needs, mood and how he decides what to do next.
+// Pure functions over plain objects so it can be unit tested without Electron.
+//
+// Needs are 0..1:
+//   energy    1 = rested, 0 = exhausted        (drains while active, refills asleep)
+//   hunger    0 = full,   1 = starving         (rises over time, eating lowers it)
+//   boredom   0 = busy,   1 = very bored       (rises while idle, play lowers it)
+//   affection 1 = loved,  0 = lonely           (decays, pats and hugs raise it)
+// Mood is -1 (grumpy) .. 1 (cheerful). It drifts towards what his needs
+// suggest, and is nudged directly by being patted or thrown around.
+
+const NEEDS = {
+  // Per-second drift rates.
+  energyDrain: 1 / 3600, // ~60 min of normal activity from full to empty
+  energySleep: 1 / 480, // ~8 min of sleep from empty to full
+  hungerRise: 1 / 4500, // ~75 min from full to starving (hungry after ~40)
+  boredomRise: 1 / 600, // ~10 min of doing nothing to be very bored
+  boredomFall: 1 / 300, // while moving around / exploring
+  affectionDecay: 1 / 5400, // ~90 min from loved to lonely
+  // After asking for attention he waits before asking again; each time he's
+  // ignored the wait doubles (4, 8, 16, 32 min), until you give him attention.
+  seekCooldown: 240,
+  sadCooldown: 120, // s between sad spells (doubles the same way)
+  attentionGrace: 600, // s after a pat/hug before he asks for attention again
+  moodDrift: 1 / 90, // how fast mood follows his needs
+  // How hard each kind of state works him (multiplies energyDrain).
+  effort: { run: 3, play: 3, adventure: 2.5, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },
+  // States where he's not doing anything interesting (boredom rises).
+  still: ['idle', 'sit', 'lookAround', 'backView', 'sad'],
+  // States where he's exploring (boredom falls).
+  busy: ['run', 'play', 'adventure', 'eat', 'flower', 'talk', 'jump'],
+};
+
+// One-off changes when he starts an activity (or is interacted with).
+const EFFECTS = {
+  eat: { hunger: -0.65, energy: 0.05, mood: 0.1 },
+  play: { boredom: -0.4, energy: -0.04, mood: 0.12 },
+  adventure: { boredom: -0.55, energy: -0.06, mood: 0.1 },
+  flower: { boredom: -0.15, mood: 0.12 },
+  talk: { boredom: -0.1, mood: 0.05 },
+  run: { boredom: -0.12 },
+  jump: { boredom: -0.08, mood: 0.04 },
+  pat: { affection: 0.22, mood: 0.15 },
+  hugPerSecond: { affection: 0.15, mood: 0.15 },
+  throw: { mood: -0.18, affection: -0.04 },
+  drop: { mood: -0.02 },
+  attention: { affection: 0.03 }, // you asked him to do something / called him
+  pluggedIn: { energy: 0.15, mood: 0.1 },
+};
+
+// Context he lives in. Filled in by the ContextTracker (src/main/context.js).
+function defaultContext() {
+  return {
+    hour: 12, // local hour, 0..23
+    day: null, // 'YYYY-MM-DD'
+    userAway: false, // idle for a while, screen locked or Mac asleep
+    awayFor: 0, // seconds
+    justReturned: false, // one-shot: you came back after being away
+    onBattery: false,
+    batteryLevel: null, // 0..1, null if unknown
+    charging: null,
+    justPluggedIn: false, // one-shot
+    quiet: false, // in a meeting / presenting: keep still and quiet
+    quietReason: null,
+    frontApp: null,
+    nextEvent: null, // { title, start, end } (ms epoch)
+    inEvent: null,
+    eventSoon: false, // one-shot: an event starts in ~5 minutes
+    eventEnded: false, // one-shot
+  };
+}
+
+function defaultNeeds() {
+  return { energy: 0.85, hunger: 0.25, boredom: 0.3, affection: 0.7 };
+}
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+function apply(needs, mood, effect, scale = 1) {
+  for (const k of ['energy', 'hunger', 'boredom', 'affection']) {
+    if (effect[k]) needs[k] = clamp01(needs[k] + effect[k] * scale);
+  }
+  return Math.max(-1, Math.min(1, mood + (effect.mood || 0) * scale));
+}
+
+// What mood his needs "suggest", -1..1.
+function moodTarget(needs) {
+  const t = 0.9 * (needs.affection - 0.4) + 0.5 * (needs.energy - 0.4) - 0.8 * Math.max(0, needs.hunger - 0.5) - 0.5 * Math.max(0, needs.boredom - 0.6);
+  return Math.max(-1, Math.min(1, t * 1.6));
+}
+
+/** Advance needs and mood by `dt` seconds while in `state`. Returns the new mood. */
+function drift(needs, mood, state, dt, ctx = defaultContext()) {
+  if (state === 'sleep') {
+    needs.energy = clamp01(needs.energy + NEEDS.energySleep * dt);
+  } else {
+    let effort = NEEDS.effort[state] != null ? NEEDS.effort[state] : 1;
+    if (ctx.batteryLevel != null && ctx.onBattery && ctx.batteryLevel < 0.2) effort *= 1.6; // low battery tires him
+    if (ctx.hour >= 23 || ctx.hour < 6) effort *= 1.4; // and so does staying up late
+    needs.energy = clamp01(needs.energy - NEEDS.energyDrain * effort * dt);
+  }
+  // Hunger rises slower while asleep.
+  needs.hunger = clamp01(needs.hunger + NEEDS.hungerRise * (state === 'sleep' ? 0.4 : 1) * dt);
+  if (NEEDS.still.includes(state)) needs.boredom = clamp01(needs.boredom + NEEDS.boredomRise * dt);
+  else if (NEEDS.busy.includes(state)) needs.boredom = clamp01(needs.boredom - NEEDS.boredomFall * dt);
+  // He misses you less while asleep or while you're away from the computer.
+  const missing = state === 'sleep' || ctx.userAway ? 0.3 : 1;
+  needs.affection = clamp01(needs.affection - NEEDS.affectionDecay * missing * dt);
+  const target = moodTarget(needs);
+  return mood + (target - mood) * Math.min(1, NEEDS.moodDrift * dt);
+}
+
+/**
+ * Catch up on time that passed while the app wasn't running (or the Mac was
+ * asleep). He's assumed to have mostly slept: rested, a bit hungry, missing you.
+ */
+function catchUp(needs, mood, seconds) {
+  const s = Math.max(0, Math.min(seconds, 12 * 3600));
+  if (s < 1) return mood;
+  needs.energy = clamp01(needs.energy + s / 1200);
+  needs.hunger = clamp01(needs.hunger + (s / 4500) * 0.5);
+  needs.boredom = clamp01(needs.boredom + (0.45 - needs.boredom) * Math.min(1, s / 3600));
+  needs.affection = Math.max(Math.min(needs.affection, 0.2), clamp01(needs.affection - (s / 5400) * 0.6));
+  return mood + (moodTarget(needs) - mood) * Math.min(1, s / 600);
+}
+
+const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'backView', 'sleep', 'sad', 'seek'];
+// Still, silent things he may do while "Stay put" is on or you're in a meeting.
+const STAY = ['idle', 'sit', 'lookAround', 'eat', 'flower', 'backView', 'sleep', 'sad', 'talk'];
+const QUIET = ['idle', 'sit', 'backView', 'sleep', 'eat', 'flower'];
+const ENERGETIC = ['run', 'jump', 'play', 'adventure'];
+
+/**
+ * Score every activity he could start now. Higher = more appealing.
+ * @param {object} needs
+ * @param {number} mood
+ * @param {object} ctx context (see defaultContext)
+ * @param {object} opts { paused, cursorKnown, last, rng }
+ * @returns {{name:string, score:number, why:string}[]} sorted, best first
+ */
+function scoreActivities(needs, mood, ctx, opts = {}) {
+  const { energy, hunger, boredom, affection } = needs;
+  const tired = 1 - energy;
+  const happy = Math.max(0, mood);
+  const night = ctx.hour >= 22 || ctx.hour < 6;
+  const lowBattery = ctx.onBattery && ctx.batteryLevel != null && ctx.batteryLevel < 0.2;
+  const criticalBattery = ctx.onBattery && ctx.batteryLevel != null && ctx.batteryLevel < 0.1;
+  const rng = opts.rng || Math.random;
+
+  const s = {
+    walk: [0.45 + 0.35 * boredom + 0.15 * energy, 'wander'],
+    run: [energy > 0.5 ? 0.1 + 0.35 * happy * energy : 0, 'full of beans'],
+    idle: [0.4, 'chill'],
+    sit: [0.25 + 0.7 * tired, 'rest legs'],
+    lookAround: [0.2 + 0.25 * boredom, 'curious'],
+    jump: [energy > 0.4 ? 0.08 + 0.3 * happy * energy : 0, 'happy hop'],
+    talk: [0.15 + 0.3 * happy, 'chatty'],
+    eat: [hunger > 0.5 ? 1.6 * hunger * hunger : 0, 'hungry'],
+    flower: [0.12 + 0.2 * happy, 'smell flowers'],
+    play: [energy > 0.3 ? 0.08 + 1.0 * boredom * energy : 0, 'bored'],
+    adventure: [energy > 0.5 ? 0.04 + 0.7 * boredom * energy : 0, 'restless'],
+    backView: [0.12, 'watch your screen'],
+    sleep: [energy < 0.55 ? 1.8 * tired * tired : 0, 'tired'],
+    sad: [affection < 0.35 && opts.sadReady !== false ? 1.3 * (0.35 - affection) / 0.35 : 0, 'lonely'],
+    seek: [affection < 0.45 && opts.cursorKnown && opts.seekReady !== false ? 0.4 + 1.2 * (0.45 - affection) / 0.45 : 0, 'wants attention'],
+  };
+  // Only list the base reason when it actually contributes.
+  const why = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v[0] > 0 ? [v[1]] : []]));
+  const add = (name, amount, reason) => {
+    s[name][0] += amount;
+    why[name].push(reason);
+  };
+  const scale = (name, f, reason) => {
+    s[name][0] *= f;
+    why[name].push(reason);
+  };
+
+  if (night) {
+    add('sleep', 0.5 + 0.6 * tired, 'night');
+    for (const n of ENERGETIC) scale(n, 0.4, 'night');
+  }
+  if (lowBattery) {
+    add('sleep', criticalBattery ? 1.2 : 0.3, 'battery low');
+    add('sit', 0.35, 'battery low');
+    for (const n of ENERGETIC) scale(n, 0.3, 'battery low');
+  }
+  if (ctx.userAway) {
+    // Nothing to do without you around: nap.
+    add('sleep', 0.9 + Math.min(1, ctx.awayFor / 600), 'you are away');
+    scale('seek', 0, 'you are away');
+    scale('sad', 0.3, 'you are away');
+    for (const n of ['walk', 'run', 'play', 'adventure', 'talk', 'jump']) scale(n, 0.4, 'you are away');
+  }
+  // Sad and seeking you don't make sense when he's fairly content.
+  if (mood > 0.4) scale('sad', 0.3, 'in a good mood');
+
+  let allowed = ALL;
+  if (opts.paused) allowed = STAY;
+  if (ctx.quiet) allowed = allowed.filter((n) => QUIET.includes(n));
+
+  const out = [];
+  for (const name of allowed) {
+    let score = s[name][0];
+    if (score <= 0) continue;
+    if (opts.last === name && name !== 'sleep') score *= 0.6; // variety
+    score += rng() * 0.25; // a little unpredictability
+    out.push({ name, score, why: why[name].join(', ') });
+  }
+  if (!out.length) out.push({ name: 'idle', score: 0.1, why: 'nothing else allowed' });
+  return out.sort((a, b) => b.score - a.score);
+}
+
+/** Pick from scored activities: usually the best, sometimes the runner-up. */
+function pick(scored, rng = Math.random) {
+  if (scored.length > 1 && rng() < 0.2 && scored[1].score > scored[0].score * 0.7) return scored[1];
+  return scored[0];
+}
+
+module.exports = { NEEDS, EFFECTS, defaultNeeds, defaultContext, drift, catchUp, apply, moodTarget, scoreActivities, pick, STAY, QUIET };
