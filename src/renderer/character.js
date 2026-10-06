@@ -25,29 +25,30 @@ const PALETTE = {
 // Body: a round dome of a head on a full, wide belly. The top half of the
 // outline is an ellipse; the bottom half is a "superellipse" so the belly
 // stays wide until close to the feet, like in the reference.
-const CY = -40; // widest point of the belly
+const CY = -48; // widest point of the belly
+const SIT_DROP = 8; // how far the body sinks onto the floor when sitting
 const R = 49; // half width
 const RY = 62; // height of the head dome above the widest point
 const RY_BELLY = 37; // depth of the belly below the widest point
 const BELLY = 2.3; // superellipse exponent for the belly (2 = plain ellipse)
-const FACE_Y = -73; // eye line
+const FACE_Y = CY - 33; // eye line
 const SHELL_Y = -13; // height of the shell's zig-zag edge above the widest point
 const HEAD_NARROW = 0.13; // how much narrower the head gets towards the top
 
-// Spikes on top of the head. Seen from the front there are three big ones:
-// the centre one and one at each top corner of the head, pointing mostly up.
-// Two smaller ones sit further back and only peek out between them.
+// Spikes on top of the head. Seen from the front there are three big ones,
+// joined edge to edge: a tall centre one and one on each side pointing out.
+// Two smaller ones sit further back and only peek out of the V between them.
 // Angles are degrees around the egg, -90 = straight up.
 //   base: where the spike sits on the head, hw: half its width at the base,
 //   tip: direction it points, len: how far it sticks out past the head.
 const FRONT_SPIKES = [
-  { base: -137, hw: 15, tip: -134, len: 17.5 },
-  { base: -90, hw: 18, tip: -90, len: 12.5 },
-  { base: -43, hw: 15, tip: -46, len: 17.5 },
+  { base: -131.5, hw: 15.5, tip: -137, len: 16.5 },
+  { base: -90, hw: 26, tip: -90, len: 12.5 },
+  { base: -48.5, hw: 15.5, tip: -43, len: 16.5 },
 ];
 const BACK_SPIKES = [
-  { base: -116, hw: 8, tip: -115, len: 5.5 },
-  { base: -64, hw: 8, tip: -65, len: 5.5 },
+  { base: -116, hw: 9, tip: -116, len: 8 },
+  { base: -64, hw: 9, tip: -64, len: 8 },
 ];
 
 // Zig-zag edge of the shell: [x, y offset from the body centre] (front view).
@@ -67,18 +68,19 @@ const ZIGZAG = zigzag(0);
 const ZIGZAG_BACK = zigzag(9);
 
 // Triangle markings on the shell: [x, y, size, rotation (rad), colour]
+// (y is relative to the widest point of the belly.)
 const MARKS_FRONT = [
-  [3, -27, 11, Math.PI / 2 + 0.12, 'blue'],
-  [-27, -21, 8, 0.2, 'red'],
-  [32, -34, 7.5, -0.5, 'red'],
-  [-41, -36, 6.5, 1.2, 'blue'],
-  [18, -9, 6.5, 0.1, 'red'],
+  [3, 9, 11, Math.PI / 2 + 0.12, 'blue'],
+  [-27, 15, 8, 0.2, 'red'],
+  [32, 2, 7.5, -0.5, 'red'],
+  [-41, 0, 6.5, 1.2, 'blue'],
+  [18, 27, 6.5, 0.1, 'red'],
 ];
 const MARKS_BACK = [
-  [-4, -30, 11, 0.4, 'blue'],
-  [27, -20, 7.5, -0.3, 'red'],
-  [-29, -17, 7.5, 0.9, 'red'],
-  [38, -42, 6, 1.6, 'red'],
+  [-4, 6, 11, 0.4, 'blue'],
+  [27, 16, 7.5, -0.3, 'red'],
+  [-29, 19, 7.5, 0.9, 'red'],
+  [38, -6, 6, 1.6, 'red'],
 ];
 
 const TAU = Math.PI * 2;
@@ -124,7 +126,8 @@ function outlinePoint(deg) {
 
 // Trace the body outline clockwise from one angle to another.
 function eggArc(ctx, fromDeg, toDeg) {
-  if (toDeg < fromDeg) toDeg += 360;
+  if (toDeg < fromDeg - 0.5) toDeg += 360;
+  else if (toDeg <= fromDeg) return; // nothing between touching spikes
   const steps = Math.max(2, Math.ceil((toDeg - fromDeg) / 3));
   for (let i = 0; i <= steps; i++) {
     const [x, y] = outlinePoint(fromDeg + ((toDeg - fromDeg) * i) / steps);
@@ -238,17 +241,37 @@ function drawMark(ctx, x, y, size, rot, color) {
 
 // --------------------------------------------------------------- limbs
 
+// A foot: a rounded cone, i.e. the outline wrapped around a big circle
+// (the rounded end, centred at (x, y)) and a small one (the soft tip) `len`
+// away in direction `angle`. `tipRound` is the tip radius / end radius.
+function footShape(ctx, x, y, angle, len, width, tipRound = 0.45) {
+  const rt = width * tipRound;
+  const cx = len - rt; // centre of the tip circle
+  const a = Math.acos(Math.min(1, (width - rt) / cx)); // where the straight sides touch
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.arc(cx, 0, rt, -a, a); // round the tip
+  ctx.arc(0, 0, width, a, Math.PI * 2 - a); // and the back
+  ctx.closePath();
+  fillStroke(ctx, PALETTE.limb, 2);
+  ctx.restore();
+}
+
 function drawFoot(ctx, side, p) {
   const lift = Math.max(0, Math.sin(p.walkPhase + (side > 0 ? Math.PI : 0))) * p.stepHeight;
   if (p.feet === 'dangle') {
+    // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    ellipse(ctx, side * 22, 2 + kick, 10, 9.5, side * 0.25);
+    footShape(ctx, side * 20, -12 + kick, Math.atan2(1, side * 0.4), 16, 10, 0.42);
   } else if (p.feet === 'sit') {
-    ellipse(ctx, side * 29, -7.5, 13, 9, side * -0.5);
+    // Plump feet sticking out in front, tapering in towards the body.
+    footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
-    ellipse(ctx, side * 24 + side * lift * 0.25, -7.5 - lift, 12, 7.5);
+    // Standing: little cones poking out from under the belly, tips down.
+    footShape(ctx, side * (20 + lift * 0.25), -17 - lift, Math.atan2(1, side * 0.38), 17.5, 10.5, 0.52);
   }
-  fillStroke(ctx, PALETTE.limb, 2.1);
 }
 
 function armAngle(side, p) {
@@ -581,7 +604,7 @@ function drawBodyAndShell(ctx, p, back) {
   ctx.save();
   shellPath(ctx, zig);
   ctx.clip();
-  for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, y, s, rot, c);
+  for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, CY + y, s, rot, c);
   ellipse(ctx, 6, CY + 32, R + 6, 16);
   ctx.fillStyle = PALETTE.shellShade;
   ctx.fill();
@@ -641,11 +664,13 @@ function drawCharacter(ctx, p) {
 
   ctx.save();
   ctx.scale(p.scaleX, p.scaleY);
+  if (p.feet === 'sit') ctx.translate(0, SIT_DROP);
   const back = p.view === 'back';
 
   if (p.prop === 'backpack' && !back) drawBackpackBag(ctx, p);
 
-  if (p.feet !== 'stand' || back) {
+  // Feet come out from behind the belly, except when sitting (in front).
+  if (p.feet !== 'sit' || back) {
     drawFoot(ctx, -1, p);
     drawFoot(ctx, 1, p);
   }
@@ -666,7 +691,7 @@ function drawCharacter(ctx, p) {
       ctx.restore();
     }
   } else {
-    if (p.feet === 'stand') {
+    if (p.feet === 'sit') {
       drawFoot(ctx, -1, p);
       drawFoot(ctx, 1, p);
     }
