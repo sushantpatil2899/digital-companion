@@ -17,7 +17,7 @@ const TUNING = {
   dizzyLanding: 1700, // px/s impact speed that makes him dizzy
   maxThrowSpeed: 4000, // px/s
   sleepAfter: 90, // seconds without interaction before he gets sleepy
-  petToHappy: 1.0, // seconds of petting before he gets really happy
+  petToHappy: 0.3, // seconds of holding before hearts start appearing
 };
 
 const STATES = [
@@ -175,7 +175,7 @@ class Companion {
     this.emit(speed > 600 ? 'throw' : 'drop');
   }
 
-  /** Called continuously while the cursor rubs him. `dt` = seconds of rubbing. */
+  /** Called every tick while the mouse button is held on him. `dt` = seconds. */
   pet(dt) {
     if (['grabbed', 'fall', 'jump'].includes(this.state)) return;
     this.lastInteraction = this.time;
@@ -199,21 +199,39 @@ class Companion {
     }
   }
 
-  /** Quick click without dragging. */
-  poke() {
+  /** Quick click without dragging: a pat on the head (or a wake-up call). */
+  pat() {
     if (!this.isGrounded()) return;
     this.lastInteraction = this.time;
-    this.petting = 0;
     if (this.state === 'sleep') {
+      this.petting = 0;
       this.enter('surprised', 0.9);
       this.emit('wake');
       return;
     }
-    // Hop!
-    this.vy = -650;
+    this.happiness = clamp(this.happiness + 0.05, 0, 1);
     this.vx = 0;
-    this.enter('jump');
-    this.emit('poke');
+    if (this.state === 'happy') {
+      this.stateDuration = Math.max(this.stateDuration, this.stateTime + 1.2);
+    } else {
+      this.enter('happy', 1.2);
+    }
+    this.emit('heart');
+  }
+
+  /** Run along the floor to `x` (e.g. when called from the menu). */
+  comeTo(x) {
+    if (!this.isGrounded()) return;
+    this.lastInteraction = this.time;
+    const minX = this.bounds.left + this.halfWidth;
+    const maxX = this.bounds.right - this.halfWidth;
+    this.targetX = clamp(x, minX, maxX);
+    if (Math.abs(this.targetX - this.x) < 5) {
+      this.enter('happy', 1);
+      return;
+    }
+    this.facing = this.targetX > this.x ? 1 : -1;
+    this.enter('run');
   }
 
   // ---------------------------------------------------------------- update

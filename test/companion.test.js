@@ -90,30 +90,51 @@ test('a hard throw bounces off walls and leaves him dizzy', () => {
   assert.ok(c.x <= bounds.right - c.halfWidth);
 });
 
-test('petting makes him happy and spawns hearts', () => {
+test('holding the mouse on him pets him: happy, with hearts', () => {
   const c = new Companion({ bounds, rng: seeded() });
   run(c, 1);
   const events = [];
-  for (let i = 0; i < 30; i++) {
-    c.pet(0.1);
-    c.update(0.1);
+  for (let i = 0; i < 60; i++) {
+    c.pet(1 / 60);
+    c.update(1 / 60);
     events.push(...c.drainEvents());
   }
   assert.strictEqual(c.state, 'happy');
-  assert.ok(events.includes('heart'));
+  assert.ok(events.filter((e) => e === 'heart').length >= 2);
   assert.ok(c.happiness > 0.5);
 });
 
-test('poking him makes him hop, poking while asleep wakes him', () => {
+test('a click pats him (heart), a click while asleep wakes him', () => {
   const c = new Companion({ bounds, rng: seeded() });
   run(c, 1);
   c.enter('idle', 5);
-  c.poke();
-  assert.strictEqual(c.state, 'jump');
+  c.drainEvents();
+  c.pat();
+  assert.strictEqual(c.state, 'happy');
+  assert.deepStrictEqual(c.drainEvents(), ['heart']);
   run(c, 2);
   c.enter('sleep', 30);
-  c.poke();
+  c.pat();
   assert.strictEqual(c.state, 'surprised');
+});
+
+test('nothing makes him happy unless you interact', () => {
+  const c = new Companion({ bounds, rng: seeded(5) });
+  for (let i = 0; i < 60 * 120; i++) {
+    c.update(1 / 60, { x: c.x, y: c.y - 40 }); // cursor hovering right on him
+    assert.ok(!c.drainEvents().includes('heart'));
+  }
+});
+
+test('"come here" makes him run to the cursor along the floor', () => {
+  const c = new Companion({ bounds, rng: seeded() });
+  run(c, 1);
+  c.enter('idle', 30);
+  c.comeTo(300);
+  assert.strictEqual(c.state, 'run');
+  for (let i = 0; i < 60 * 15 && c.state === 'run'; i++) c.update(1 / 60);
+  assert.strictEqual(c.x, 300);
+  assert.strictEqual(c.y, bounds.floor);
 });
 
 test('stays put when paused', () => {

@@ -19,7 +19,6 @@ let squashVel = 0;
 let blinkTimer = 2 + Math.random() * 3;
 let blink = 0;
 let zzzTimer = 0;
-let heartTimer = 0;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -77,9 +76,6 @@ function handleEvent(name) {
       break;
     case 'grab':
       spawn('text', 26, BODY_CY - 52, { text: '!', vy: -30, max: 0.6, size: 20 });
-      break;
-    case 'poke':
-      spawn('text', 22, BODY_CY - 50, { text: '♪', vy: -35, max: 0.8, size: 18 });
       break;
     case 'wake':
       spawn('text', 24, BODY_CY - 52, { text: '!?', vy: -30, max: 0.8, size: 18 });
@@ -263,13 +259,6 @@ function computePose(f, dt) {
       p.bob = -Math.abs(Math.sin(t * 7)) * 2;
       p.earFlop = 0.15 + Math.sin(t * 7) * 0.05;
       p.tilt = Math.sin(t * 3.5) * 0.06;
-      if (f.petting > 0) {
-        heartTimer -= dt;
-        if (heartTimer <= 0) {
-          heartTimer = 0.45;
-          handleEvent('heart');
-        }
-      }
       break;
     case 'surprised':
       p.eyes = 'wide';
@@ -361,10 +350,9 @@ requestAnimationFrame(render);
 
 // ------------------------------------------------------------ input
 
+// Press-and-drag picks him up, press-and-hold pets him, a quick click pats
+// him. The main process tells these apart; we just report press/release.
 let pressed = false;
-let lastMove = null;
-let rub = 0;
-let rubSent = performance.now();
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
@@ -383,29 +371,6 @@ function endPress() {
 canvas.addEventListener('pointerup', endPress);
 canvas.addEventListener('pointercancel', endPress);
 canvas.addEventListener('lostpointercapture', endPress);
-
-// Petting: rub the cursor back and forth over him without clicking.
-canvas.addEventListener('pointermove', (e) => {
-  const now = performance.now();
-  if (e.buttons !== 0 || pressed) {
-    lastMove = null;
-    return;
-  }
-  if (lastMove) {
-    const dt = (now - lastMove.t) / 1000;
-    const dist = Math.hypot(e.screenX - lastMove.x, e.screenY - lastMove.y);
-    if (dt > 0 && dt < 0.2 && dist / dt > 40) rub += dt;
-  }
-  lastMove = { x: e.screenX, y: e.screenY, t: now };
-  if (rub > 0 && now - rubSent > 100) {
-    window.companion.pet(Math.min(rub, 0.3));
-    rub = 0;
-    rubSent = now;
-  }
-});
-canvas.addEventListener('pointerleave', () => {
-  lastMove = null;
-});
 
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();

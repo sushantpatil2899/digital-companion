@@ -9,9 +9,9 @@ A little desktop pet that lives on your screen. Meet **Mochi**, a round orange c
 | **Click and drag** | Gets picked up and dangles from your cursor, swinging as you move him around |
 | **Let go** | Drops to the ground and lands with a squish |
 | **Fling him** (drag fast, then let go) | Flies off ("Wheee!"), bounces off the screen edges, and gets dizzy after a hard landing |
-| **Rub the cursor over him** (no click) | Gets happy and gives off hearts |
-| **Quick click** | Hops. Wakes him up if he's asleep |
-| **Right-click him** or use the **tray icon** | Menu: *Come here*, *Take a nap / Wake up*, *Stay put*, *Start at login*, *Quit* |
+| **Click him** | A pat on the head: he gets happy and shows a heart. Wakes him up if he's asleep |
+| **Click and hold** (without moving) | Petting: he gets happy and keeps giving off hearts while you hold |
+| **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Take a nap / Wake up*, *Stay put*, *Start at login*, *Quit* |
 
 When you leave him alone he wanders, runs, sits, looks around, hops now and then, and dozes off (Zzz) after a while. He watches your cursor when it's nearby.
 
@@ -24,7 +24,7 @@ npm install
 npm start
 ```
 
-He drops onto the bottom of the screen your cursor is on. Click the tray icon to call him to your cursor.
+He drops onto the bottom of the screen your cursor is on. Choose *Come here* from the menu bar (tray) icon and he runs over to below your cursor.
 
 Run the simulation tests with `npm test`.
 

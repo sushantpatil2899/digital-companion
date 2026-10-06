@@ -11,10 +11,11 @@ const WIN_H = 220;
 const FOOT_MARGIN = 12;
 const TICK_MS = 1000 / 60;
 
-// How far the cursor must travel (px) or how long the button must be held (s)
-// before a press turns into picking him up rather than a poke.
-const DRAG_THRESHOLD = 5;
-const HOLD_THRESHOLD = 0.18;
+// Pressing on him and moving the cursor more than this (px) picks him up.
+// Holding the button down without moving pets him; a quick click is a pat.
+const DRAG_THRESHOLD = 6;
+const PET_DELAY = 0.2; // s of holding still before it counts as petting
+const CLICK_MAX = 0.25; // s; a shorter press is a click (pat on the head)
 
 // Click-through on the transparent parts of the window relies on polling the
 // cursor position. On Linux/X11 Electron's cursor position goes stale while a
@@ -118,11 +119,12 @@ function tick() {
 
   const cursor = screen.getCursorScreenPoint();
 
-  // Turn a press into a pick-up once the cursor moves or is held long enough.
+  // A press turns into a pick-up once the cursor moves; held still, it's petting.
   if (press && companion.state !== 'grabbed') {
     const moved = Math.hypot(cursor.x - press.x, cursor.y - press.y);
     const held = (now - press.t) / 1000;
-    if (moved > DRAG_THRESHOLD || held > HOLD_THRESHOLD) companion.grab(press);
+    if (moved > DRAG_THRESHOLD) companion.grab(press);
+    else if (held > PET_DELAY) companion.pet(dt);
   }
   if (companion.state === 'grabbed') companion.drag(cursor);
 
@@ -173,13 +175,11 @@ ipcMain.on('press', () => {
 
 ipcMain.on('release', () => {
   if (!press) return;
+  const held = (Date.now() - press.t) / 1000;
   press = null;
   if (companion.state === 'grabbed') companion.release();
-  else companion.poke();
-});
-
-ipcMain.on('pet', (_e, dt) => {
-  if (typeof dt === 'number' && dt > 0 && dt < 0.5) companion.pet(dt);
+  else if (held < CLICK_MAX) companion.pat();
+  // Otherwise it was a long pet; he stays happy for a moment on his own.
 });
 
 ipcMain.on('context-menu', () => {
@@ -193,18 +193,33 @@ ipcMain.on('tray-icon', (_e, dataUrl) => {
   image = image.resize({ width: process.platform === 'darwin' ? 18 : 24 });
   tray = new Tray(image);
   tray.setToolTip('Desktop Companion');
-  tray.setContextMenu(buildMenu());
-  tray.on('click', () => callHere());
+  if (process.platform === 'linux') {
+    // Most Linux trays only support a fixed context menu, not click events.
+    tray.setContextMenu(buildMenu());
+  } else {
+    // Clicking the icon only opens the menu; it's rebuilt each time so labels
+    // like "Wake up" are current.
+    const open = () => tray.popUpContextMenu(buildMenu());
+    tray.on('click', open);
+    tray.on('right-click', open);
+  }
 });
 
 // --------------------------------------------------------------- menus
 
 function callHere() {
   if (!companion) return;
-  // Drop him from just above the cursor.
   const c = screen.getCursorScreenPoint();
   press = null;
-  companion.setBounds(boundsForPoint(c));
+  const target = boundsForPoint(c);
+  const sameScreen = target.left === companion.bounds.left && target.floor === companion.bounds.floor;
+  if (sameScreen && companion.isGrounded()) {
+    // Run along the floor to below the cursor.
+    companion.comeTo(c.x);
+    return;
+  }
+  // On another screen (or mid-air): drop him in from just above the cursor.
+  companion.setBounds(target);
   companion.x = c.x;
   companion.y = Math.min(c.y - 40, companion.bounds.floor);
   companion.vx = 0;
@@ -213,7 +228,7 @@ function callHere() {
 }
 
 function refreshTrayMenu() {
-  if (tray) tray.setContextMenu(buildMenu());
+  if (tray && process.platform === 'linux') tray.setContextMenu(buildMenu());
 }
 
 function buildMenu() {
@@ -223,7 +238,7 @@ function buildMenu() {
     {
       label: sleeping ? 'Wake up' : 'Take a nap',
       click: () => {
-        if (sleeping) companion.poke();
+        if (sleeping) companion.pat();
         else if (companion.isGrounded()) companion.enter('sleep', 60);
         refreshTrayMenu();
       },
