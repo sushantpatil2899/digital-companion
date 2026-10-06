@@ -63,7 +63,7 @@ function createWindow() {
   companion = new Companion({
     bounds,
     halfWidth: 56,
-    height: 136,
+    height: 142,
     x: (bounds.left + bounds.right) / 2,
     // Drop in from a bit above the floor so he lands on startup.
     y: bounds.floor - 260,

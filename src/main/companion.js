@@ -53,7 +53,7 @@ const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', '
 
 // Area around his body that counts as the cursor being "on him", relative to
 // his feet in screen px (an ellipse centred `cy` above the feet).
-const HIT = { cy: 64, rx: 60, ry: 68 };
+const HIT = { cy: 70, rx: 60, ry: 72 };
 
 // States the cursor reactions (curious / shy / wave) may interrupt.
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];

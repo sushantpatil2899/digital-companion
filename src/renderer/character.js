@@ -25,8 +25,8 @@ const PALETTE = {
 // Body: a round dome of a head on a full, wide belly. The top half of the
 // outline is an ellipse; the bottom half is a "superellipse" so the belly
 // stays wide until close to the feet, like in the reference.
-const CY = -48; // widest point of the belly
-const SIT_DROP = 8; // how far the body sinks onto the floor when sitting
+const CY = -53; // widest point of the belly (high enough for the feet to show)
+const SIT_DROP = 13; // how far the body sinks onto the floor when sitting
 const R = 49; // half width
 const RY = 62; // height of the head dome above the widest point
 const RY_BELLY = 37; // depth of the belly below the widest point
@@ -230,12 +230,13 @@ function drawMark(ctx, x, y, size, rot, color) {
     ctx.lineTo(Math.cos(a) * size, Math.sin(a) * size);
   }
   ctx.closePath();
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = size * 0.7;
-  ctx.strokeStyle = PALETTE[color];
-  ctx.stroke();
+  // White centre first, then a thick rounded border over it.
   ctx.fillStyle = PALETTE.shell;
   ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = size * 0.52;
+  ctx.strokeStyle = PALETTE[color];
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -264,13 +265,13 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    footShape(ctx, side * 20, -12 + kick, Math.atan2(1, side * 0.4), 16, 10, 0.42);
+    footShape(ctx, side * 20, -15 + kick, Math.atan2(1, side * 0.4), 15, 10.5, 0.68);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
-    footShape(ctx, side * (20 + lift * 0.25), -17 - lift, Math.atan2(1, side * 0.38), 17.5, 10.5, 0.52);
+    footShape(ctx, side * (20 + lift * 0.25), -16 - lift, Math.atan2(1, side * 0.35), 15, 10.5, 0.68);
   }
 }
 
@@ -604,7 +605,7 @@ function drawBodyAndShell(ctx, p, back) {
   ctx.save();
   shellPath(ctx, zig);
   ctx.clip();
-  for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, CY + y, s, rot, c);
+  for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, CY + y, s * 1.05, rot, c);
   ellipse(ctx, 6, CY + 32, R + 6, 16);
   ctx.fillStyle = PALETTE.shellShade;
   ctx.fill();
