@@ -21,7 +21,7 @@ const ACTIVITY_MENU = [
 // The character's feet sit at (WIN_W / 2, WIN_H - FOOT_MARGIN) inside it.
 const WIN_W = 220;
 const WIN_H = 220;
-const FOOT_MARGIN = 12;
+const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
 
 // Pressing on him and moving the cursor more than this (px) picks him up.
@@ -62,8 +62,8 @@ function createWindow() {
 
   companion = new Companion({
     bounds,
-    halfWidth: 46,
-    height: 113,
+    halfWidth: 56,
+    height: 136,
     x: (bounds.left + bounds.right) / 2,
     // Drop in from a bit above the floor so he lands on startup.
     y: bounds.floor - 260,
@@ -167,11 +167,7 @@ function tick() {
 function updateClickThrough(cursor) {
   if (!CLICK_THROUGH) return;
   let over = true;
-  if (!press && companion.state !== 'grabbed') {
-    const dx = (cursor.x - companion.x) / 54;
-    const dy = (cursor.y - (companion.y - 55)) / 62;
-    over = dx * dx + dy * dy <= 1;
-  }
+  if (!press && companion.state !== 'grabbed') over = companion.isOver(cursor);
   const ignore = !over;
   if (ignore !== ignoringMouse) {
     ignoringMouse = ignore;

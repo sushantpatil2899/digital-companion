@@ -51,6 +51,10 @@ const STAY_ACTIVITIES = ['idle', 'sit', 'lookAround', 'talk', 'eat', 'flower', '
 // Activities you can ask for from the menu.
 const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', 'sit', 'sleep', 'jump', 'backView'];
 
+// Area around his body that counts as the cursor being "on him", relative to
+// his feet in screen px (an ellipse centred `cy` above the feet).
+const HIT = { cy: 64, rx: 60, ry: 68 };
+
 // States the cursor reactions (curious / shy / wave) may interrupt.
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
 
@@ -486,13 +490,18 @@ class Companion {
     }
   }
 
+  /** Is the point over his body? */
+  isOver(point) {
+    const dx = (point.x - this.x) / HIT.rx;
+    const dy = (point.y - (this.y - HIT.cy)) / HIT.ry;
+    return dx * dx + dy * dy <= 1;
+  }
+
   /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
   reactToCursor(dt, cursor) {
-    const dx = cursor.x - this.x;
-    const dy = cursor.y - (this.y - 48);
-    const dist = Math.hypot(dx, dy);
-    const on = (dx / 52) ** 2 + (dy / 58) ** 2 <= 1;
-    const near = !on && dist < 170;
+    const dist = Math.hypot(cursor.x - this.x, cursor.y - (this.y - HIT.cy));
+    const on = this.isOver(cursor);
+    const near = !on && dist < 180;
     this.hoverOn = on ? this.hoverOn + dt : 0;
     this.hoverNear = near ? this.hoverNear + dt : 0;
 
@@ -647,4 +656,4 @@ class Companion {
   }
 }
 
-module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES };
+module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES, HIT };

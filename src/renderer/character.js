@@ -4,28 +4,35 @@
 (function () {
 'use strict';
 
+// Colours sampled from the reference sheet.
 const PALETTE = {
-  outline: '#5b4534',
-  head: '#f8e7a2',
-  headShade: '#ecd27e',
-  headBack: '#eedb94',
-  shell: '#fffdf7',
-  shellShade: 'rgba(150, 150, 200, 0.16)',
-  red: '#e8505b',
-  blue: '#4a86d0',
-  cheek: 'rgba(247, 140, 140, ',
+  outline: '#3a2d25',
+  head: '#fdefbd',
+  headShade: '#efd9a6',
+  headBack: '#f3e2b0',
+  limb: '#f7deab', // arms and feet are a touch warmer than the head
+  shell: '#fcf5ee',
+  shellShade: 'rgba(160, 160, 205, 0.14)',
+  red: '#df6166',
+  blue: '#5c9bc8',
+  cheek: 'rgba(243, 160, 157, ',
   eye: '#2a211c',
   white: '#ffffff',
   mouth: '#b8434f',
   tongue: '#f58a95',
 };
 
-// Body: an egg, a little taller than wide. The top is his yellow head, the
-// bottom the shell.
-const CY = -52; // body centre
-const R = 41; // half width
-const RY = 45; // half height
-const FACE_Y = -74; // eye line
+// Body: a round dome of a head on a full, wide belly. The top half of the
+// outline is an ellipse; the bottom half is a "superellipse" so the belly
+// stays wide until close to the feet, like in the reference.
+const CY = -40; // widest point of the belly
+const R = 49; // half width
+const RY = 62; // height of the head dome above the widest point
+const RY_BELLY = 37; // depth of the belly below the widest point
+const BELLY = 2.3; // superellipse exponent for the belly (2 = plain ellipse)
+const FACE_Y = -73; // eye line
+const SHELL_Y = -13; // height of the shell's zig-zag edge above the widest point
+const HEAD_NARROW = 0.13; // how much narrower the head gets towards the top
 
 // Spikes on top of the head. Seen from the front there are three big ones:
 // the centre one and one at each top corner of the head, pointing mostly up.
@@ -34,25 +41,25 @@ const FACE_Y = -74; // eye line
 //   base: where the spike sits on the head, hw: half its width at the base,
 //   tip: direction it points, len: how far it sticks out past the head.
 const FRONT_SPIKES = [
-  { base: -146, hw: 20, tip: -138, len: 16.5 },
-  { base: -90, hw: 18, tip: -90, len: 15 },
-  { base: -34, hw: 20, tip: -42, len: 16.5 },
+  { base: -137, hw: 15, tip: -134, len: 17.5 },
+  { base: -90, hw: 18, tip: -90, len: 12.5 },
+  { base: -43, hw: 15, tip: -46, len: 17.5 },
 ];
 const BACK_SPIKES = [
-  { base: -114, hw: 8, tip: -113, len: 7 },
-  { base: -66, hw: 8, tip: -67, len: 7 },
+  { base: -116, hw: 8, tip: -115, len: 5.5 },
+  { base: -64, hw: 8, tip: -65, len: 5.5 },
 ];
 
 // Zig-zag edge of the shell: [x, y offset from the body centre] (front view).
 // The two ends are snapped onto the egg's outline.
 function zigzag(lift) {
   const pts = [
-    [-41, 0], [-32, -6], [-23, 1], [-13, -6.5], [-4, 0], [6, -5.5],
-    [15, 1], [25, -6], [33, -0.5], [41, 0],
-  ].map(([x, y]) => [x, CY + y - lift]);
+    [-46, 0], [-36, -6], [-26, 1], [-15, -6.5], [-4.5, 0], [7, -5.5],
+    [17, 1], [28, -6], [37, -0.5], [46, 0],
+  ].map(([x, y]) => [(x * R) / 46, CY + SHELL_Y + y - lift]);
   for (const i of [0, pts.length - 1]) {
-    const y = pts[i][1];
-    pts[i][0] = Math.sign(pts[i][0]) * R * Math.sqrt(1 - ((y - CY) / RY) ** 2);
+    const sn = (pts[i][1] - CY) / RY;
+    pts[i][0] = Math.sign(pts[i][0]) * R * Math.sqrt(1 - sn ** 2) * headNarrowing(sn);
   }
   return pts;
 }
@@ -61,17 +68,17 @@ const ZIGZAG_BACK = zigzag(9);
 
 // Triangle markings on the shell: [x, y, size, rotation (rad), colour]
 const MARKS_FRONT = [
-  [3, -32, 10.5, Math.PI / 2 + 0.12, 'blue'],
-  [-24, -25, 7.5, 0.2, 'red'],
-  [28, -40, 7, -0.5, 'red'],
-  [-36, -44, 6, 1.2, 'blue'],
-  [16, -13, 6, 0.1, 'red'],
+  [3, -27, 11, Math.PI / 2 + 0.12, 'blue'],
+  [-27, -21, 8, 0.2, 'red'],
+  [32, -34, 7.5, -0.5, 'red'],
+  [-41, -36, 6.5, 1.2, 'blue'],
+  [18, -9, 6.5, 0.1, 'red'],
 ];
 const MARKS_BACK = [
-  [-4, -36, 10, 0.4, 'blue'],
-  [24, -25, 7, -0.3, 'red'],
-  [-26, -21, 7, 0.9, 'red'],
-  [33, -48, 5.5, 1.6, 'red'],
+  [-4, -30, 11, 0.4, 'blue'],
+  [27, -20, 7.5, -0.3, 'red'],
+  [-29, -17, 7.5, 0.9, 'red'],
+  [38, -42, 6, 1.6, 'red'],
 ];
 
 const TAU = Math.PI * 2;
@@ -81,7 +88,7 @@ function ellipse(ctx, x, y, rx, ry, rot = 0) {
   ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot, 0, TAU);
 }
 
-function fillStroke(ctx, fill, lineWidth = 2.2) {
+function fillStroke(ctx, fill, lineWidth = 2) {
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = lineWidth;
@@ -91,34 +98,59 @@ function fillStroke(ctx, fill, lineWidth = 2.2) {
   ctx.stroke();
 }
 
-// Point at angle `deg` around the egg, `r` measured in half-widths (R = on the outline).
+// Point at angle `deg` around the head dome, `r` measured in half-widths
+// (r = R is on the outline). Used for the spikes, which are all on top.
 function polar(deg, r) {
   const a = (deg * Math.PI) / 180;
-  return [Math.cos(a) * r, CY + Math.sin(a) * r * (RY / R)];
+  const sn = Math.sin(a);
+  return [Math.cos(a) * r * headNarrowing(sn), CY + sn * r * (RY / R)];
 }
 
+// The head is a little narrower than the belly: 1 at the widest point,
+// shrinking towards the top.
+function headNarrowing(sn) {
+  return sn < 0 ? 1 - HEAD_NARROW * -sn : 1;
+}
+
+// Point on the body outline at angle `deg` (0 = right, 90 = bottom).
+function outlinePoint(deg) {
+  const a = rad(deg);
+  const c = Math.cos(a);
+  const sn = Math.sin(a);
+  if (sn <= 0) return [R * c * headNarrowing(sn), CY + RY * sn];
+  const k = 2 / BELLY;
+  return [R * Math.sign(c) * Math.abs(c) ** k, CY + RY_BELLY * sn ** k];
+}
+
+// Trace the body outline clockwise from one angle to another.
 function eggArc(ctx, fromDeg, toDeg) {
-  ctx.ellipse(0, CY, R, RY, 0, rad(fromDeg), rad(toDeg));
+  if (toDeg < fromDeg) toDeg += 360;
+  const steps = Math.max(2, Math.ceil((toDeg - fromDeg) / 3));
+  for (let i = 0; i <= steps; i++) {
+    const [x, y] = outlinePoint(fromDeg + ((toDeg - fromDeg) * i) / steps);
+    ctx.lineTo(x, y);
+  }
 }
 
 // Spikes for the current pose. When he turns to one side (3/4 view) they
 // shift that way: the near-side spike gets shorter, the far back spike shows more.
 function spikesFor(p) {
-  const turn = p.view === 'back' ? 0 : p.facing;
+  // -1..1: how far he's turned towards his left/right (0 = facing you).
+  const turn = p.view === 'back' ? 0 : p.facing * p.turn;
+  const amount = Math.abs(turn);
+  const dir = Math.sign(turn);
   const shift = turn * 7;
+  const side = (sp) => Math.sign(sp.tip + 90); // -1 left spike, 1 right, 0 centre
   const front = FRONT_SPIKES.map((sp) => {
-    const nearSide = Math.sign(sp.tip + 90) === turn;
-    const farSide = Math.sign(sp.tip + 90) === -turn;
-    return {
-      ...sp,
-      base: sp.base + shift,
-      tip: sp.tip + shift,
-      len: sp.len * (nearSide ? 0.82 : farSide ? 1.05 : 1),
-    };
+    const near = dir !== 0 && side(sp) === dir;
+    const far = dir !== 0 && side(sp) === -dir;
+    const scale = near ? 1 - 0.18 * amount : far ? 1 + 0.05 * amount : 1;
+    return { ...sp, base: sp.base + shift, tip: sp.tip + shift, len: sp.len * scale };
   });
   const back = BACK_SPIKES.map((sp) => {
-    const nearSide = Math.sign(sp.tip + 90) === turn;
-    return { ...sp, base: sp.base + shift, tip: sp.tip + shift, len: sp.len * (nearSide ? 0.55 : turn ? 1.25 : 1) };
+    const near = dir !== 0 && side(sp) === dir;
+    const scale = near ? 1 - 0.45 * amount : 1 + 0.25 * amount;
+    return { ...sp, base: sp.base + shift, tip: sp.tip + shift, len: sp.len * scale };
   });
   return { front, back };
 }
@@ -173,10 +205,15 @@ function shellPath(ctx, zig) {
   ctx.beginPath();
   ctx.moveTo(zig[0][0], zig[0][1]);
   for (let i = 1; i < zig.length; i++) ctx.lineTo(zig[i][0], zig[i][1]);
+  // The zig-zag ends sit on the head dome; follow the outline round the belly.
   const last = zig[zig.length - 1];
-  const startA = Math.atan2((last[1] - CY) / RY, last[0] / R);
-  const endA = Math.atan2((zig[0][1] - CY) / RY, zig[0][0] / R);
-  ctx.ellipse(0, CY, R, RY, 0, startA, endA);
+  const angleOf = ([x, y]) => {
+    const sn = (y - CY) / RY;
+    return Math.atan2(sn, x / (R * headNarrowing(sn))) * (180 / Math.PI);
+  };
+  const startA = angleOf(last);
+  const endA = angleOf(zig[0]);
+  eggArc(ctx, startA, endA);
   ctx.closePath();
 }
 
@@ -205,13 +242,13 @@ function drawFoot(ctx, side, p) {
   const lift = Math.max(0, Math.sin(p.walkPhase + (side > 0 ? Math.PI : 0))) * p.stepHeight;
   if (p.feet === 'dangle') {
     const kick = Math.sin(p.t * 13 + side) * 3;
-    ellipse(ctx, side * 19, 0 + kick, 9.5, 10, side * 0.25);
+    ellipse(ctx, side * 22, 2 + kick, 10, 9.5, side * 0.25);
   } else if (p.feet === 'sit') {
-    ellipse(ctx, side * 27, -8.5, 13, 9.5, side * -0.5);
+    ellipse(ctx, side * 29, -7.5, 13, 9, side * -0.5);
   } else {
-    ellipse(ctx, side * 21 + side * lift * 0.25, -8.5 - lift, 11.5, 8.5);
+    ellipse(ctx, side * 24 + side * lift * 0.25, -7.5 - lift, 12, 7.5);
   }
-  fillStroke(ctx, PALETTE.head, 2.3);
+  fillStroke(ctx, PALETTE.limb, 2.1);
 }
 
 function armAngle(side, p) {
@@ -240,10 +277,10 @@ function armAngle(side, p) {
 function drawArm(ctx, side, p) {
   const inward = p.arms === 'hold' || p.arms === 'hug';
   ctx.save();
-  ctx.translate(side * (inward ? 30 : 36), CY + (inward ? 10 : 2));
+  ctx.translate(side * (inward ? 35 : 43), CY + (inward ? 0 : -9));
   ctx.rotate(armAngle(side, p));
   ellipse(ctx, 0, 6, 6.5, 8.5);
-  fillStroke(ctx, PALETTE.head, 2.3);
+  fillStroke(ctx, PALETTE.limb, 2.1);
   ctx.restore();
 }
 
@@ -490,7 +527,7 @@ function drawBall(ctx, x, y, rot) {
 function drawBackpackBag(ctx, p) {
   const side = -p.facing;
   ctx.save();
-  ctx.translate(side * 37, CY + 4);
+  ctx.translate(side * 38, CY - 8);
   ctx.rotate(side * 0.12);
   ctx.beginPath();
   ctx.roundRect(-11, -18, 22, 34, 8);
@@ -504,8 +541,8 @@ function drawBackpackBag(ctx, p) {
 function drawBackpackStrap(ctx, p) {
   const side = -p.facing;
   ctx.beginPath();
-  ctx.moveTo(side * 30, CY - 8);
-  ctx.quadraticCurveTo(side * 10, CY + 4, side * 6, CY + 30);
+  ctx.moveTo(side * 32, CY - 22);
+  ctx.quadraticCurveTo(side * 12, CY - 8, side * 8, CY + 18);
   ctx.lineWidth = 6;
   ctx.strokeStyle = PALETTE.outline;
   ctx.lineCap = 'round';
@@ -529,15 +566,15 @@ function drawBodyAndShell(ctx, p, back) {
   ctx.save();
   bodyPath(ctx, spikes.front);
   ctx.clip();
-  ellipse(ctx, 0, CY + 6, R + 4, 22);
+  ellipse(ctx, 0, CY + SHELL_Y + 2, R + 4, 16);
   ctx.fillStyle = PALETTE.headShade;
-  ctx.globalAlpha = 0.45;
+  ctx.globalAlpha = 0.3;
   ctx.fill();
   ctx.restore();
 
   // Shell.
   const zig = back ? ZIGZAG_BACK : ZIGZAG;
-  const shift = back ? 0 : p.facing * 3; // a hint of 3/4 view
+  const shift = back ? 0 : p.facing * p.turn * 3; // a hint of 3/4 view
   shellPath(ctx, zig);
   ctx.fillStyle = PALETTE.shell;
   ctx.fill();
@@ -545,19 +582,19 @@ function drawBodyAndShell(ctx, p, back) {
   shellPath(ctx, zig);
   ctx.clip();
   for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, y, s, rot, c);
-  ellipse(ctx, 6, CY + 40, R + 6, 18);
+  ellipse(ctx, 6, CY + 32, R + 6, 16);
   ctx.fillStyle = PALETTE.shellShade;
   ctx.fill();
   ctx.restore();
   shellPath(ctx, zig);
-  ctx.lineWidth = 2.2;
+  ctx.lineWidth = 2;
   ctx.strokeStyle = PALETTE.outline;
   ctx.lineJoin = 'round';
   ctx.stroke();
 }
 
 function drawFace(ctx, p) {
-  const fx = p.facing * 3.5;
+  const fx = p.facing * p.turn * 3.5;
   drawEye(ctx, fx - 11.5, FACE_Y, -1, p);
   drawEye(ctx, fx + 11.5, FACE_Y, 1, p);
   const blush = p.blush;
@@ -624,7 +661,7 @@ function drawCharacter(ctx, p) {
       ctx.save();
       ctx.translate(0, 0);
       ctx.beginPath();
-      ctx.roundRect(-14, CY - 4, 28, 36, 9);
+      ctx.roundRect(-14, CY - 16, 28, 36, 9);
       fillStroke(ctx, '#3f7ec9', 2.4);
       ctx.restore();
     }
@@ -635,11 +672,11 @@ function drawCharacter(ctx, p) {
     }
     drawFace(ctx, p);
     if (p.prop === 'backpack') drawBackpackStrap(ctx, p);
-    if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY + 6);
+    if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY - 6);
     drawArm(ctx, -1, p);
     drawArm(ctx, 1, p);
     // The apple is held up in front, over his hands.
-    if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY + 4, p.propProgress);
+    if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
   }
 
   ctx.restore();
@@ -652,6 +689,7 @@ function defaultPose() {
   return {
     t: 0,
     facing: 1,
+    turn: 0, // 0 = facing you, 1 = turned (3/4 view) towards `facing`
     tilt: 0,
     bob: 0,
     scaleX: 1,

@@ -5,7 +5,8 @@ const { drawCharacter, defaultPose, drawHeart, drawStar, drawText, drawPuff, BOD
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
-const FOOT_MARGIN = 12; // keep in sync with src/main/main.js
+const FOOT_MARGIN = 18; // keep in sync with src/main/main.js
+const SIZE = 1.15; // drawing scale; keep in sync with HIT in src/main/companion.js
 
 let frame = null; // latest state from the main process
 let pose = defaultPose();
@@ -21,6 +22,11 @@ let squashVel = 0;
 let blinkTimer = 2 + Math.random() * 3;
 let blink = 0;
 let zzzTimer = 0;
+let turn = 0; // eased 0..1 amount he's turned sideways
+
+// States where he turns to a 3/4 view towards where he's going or looking;
+// otherwise he faces you, like most panels of the reference sheet.
+const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5 };
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -158,7 +164,7 @@ function computePose(f, dt) {
   // Look at the cursor (relative to his eyes).
   if (f.cursor) {
     p.lookX = clamp(f.cursor.x / 160, -1, 1);
-    p.lookY = clamp((f.cursor.y - (BODY_CY - 24)) / 160, -1, 1);
+    p.lookY = clamp((f.cursor.y - (BODY_CY - 22) * SIZE) / 160, -1, 1);
   }
 
   // Blinking.
@@ -172,6 +178,11 @@ function computePose(f, dt) {
 
   // Breathing.
   p.scaleY = 1 + Math.sin(t * 2.2) * 0.012;
+
+  // Ease between facing you and the 3/4 view.
+  const turnTarget = TURNED[f.state] || (f.grumpy ? 1 : 0);
+  turn += (turnTarget - turn) * Math.min(1, dt * 8);
+  p.turn = turn;
 
   switch (f.state) {
     case 'idle':
@@ -417,7 +428,7 @@ function drawOverlay(ctx, kind, p) {
       ctx.strokeStyle = '#5b4534';
       ctx.lineWidth = 1.8;
       ctx.lineCap = 'round';
-      const hx = 52 * p.facing;
+      const hx = 56 * p.facing;
       for (const r of [6, 11]) {
         ctx.beginPath();
         ctx.arc(hx, BODY_CY - 28, r, -0.9 + (p.facing < 0 ? Math.PI - 0.6 : 0), 0.3 + (p.facing < 0 ? Math.PI - 0.6 : 0));
@@ -451,6 +462,7 @@ function render(now) {
     const oy = window.innerHeight - FOOT_MARGIN;
     ctx.save();
     ctx.translate(ox, oy);
+    ctx.scale(SIZE, SIZE);
 
     const grounded = !['grabbed', 'fall', 'jump'].includes(frame.state);
     if (grounded) {
@@ -466,10 +478,11 @@ function render(now) {
     ctx.save();
     if (frame.state === 'grabbed') {
       // Hang and swing from the point where he was picked up.
-      const g = frame.grabOffset;
-      ctx.translate(g.x, g.y);
+      const gx = frame.grabOffset.x / SIZE;
+      const gy = frame.grabOffset.y / SIZE;
+      ctx.translate(gx, gy);
       ctx.rotate(frame.swing);
-      ctx.translate(-g.x, -g.y);
+      ctx.translate(-gx, -gy);
     }
     drawCharacter(ctx, pose);
     if (overlay) drawOverlay(ctx, overlay, pose);
