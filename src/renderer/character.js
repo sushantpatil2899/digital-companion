@@ -831,12 +831,18 @@ function drawLying(ctx, p) {
   ellipse(ctx, 14, -2, LIE.rx, 12);
   ctx.fillStyle = PALETTE.shellShade;
   ctx.fill();
-  ctx.restore();
+  // The crack line stays inside the body, so it can't cut across a foot.
   ctx.beginPath();
   ctx.moveTo(crack[0][0], crack[0][1]);
   for (const [x, y] of crack) ctx.lineTo(x, y);
   ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.restore();
+  // Redraw the outline on top so the clipped crack meets it cleanly.
+  lieBodyPath(ctx);
+  ctx.lineWidth = 2;
   ctx.strokeStyle = PALETTE.outline;
   ctx.stroke();
 
