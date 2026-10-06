@@ -265,14 +265,14 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    footShape(ctx, side * 14, -18 + kick, Math.atan2(1, side * 0.62), 22, 11.5, 0.6);
+    footShape(ctx, side * 18, -18 + kick, Math.atan2(1, side * 0.62), 22, 11.5, 0.6);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
     // Standing: the feet splay outwards, tips pointing down and out.
-    footShape(ctx, side * (14 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 11.5, 0.6);
+    footShape(ctx, side * (18 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 11.5, 0.6);
   }
 }
 
@@ -590,24 +590,47 @@ function drawBackpackBag(ctx, p) {
   ctx.restore();
 }
 
-// Strap: a loop over his shoulder and round his arm on the bag side,
-// starting and ending at the bag. Drawn over the arm.
-function drawBackpackStrap(ctx, p) {
-  const side = bagSide(p);
-  const cx = side * 39;
-  const cy = CY - 1;
-  ctx.save();
-  ctx.beginPath();
-  // Open towards the bag so both ends run into it.
-  const from = side > 0 ? -Math.PI / 2 - 0.35 : -Math.PI / 2 + 0.35;
-  ctx.ellipse(cx, cy, 11.5, 16, side * -0.2, from, from + Math.PI * 1.55 * -side, side > 0);
+// Shoulder straps, drawn over the body but under the arms:
+// - near strap: leaves the top of the bag, goes over his shoulder, down past
+//   his arm and back into the bottom of the bag (his arm sits in the loop);
+// - far strap: shows over his other shoulder at the edge of his body.
+function strapStroke(ctx) {
   ctx.lineCap = 'round';
-  ctx.lineWidth = 6.5;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 7.5;
   ctx.strokeStyle = PALETTE.outline;
   ctx.stroke();
-  ctx.lineWidth = 3.8;
+  ctx.lineWidth = 4.8;
   ctx.strokeStyle = BAG;
   ctx.stroke();
+  // Stitching down the middle of the strap.
+  ctx.setLineDash([2.5, 2.5]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawBackpackStraps(ctx, p) {
+  const side = bagSide(p);
+  ctx.save();
+  // Near strap.
+  ctx.beginPath();
+  ctx.moveTo(side * 46, CY - 11); // top of the bag
+  ctx.bezierCurveTo(side * 40, CY - 26, side * 27, CY - 22, side * 27, CY - 8); // over the shoulder
+  ctx.bezierCurveTo(side * 27, CY + 6, side * 33, CY + 18, side * 44, CY + 22); // down into the bag
+  strapStroke(ctx);
+  // Far strap, over the other shoulder at the body's edge.
+  const far = -side;
+  ctx.save();
+  bodyPath(ctx, spikesFor(p).front);
+  ctx.clip();
+  ctx.beginPath();
+  // Follows just inside the outline of his far shoulder, down behind his arm.
+  ctx.moveTo(far * 34, CY - 36);
+  ctx.bezierCurveTo(far * 41, CY - 28, far * 45, CY - 16, far * 46, CY - 2);
+  strapStroke(ctx);
+  ctx.restore();
   ctx.restore();
 }
 
@@ -731,9 +754,9 @@ function drawCharacter(ctx, p) {
     }
     drawFace(ctx, p);
     if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY - 6);
+    if (p.prop === 'backpack') drawBackpackStraps(ctx, p);
     drawArm(ctx, -1, p);
     drawArm(ctx, 1, p);
-    if (p.prop === 'backpack') drawBackpackStrap(ctx, p);
     // The apple is held up in front, over his hands.
     if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
   }
