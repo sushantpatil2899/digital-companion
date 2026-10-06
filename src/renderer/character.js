@@ -290,10 +290,9 @@ function ovalLeg(ctx, x, y, angle, len, width, shade = null) {
     for (let i = 0; i <= steps; i++) {
       const t = (i / steps) * Math.PI * 2;
       const u = Math.cos(t); // -1 (top, under the belly) .. 1 (tip)
-      // Round at the top; at the tip 0.5 would be fully round and higher values
-      // pointier, so 0.62 gives a point with a softly rounded end.
-      const p = u > 0 ? 0.62 : 0.5;
-      const half = width * Math.pow(Math.max(0, 1 - u * u), p) * (1 - 0.22 * u);
+      // An egg shape: a smooth ellipse whose tip end is narrower than its
+      // root, so it tapers to a soft, rounded point with no kink.
+      const half = width * Math.sqrt(Math.max(0, 1 - u * u)) * (1 - 0.42 * u);
       ctx.lineTo(len * u, half * Math.sign(Math.sin(t)));
     }
     ctx.closePath();
@@ -320,6 +319,14 @@ function ovalLeg(ctx, x, y, angle, len, width, shade = null) {
   ctx.restore();
 }
 
+// A standing leg pointing down and out at `tilt` radians from vertical, its
+// tip resting at (tipX, tipY). The root is hidden behind the lower belly.
+function sideLeg(ctx, side, tipX, tipY, tilt, len, width) {
+  const dx = side * Math.sin(tilt);
+  const dy = Math.cos(tilt);
+  ovalLeg(ctx, side * tipX - dx * len, tipY - dy * len, Math.atan2(dy, dx), len, width, bellyShadow);
+}
+
 // Shadow of the round belly falling across the tops of the legs, so the
 // belly reads as hanging out in front of them.
 function bellyShadow(ctx) {
@@ -333,14 +340,15 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    ovalLeg(ctx, side * 21, -8 + kick, Math.atan2(0.84, side * 0.55), 11.5, 8.5, bellyShadow);
+    sideLeg(ctx, side, 35, 2 + kick, 0.9, 14, 8.5);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
     // Standing: the feet splay outwards, tips pointing down and out.
-    ovalLeg(ctx, side * (21 + lift * 0.25), -11 - lift, Math.atan2(0.84, side * 0.55), 11.5, 8.5, bellyShadow);
+    // Standing: legs come out of the lower sides of the belly, pointing down and out.
+    sideLeg(ctx, side, 35 + lift * 0.3, -1.5 - lift, 0.85, 14, 8.5);
   }
 }
 
