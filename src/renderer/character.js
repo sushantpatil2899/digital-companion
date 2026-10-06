@@ -279,11 +279,51 @@ function footShape(ctx, x, y, angle, len, width, tipRound = 0.45, shade = null) 
   ctx.restore();
 }
 
+// A standing/dangling leg like the reference: a curvy oval with bulging
+// sides that narrows to a soft point at the far end (u = 1). (x, y) is its
+// centre, `angle` the direction it points, `len`/`width` its half-length and
+// greatest half-width.
+function ovalLeg(ctx, x, y, angle, len, width, shade = null) {
+  const outline = () => {
+    ctx.beginPath();
+    const steps = 48;
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * Math.PI * 2;
+      const u = Math.cos(t); // -1 (top, under the belly) .. 1 (tip)
+      // Rounder at the top, a soft point at the tip, widest a bit above the middle.
+      const p = u > 0 ? 0.78 : 0.5;
+      const half = width * Math.pow(Math.max(0, 1 - u * u), p) * (1 - 0.22 * u);
+      ctx.lineTo(len * u, half * Math.sign(Math.sin(t)));
+    }
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  outline();
+  ctx.fillStyle = PALETTE.limb;
+  ctx.fill();
+  if (shade) {
+    ctx.save();
+    ctx.clip();
+    ctx.rotate(-angle);
+    ctx.translate(-x, -y);
+    shade(ctx);
+    ctx.restore();
+    outline();
+  }
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Shadow of the round belly falling across the tops of the legs, so the
 // belly reads as hanging out in front of them.
 function bellyShadow(ctx) {
   ellipse(ctx, 0, CY + RY_BELLY - 1, R * 0.92, 8);
-  ctx.fillStyle = 'rgba(170, 120, 60, 0.32)';
+  ctx.fillStyle = 'rgba(170, 120, 60, 0.26)';
   ctx.fill();
 }
 
@@ -292,14 +332,14 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    footShape(ctx, side * 23, -18 + kick, Math.atan2(1, side * 0.62), 22, 13, 0.55, bellyShadow);
+    ovalLeg(ctx, side * 21, -8 + kick, Math.atan2(0.84, side * 0.55), 11.5, 8.5, bellyShadow);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
     // Standing: the feet splay outwards, tips pointing down and out.
-    footShape(ctx, side * (23 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 13, 0.55, bellyShadow);
+    ovalLeg(ctx, side * (21 + lift * 0.25), -11 - lift, Math.atan2(0.84, side * 0.55), 11.5, 8.5, bellyShadow);
   }
 }
 
