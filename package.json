@@ -2,14 +2,50 @@
   "name": "digital-companion",
   "version": "0.1.0",
   "description": "A little desktop pet that wanders around your screen. Pick him up, throw him, pet him.",
+  "author": "Sushant Patil",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --mac --dir && node scripts/adhoc-sign.js"
   },
-  "keywords": ["desktop-pet", "electron", "companion"],
+  "keywords": [
+    "desktop-pet",
+    "electron",
+    "companion"
+  ],
   "license": "MIT",
   "devDependencies": {
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.sushantpatil.togepi",
+    "productName": "Togepi",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "src/main/mac/calendar.jxa.js"
+    ],
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png",
+      "identity": null,
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSCalendarsUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
+        "NSCalendarsFullAccessUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
+        "NSAppleEventsUsageDescription": "Togepi checks which app is in front so he can keep quiet during meetings. Nothing leaves your Mac."
+      }
+    }
   }
 }

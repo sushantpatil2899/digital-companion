@@ -33,6 +33,13 @@ class ContextTracker {
     this.alertedEvents = new Set(); // events we've already said "soon" about
     this.lastInEvent = null;
     this.pending = {}; // one-shot flags until the next snapshot
+    this.notes = {}; // problems to show in the brain view, by source
+  }
+
+  /** A problem to show in the brain view (e.g. a permission was declined); null clears it. */
+  setNote(source, message) {
+    if (message) this.notes[source] = message;
+    else delete this.notes[source];
   }
 
   setLocked(v) {
@@ -119,6 +126,7 @@ class ContextTracker {
       frontApp: this.quiet.frontApp,
       nextEvent: this.calendar.nextEvent,
       inEvent: this.calendar.inEvent,
+      error: Object.values(this.notes).join(' ') || null,
       ...this.pending,
     };
     this.pending = {};

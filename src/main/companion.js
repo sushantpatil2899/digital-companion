@@ -673,8 +673,9 @@ class Companion {
         this.enter('happy', 1.5);
         break;
       case 'eventSoon':
+        // Come to where you're looking and hold up a "Meeting in 5!" sign.
         this.emit('eventSoon');
-        this.enter('sign', 6);
+        this.goToCursorThen({ state: 'sign', duration: 8 }, 'run');
         break;
       case 'eventEnded':
         this.emit('eventEnded');

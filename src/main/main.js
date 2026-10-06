@@ -5,6 +5,9 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
+const { Settings, classifyApp } = require('./settings');
+const { FrontAppWatcher } = require('./mac/front-app');
+const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
@@ -61,6 +64,64 @@ let saveTimer = null;
 let suspendedAt = null;
 let brainWin = null;
 let brainTimer = null;
+let settings = null;
+let frontApp = null;
+let calendar = null;
+let hiddenForPresenting = false;
+const IS_MAC = process.platform === 'darwin';
+
+// --------------------------------------------------------------- opt-in context (macOS)
+
+function applyWatchApps(on) {
+  if (frontApp) frontApp.stop();
+  frontApp = null;
+  tracker.setQuiet(false);
+  tracker.setNote('apps', null);
+  showAfterPresenting();
+  if (!on || !IS_MAC) return;
+  frontApp = new FrontAppWatcher((r) => {
+    if (r.error) {
+      tracker.setNote('apps', r.error);
+      return;
+    }
+    tracker.setNote('apps', null);
+    const kind = classifyApp(r.name, settings.values);
+    tracker.setQuiet(!!kind, kind, r.name);
+    if (kind === 'presenting') hideForPresenting();
+    else showAfterPresenting();
+  });
+  frontApp.start();
+}
+
+function applyReadCalendar(on) {
+  if (calendar) calendar.stop();
+  calendar = null;
+  tracker.setEvents([]);
+  tracker.setNote('calendar', null);
+  if (!on || !IS_MAC) return;
+  calendar = new CalendarWatcher((r) => {
+    if (r.error) {
+      tracker.setNote('calendar', r.error);
+      return;
+    }
+    tracker.setNote('calendar', null);
+    tracker.setEvents(r.events);
+  });
+  calendar.start();
+}
+
+// While you present (Keynote / PowerPoint in front) he hides completely.
+function hideForPresenting() {
+  if (hiddenForPresenting || !win || win.isDestroyed()) return;
+  hiddenForPresenting = true;
+  win.hide();
+}
+
+function showAfterPresenting() {
+  if (!hiddenForPresenting || !win || win.isDestroyed()) return;
+  hiddenForPresenting = false;
+  win.showInactive();
+}
 
 // --------------------------------------------------------------- memory
 
@@ -95,6 +156,8 @@ function saveBrain() {
 
 function startContext() {
   tracker = new ContextTracker();
+  applyWatchApps(settings.get('watchApps'));
+  applyReadCalendar(settings.get('readCalendar'));
   const refresh = () => {
     if (!companion) return;
     let idle = 0;
@@ -171,6 +234,7 @@ function boundsForPoint(point) {
 }
 
 function createWindow() {
+  settings = new Settings(app.getPath('userData'));
   const start = screen.getCursorScreenPoint();
   const bounds = boundsForPoint(start);
 
@@ -407,7 +471,35 @@ function buildMenu() {
       },
     },
   ];
-  items.push({ label: 'Show his brain…', click: showBrain });
+  items.push({
+    label: 'Brain',
+    submenu: [
+      { label: 'Show his brain…', click: showBrain },
+      { type: 'separator' },
+      {
+        label: 'Notice which app I’m using',
+        type: 'checkbox',
+        enabled: IS_MAC,
+        checked: !!(settings && settings.get('watchApps')),
+        click: (item) => {
+          settings.set('watchApps', item.checked);
+          applyWatchApps(item.checked);
+          refreshTrayMenu();
+        },
+      },
+      {
+        label: 'Read my calendar',
+        type: 'checkbox',
+        enabled: IS_MAC,
+        checked: !!(settings && settings.get('readCalendar')),
+        click: (item) => {
+          settings.set('readCalendar', item.checked);
+          applyReadCalendar(item.checked);
+          refreshTrayMenu();
+        },
+      },
+    ],
+  });
   if (process.platform === 'darwin' || process.platform === 'win32') {
     items.push({
       label: 'Start at login',

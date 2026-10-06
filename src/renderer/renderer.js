@@ -407,6 +407,15 @@ function computePose(f, dt) {
       p.tilt = -f.facing * 0.12;
       overlay = 'question';
       break;
+    case 'sign':
+      // Holding up a "Meeting in 5!" sign.
+      p.arms = 'up';
+      p.eyes = 'wide';
+      p.mouth = 'open';
+      p.blink = 0;
+      p.bob = -Math.abs(Math.sin(t * 5)) * 1.5;
+      overlay = 'sign';
+      break;
     case 'wave':
       p.arms = 'wave';
       p.mouth = 'open';
@@ -448,6 +457,12 @@ function drawOverlay(ctx, kind, p) {
     case 'flower':
       C.drawDaisy(ctx, x, y + Math.sin(clock * 2) * 2, 5);
       break;
+    case 'sign': {
+      let title = frame.eventTitle || '';
+      if (title.length > 18) title = `${title.slice(0, 17)}…`;
+      C.drawSign(ctx, 'Meeting in 5!', title, clock);
+      break;
+    }
     case 'waveLines': {
       // Little motion arcs next to the waving hand.
       ctx.save();

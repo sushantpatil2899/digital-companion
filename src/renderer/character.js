@@ -1183,6 +1183,47 @@ function drawSweat(ctx, x, y, t) {
   ctx.restore();
 }
 
+// A little sign he holds up over his head (e.g. "Meeting in 5!").
+function drawSign(ctx, line1, line2, t) {
+  const w = 104;
+  const h = line2 ? 38 : 26;
+  const cx = 0;
+  const top = -172 + (line2 ? 0 : 6) + Math.sin(t * 5) * 1.5;
+  ctx.save();
+  // Two sticks down to his raised hands.
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 30, top + h - 2);
+    ctx.lineTo(side * 41, -76);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = PALETTE.outline;
+    ctx.stroke();
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#c99a62';
+    ctx.stroke();
+  }
+  // Board.
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, top, w, h, 8);
+  ctx.fillStyle = '#fff7e2';
+  ctx.fill();
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = PALETTE.outline;
+  ctx.font = 'bold 13px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
+  ctx.fillText(line1, cx, top + (line2 ? 12 : h / 2 + 0.5));
+  if (line2) {
+    ctx.font = '11px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
+    ctx.fillStyle = '#7a6656';
+    ctx.fillText(line2, cx, top + 27);
+  }
+  ctx.restore();
+}
+
 window.Character = {
   drawCharacter,
   defaultPose,
@@ -1195,6 +1236,7 @@ window.Character = {
   drawAngerMark,
   drawScribble,
   drawSweat,
+  drawSign,
   BODY_CY: CY,
   HEAD_TOP: CY - RY - 16,
 };

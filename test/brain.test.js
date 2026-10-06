@@ -234,3 +234,37 @@ test('companion: if you keep ignoring him he asks less and less often', () => {
   c.pat();
   assert.strictEqual(c.ignoredAsks, 0);
 });
+
+test('companion + tracker: sign before a meeting, quiet during it, "all done" after', () => {
+  const { ContextTracker } = require('../src/main/context');
+  const k = { t: new Date('2026-10-06T10:00:00').getTime() };
+  const tracker = new ContextTracker({ now: () => k.t });
+  const c = grounded(new Companion({ bounds, x: 500, rng: seeded(3) }));
+  const start = k.t + 4 * 60 * 1000;
+  tracker.setEvents([{ title: 'Standup', start, end: start + 10 * 60 * 1000 }]);
+  const states = new Set();
+  const step = (seconds) => {
+    const events = [];
+    for (let i = 0; i < seconds * 20; i++) {
+      k.t += 50;
+      if (i % 40 === 0) c.setContext(tracker.update(0));
+      c.update(1 / 20, { x: 900, y: 500 });
+      events.push(...c.drainEvents());
+      states.add(c.state);
+    }
+    return events;
+  };
+  const before = step(12);
+  assert.ok(before.includes('eventSoon'), before.join(','));
+  assert.ok(states.has('sign'), [...states].join(','));
+  assert.strictEqual(c.snapshot().eventTitle, 'Standup');
+  step(4 * 60); // meeting starts
+  const during = new Set();
+  for (let i = 0; i < 60; i++) {
+    step(5);
+    during.add(c.state);
+  }
+  for (const s of during) assert.ok(['idle', 'sit', 'backView', 'sleep', 'eat', 'flower', 'lookAround', 'curious', 'shy', 'wave', 'sign'].includes(s), `during meeting: ${s}`);
+  const after = step(6 * 60);
+  assert.ok(after.includes('eventEnded'), after.join(','));
+});
