@@ -186,6 +186,15 @@ function computePose(f, dt) {
 
   switch (f.state) {
     case 'idle':
+      if (f.grumpy) {
+        // Sulking on the spot (angry while told to stay put).
+        p.eyes = 'angry';
+        p.mouth = 'growl';
+        p.arms = 'fists';
+        p.blush = 0.7;
+        overlay = 'anger';
+        break;
+      }
       // Every so often a peaceful, eyes-closed smile (the "Blinking" panel).
       if (Math.floor(st / 2.5) % 3 === 2) {
         p.eyes = 'content';

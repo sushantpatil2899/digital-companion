@@ -265,13 +265,14 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    footShape(ctx, side * 20, -15 + kick, Math.atan2(1, side * 0.4), 15, 10.5, 0.68);
+    footShape(ctx, side * 14, -18 + kick, Math.atan2(1, side * 0.62), 22, 11.5, 0.6);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
-    footShape(ctx, side * (20 + lift * 0.25), -16 - lift, Math.atan2(1, side * 0.35), 15, 10.5, 0.68);
+    // Standing: the feet splay outwards, tips pointing down and out.
+    footShape(ctx, side * (14 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 11.5, 0.6);
   }
 }
 
@@ -548,32 +549,66 @@ function drawBall(ctx, x, y, rot) {
   ctx.restore();
 }
 
+// Backpack for adventures (the "Going on an adventure" panel): a tall blue
+// bag on his back that sticks out past his body, and a strap that loops
+// around his arm on that side and runs back into the bag.
+const BAG = '#3f7ec9';
+const BAG_LIGHT = '#5a97dc';
+
+function bagSide(p) {
+  return -p.facing; // the bag sits on his back
+}
+
 function drawBackpackBag(ctx, p) {
-  const side = -p.facing;
+  const side = bagSide(p);
   ctx.save();
-  ctx.translate(side * 38, CY - 8);
-  ctx.rotate(side * 0.12);
+  ctx.translate(side * 46, CY + 13);
+  ctx.rotate(side * 0.16);
+  // Top handle.
   ctx.beginPath();
-  ctx.roundRect(-11, -18, 22, 34, 8);
-  fillStroke(ctx, '#3f7ec9', 2.4);
+  ctx.arc(0, -27, 5.5, Math.PI, 0);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.lineWidth = 2.6;
+  ctx.strokeStyle = BAG;
+  ctx.stroke();
+  // Bag.
   ctx.beginPath();
-  ctx.roundRect(-8, 2, 16, 11, 4);
-  fillStroke(ctx, '#5a97dc', 1.8);
+  ctx.roundRect(-15.5, -27, 31, 52, 13);
+  fillStroke(ctx, BAG, 2.2);
+  // Front pocket and a seam.
+  ctx.beginPath();
+  ctx.roundRect(-11 + side * 2, 3, 22, 17, 7);
+  fillStroke(ctx, BAG_LIGHT, 1.8);
+  ctx.beginPath();
+  ctx.moveTo(-10, -7);
+  ctx.quadraticCurveTo(0, -4, 10, -7);
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
   ctx.restore();
 }
 
+// Strap: a loop over his shoulder and round his arm on the bag side,
+// starting and ending at the bag. Drawn over the arm.
 function drawBackpackStrap(ctx, p) {
-  const side = -p.facing;
+  const side = bagSide(p);
+  const cx = side * 39;
+  const cy = CY - 1;
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(side * 32, CY - 22);
-  ctx.quadraticCurveTo(side * 12, CY - 8, side * 8, CY + 18);
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = PALETTE.outline;
+  // Open towards the bag so both ends run into it.
+  const from = side > 0 ? -Math.PI / 2 - 0.35 : -Math.PI / 2 + 0.35;
+  ctx.ellipse(cx, cy, 11.5, 16, side * -0.2, from, from + Math.PI * 1.55 * -side, side > 0);
   ctx.lineCap = 'round';
+  ctx.lineWidth = 6.5;
+  ctx.strokeStyle = PALETTE.outline;
   ctx.stroke();
-  ctx.lineWidth = 3.4;
-  ctx.strokeStyle = '#3f7ec9';
+  ctx.lineWidth = 3.8;
+  ctx.strokeStyle = BAG;
   ctx.stroke();
+  ctx.restore();
 }
 
 // --------------------------------------------------------------- body
@@ -695,10 +730,10 @@ function drawCharacter(ctx, p) {
       drawFoot(ctx, 1, p);
     }
     drawFace(ctx, p);
-    if (p.prop === 'backpack') drawBackpackStrap(ctx, p);
     if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY - 6);
     drawArm(ctx, -1, p);
     drawArm(ctx, 1, p);
+    if (p.prop === 'backpack') drawBackpackStrap(ctx, p);
     // The apple is held up in front, over his hands.
     if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
   }

@@ -19,6 +19,8 @@ A little desktop pet that lives on your screen: **Togepi**, drawn in code from a
 | **Come back after being away** | He **waves** at you (he also waves when he starts up and wakes up) |
 | **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Do something…*, *Take a nap / Wake up*, *Stay put*, *Start at login*, *Quit* |
 
+*Stay put* keeps him in one spot for 10 minutes (the menu shows how long is left), then he goes back to wandering and the tick clears itself. Sending him somewhere yourself (*Come here*, or a walking activity from *Do something…*) ends it early.
+
 On his own he walks, runs, **sits**, **blinks** and smiles, **jumps**, **talks**, **eats an apple**, **holds a flower**, **plays with his ball**, **goes on an adventure** with his backpack, turns around to watch your screen (**back view**), falls **asleep** after a while, and gets **sad** if you ignore him for a long time. *Do something…* in the menu lets you ask him for any of these.
 
 ## Running

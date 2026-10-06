@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { Companion, MENU_ACTIVITIES } = require('../src/main/companion');
+const { Companion, MENU_ACTIVITIES, TUNING } = require('../src/main/companion');
 
 const bounds = { left: 0, right: 1920, top: 0, floor: 1040 };
 
@@ -137,13 +137,28 @@ test('"come here" makes him run to the cursor along the floor', () => {
   assert.strictEqual(c.y, bounds.floor);
 });
 
-test('stays put when paused', () => {
+test('"Stay put" keeps him still for a while, then he wanders again on his own', () => {
   const c = new Companion({ bounds, rng: seeded(11) });
-  c.paused = true;
   run(c, 1);
+  c.stayPut();
+  assert.ok(c.paused);
   const x = c.x;
+  const events = [];
+  for (let i = 0; i < 60 * (TUNING.stayPutFor - 5); i++) {
+    c.update(1 / 60);
+    events.push(...c.drainEvents());
+  }
+  assert.strictEqual(c.x, x, 'should not move during the hold');
+  assert.ok(c.paused);
+  assert.ok(!events.includes('stayPutEnded'));
+  for (let i = 0; i < 60 * 10; i++) {
+    c.update(1 / 60);
+    events.push(...c.drainEvents());
+  }
+  assert.ok(!c.paused, 'hold should have run out');
+  assert.strictEqual(events.filter((e) => e === 'stayPutEnded').length, 1);
   run(c, 120);
-  assert.strictEqual(c.x, x);
+  assert.notStrictEqual(c.x, x, 'should wander again afterwards');
 });
 
 function hardThrow(c) {
@@ -220,7 +235,7 @@ test('cursor lingering near him makes him curious, resting on him makes him shy 
 test('waves when the cursor comes back after being away', () => {
   const c = new Companion({ bounds, rng: seeded() });
   run(c, 4);
-  c.paused = true;
+  c.stayPut();
   for (let i = 0; i < 60 * 35; i++) c.update(1 / 60, { x: c.x + 900, y: 100 });
   if (!['idle', 'sit', 'lookAround', 'talk', 'backView'].includes(c.state)) c.enter('idle', 5);
   c.update(1 / 60, { x: c.x + 200, y: c.y - 40 });
@@ -245,4 +260,37 @@ test('adventures and play move him across the screen', () => {
   const start = c.x;
   for (let i = 0; i < 60 * 30 && c.state === 'adventure'; i++) c.update(1 / 60);
   assert.ok(Math.abs(c.x - start) > (bounds.right - bounds.left) * 0.4);
+});
+
+test('angry while staying put: sulks on the spot instead of stomping off', () => {
+  const c = new Companion({ bounds, rng: seeded() });
+  run(c, 2);
+  c.stayPut();
+  hardThrow(c);
+  run(c, 3);
+  hardThrow(c);
+  run(c, 3);
+  hardThrow(c);
+  assert.strictEqual(c.state, 'angry');
+  const x = c.x;
+  run(c, 6);
+  assert.strictEqual(c.x, x);
+  assert.ok(c.paused);
+});
+
+test('"Come here" and moving activities end "Stay put"', () => {
+  const c = new Companion({ bounds, x: 900, rng: seeded() });
+  run(c, 3);
+  c.stayPut();
+  c.comeTo(300);
+  assert.ok(!c.paused);
+  assert.strictEqual(c.state, 'run');
+
+  run(c, 10);
+  c.stayPut();
+  c.doActivity('eat'); // stays in place: hold continues
+  assert.ok(c.paused);
+  run(c, 6);
+  c.doActivity('play');
+  assert.ok(!c.paused);
 });

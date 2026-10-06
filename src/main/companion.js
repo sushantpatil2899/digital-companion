@@ -21,6 +21,7 @@ const TUNING = {
   throwSpeed: 600, // px/s release speed that counts as a throw (vs. a drop)
   angryThrows: 3, // this many throws ...
   angryWindow: 60, // ... within this many seconds make him angry
+  stayPutFor: 600, // seconds "Stay put" lasts before he wanders again
   sleepAfter: 90, // seconds without interaction before he gets sleepy
   sadAfter: 300, // seconds without interaction before he may get sad
   petToHappy: 0.3, // seconds of holding before hearts start appearing
@@ -48,6 +49,8 @@ const ACTIVITIES = [
 ];
 // What he may do while "stay put" is on.
 const STAY_ACTIVITIES = ['idle', 'sit', 'lookAround', 'talk', 'eat', 'flower', 'backView'];
+// Activities that move him around (asking for one ends "Stay put").
+const MOVING_ACTIVITIES = ['walk', 'run', 'play', 'adventure', 'jump'];
 // Activities you can ask for from the menu.
 const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', 'sit', 'sleep', 'jump', 'backView'];
 
@@ -125,7 +128,7 @@ class Companion {
     this.happiness = 0.5; // 0..1, purely cosmetic
     this.petting = 0; // seconds of continuous petting
     this.lastPet = -Infinity;
-    this.paused = false; // when true he stays put (no wandering)
+    this.pausedUntil = 0; // "Stay put": no wandering until this time
 
     this.throwTimes = []; // recent throws, for getting angry
     this.grumpyUntil = 0; // stomps off with an angry face until this time
@@ -173,6 +176,26 @@ class Companion {
     const e = this.events;
     this.events = [];
     return e;
+  }
+
+  /** True while "Stay put" is on. */
+  get paused() {
+    return this.time < this.pausedUntil;
+  }
+
+  /** "Stay put" for `seconds` (default TUNING.stayPutFor), then wander again. */
+  stayPut(seconds = TUNING.stayPutFor) {
+    this.pausedUntil = this.time + seconds;
+    this.stayPutNotified = false;
+  }
+
+  endStayPut() {
+    this.pausedUntil = 0;
+  }
+
+  /** Seconds of "Stay put" left (0 when off). */
+  stayPutLeft() {
+    return Math.max(0, this.pausedUntil - this.time);
   }
 
   // ---------------------------------------------------------------- input
@@ -296,6 +319,7 @@ class Companion {
       this.enter('happy', 1);
       return;
     }
+    this.endStayPut(); // you're sending him somewhere, so he's no longer staying put
     this.facing = this.targetX > this.x ? 1 : -1;
     this.enter('run');
   }
@@ -306,6 +330,7 @@ class Companion {
     this.lastInteraction = this.time;
     this.grumpyUntil = 0;
     this.vx = 0;
+    if (MOVING_ACTIVITIES.includes(name)) this.endStayPut();
     if (name === 'sleep') {
       this.enter('sleep', 60);
       this.emit('sleep');
@@ -331,6 +356,12 @@ class Companion {
     this.stateTime += dt;
     // Petting "charge" fades once the rubbing stops.
     if (this.time - this.lastPet > 0.4) this.petting = Math.max(0, this.petting - dt * 2);
+    // Tell the menu once when "Stay put" runs out.
+    if (this.pausedUntil > 0 && !this.paused && !this.stayPutNotified) {
+      this.stayPutNotified = true;
+      this.pausedUntil = 0;
+      this.emit('stayPutEnded');
+    }
 
     switch (this.state) {
       case 'grabbed':
@@ -471,9 +502,15 @@ class Companion {
       case 'angry':
         this.vx = 0;
         if (this.stateTime >= this.stateDuration) {
-          // Stomp off in a huff.
-          this.grumpyUntil = this.time + 4;
-          this.startActivity('walk');
+          if (this.paused) {
+            // Told to stay put: sulk on the spot instead of stomping off.
+            this.grumpyUntil = this.time + 3;
+            this.enter('idle', 3);
+          } else {
+            // Stomp off in a huff.
+            this.grumpyUntil = this.time + 4;
+            this.startActivity('walk');
+          }
         }
         break;
       default:

@@ -2,7 +2,7 @@
 
 const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } = require('electron');
-const { Companion } = require('./companion');
+const { Companion, TUNING } = require('./companion');
 
 // Entries for the "Do something…" menu: [activity, label].
 const ACTIVITY_MENU = [
@@ -154,9 +154,12 @@ function tick() {
 
   updateClickThrough(cursor);
 
+  const events = companion.drainEvents();
+  if (events.includes('stayPutEnded')) refreshTrayMenu();
+
   win.webContents.send('frame', {
     ...companion.snapshot(),
-    events: companion.drainEvents(),
+    events,
     // Cursor relative to his feet, so the eyes can follow it.
     cursor: { x: cursor.x - companion.x, y: cursor.y - companion.y },
   });
@@ -236,6 +239,15 @@ function callHere() {
   companion.enter('fall');
 }
 
+// "Stay put (10 min)", or "Stay put (7 min left)" while it's on.
+function stayPutLabel() {
+  if (companion && companion.paused) {
+    const min = Math.max(1, Math.ceil(companion.stayPutLeft() / 60));
+    return `Stay put (${min} min left)`;
+  }
+  return `Stay put (${Math.round(TUNING.stayPutFor / 60)} min)`;
+}
+
 function refreshTrayMenu() {
   if (tray && process.platform === 'linux') tray.setContextMenu(buildMenu());
 }
@@ -264,11 +276,12 @@ function buildMenu() {
       },
     },
     {
-      label: 'Stay put (no wandering)',
+      label: stayPutLabel(),
       type: 'checkbox',
       checked: companion ? companion.paused : false,
       click: (item) => {
-        companion.paused = item.checked;
+        if (item.checked) companion.stayPut(TUNING.stayPutFor);
+        else companion.endStayPut();
         refreshTrayMenu();
       },
     },
