@@ -711,15 +711,16 @@ function drawCharacter(ctx, p) {
 
 // --------------------------------------------------------------- sleeping
 
-// Asleep, lying on his tummy (the "Sleeping" panel): a wide, low egg with the
-// head upright at one end, the face low near the floor, the shell crack
-// running diagonally down from the spikes, and a foot poking out at each end.
-// Drawn with the head on the left; mirrored when he faces right.
-const LIE = { cx: 2, cy: -35, rx: 59, ry: 37 };
+// Asleep, lying on his tummy (the "Sleeping" panel): a round, low egg with
+// the head upright at one end, the face low near the floor, the shell crack
+// running down from the spikes and under his face, and a foot poking out at
+// each end. Drawn with the head on the left; mirrored when he faces right.
+const LIE = { cx: 0, cy: -39, rx: 56, ry: 40 };
+const LIE_SIZE = 1.1; // a touch bigger than the standing scale
 
-function liePoint(deg) {
+function liePoint(deg, out = 0) {
   const a = rad(deg);
-  return [LIE.cx + LIE.rx * Math.cos(a), LIE.cy + LIE.ry * Math.sin(a)];
+  return [LIE.cx + (LIE.rx + out) * Math.cos(a), LIE.cy + (LIE.ry + out) * Math.sin(a)];
 }
 
 function lieArc(ctx, fromDeg, toDeg) {
@@ -727,25 +728,32 @@ function lieArc(ctx, fromDeg, toDeg) {
   else if (toDeg <= fromDeg) return;
   const steps = Math.max(2, Math.ceil((toDeg - fromDeg) / 3));
   for (let i = 0; i <= steps; i++) {
-    const deg = fromDeg + ((toDeg - fromDeg) * i) / steps;
-    let [x, y] = liePoint(deg);
-    // Flatten the underside where he rests on the floor.
-    if (y > LIE.cy) y = LIE.cy + (y - LIE.cy) * 0.92;
+    const [x, y] = liePoint(fromDeg + ((toDeg - fromDeg) * i) / steps);
+    // The very bottom rests flat on the floor.
     ctx.lineTo(x, Math.min(y, 0));
   }
 }
 
-// Head spikes for the lying pose, joined edge to edge: [from deg, to deg, tip x, tip y].
+// Head spikes for the lying pose, built like the standing ones: the crown is
+// tipped a little towards his head end. Front spikes are joined edge to
+// edge; the two back spikes peek out of the Vs between them.
+//   base/hw: where on the egg each spike sits (degrees), tip: direction, len: length.
 const LIE_SPIKES = [
-  [-176, -138, -64, -60],
-  [-138, -82, -6, -92],
-  [-82, -64, 25, -81],
+  { base: -150, hw: 18, tip: -143, len: 15 },
+  { base: -113, hw: 19, tip: -112, len: 18 },
+  { base: -80, hw: 14, tip: -74, len: 12 },
+];
+const LIE_BACK_SPIKES = [
+  { base: -132, hw: 8, tip: -133, len: 7.5 },
+  { base: -92, hw: 7, tip: -92, len: 6.5 },
 ];
 
-function lieSpike(ctx, [a1, a2, tx, ty]) {
-  const [b1x, b1y] = liePoint(a1);
-  const [b2x, b2y] = liePoint(a2);
-  const [mx, my] = liePoint((a1 + a2) / 2);
+// One spike from its first base point to its second, with a soft tip.
+function lieSpikeCurve(ctx, sp, inset) {
+  const [b1x, b1y] = liePoint(sp.base - sp.hw, -inset);
+  const [b2x, b2y] = liePoint(sp.base + sp.hw, -inset);
+  const [mx, my] = liePoint(sp.base, -inset);
+  const [tx, ty] = liePoint(sp.tip, sp.len);
   const bulge = 0.16;
   const c1x = (b1x + tx) / 2 + ((b1x + tx) / 2 - mx) * bulge;
   const c1y = (b1y + ty) / 2 + ((b1y + ty) / 2 - my) * bulge;
@@ -762,57 +770,71 @@ function lieBodyPath(ctx) {
   lieArc(ctx, 0, 180); // underside, right to left
   let angle = -180;
   for (const sp of LIE_SPIKES) {
-    lieArc(ctx, angle, sp[0]);
-    lieSpike(ctx, sp);
-    angle = sp[1];
+    lieArc(ctx, angle, sp.base - sp.hw);
+    lieSpikeCurve(ctx, sp, 0);
+    angle = sp.base + sp.hw;
   }
   lieArc(ctx, angle, 0);
   ctx.closePath();
 }
 
-// Crack between head and shell: from the last spike's base down to the floor.
-// It comes down from the spikes, then runs along the bottom under his face,
-// so his head rests inside the shell.
-const LIE_CRACK = [
-  [30, -68], [21, -58], [28, -49], [16, -40], [21, -31], [7, -24], [2, -19],
-  [-8, -17], [-15, -11], [-24, -12], [-33, -8], [-43, -8], [-51, -3], [-58, 1],
-];
+// Crack between head and shell: from the last spike's base down the side,
+// then along the bottom under his face so his head rests in the shell.
+function lieCrack() {
+  const start = liePoint(LIE_SPIKES[2].base + LIE_SPIKES[2].hw);
+  return [
+    start, [22, -64], [28, -54], [16, -45], [22, -36], [9, -29], [3, -23],
+    [-9, -21], [-16, -15], [-25, -16], [-33, -11], [-42, -11], [-49, -5], [-55, 1],
+  ];
+}
 
 function drawLying(ctx, p) {
   ctx.save();
   if (p.facing > 0) ctx.scale(-1, 1);
-  ctx.scale(p.scaleX, p.scaleY);
+  ctx.scale(LIE_SIZE * p.scaleX, LIE_SIZE * p.scaleY);
 
   // Feet poking out at each end, behind the body.
-  footShape(ctx, -46, -8, Math.atan2(0.35, -1), 15, 8.5, 0.6);
-  footShape(ctx, 48, -8, Math.atan2(0.35, 1), 15, 8.5, 0.6);
+  footShape(ctx, -42, -8, Math.atan2(0.35, -1), 15, 8.5, 0.6);
+  footShape(ctx, 43, -8, Math.atan2(0.35, 1), 15, 8.5, 0.6);
+
+  // Back spikes first so only their tips peek out.
+  for (const sp of LIE_BACK_SPIKES) {
+    ctx.beginPath();
+    const [bx, by] = liePoint(sp.base - sp.hw, -6);
+    ctx.moveTo(bx, by);
+    lieSpikeCurve(ctx, sp, 6);
+    ctx.closePath();
+    fillStroke(ctx, PALETTE.headBack);
+  }
 
   // Head + body.
   lieBodyPath(ctx);
   fillStroke(ctx, PALETTE.head);
 
-  // Shell over the far end, with its markings and shading.
+  // Shell over the far end and under the face, with markings and shading.
+  const crack = lieCrack();
   ctx.save();
   lieBodyPath(ctx);
   ctx.clip();
   ctx.beginPath();
-  ctx.moveTo(LIE_CRACK[0][0], LIE_CRACK[0][1] - 20);
-  for (const [x, y] of LIE_CRACK) ctx.lineTo(x, y);
-  ctx.lineTo(LIE.cx + LIE.rx + 10, 0);
-  ctx.lineTo(LIE.cx + LIE.rx + 10, LIE.cy - LIE.ry - 20);
+  ctx.moveTo(crack[0][0] + 20, crack[0][1] - 20);
+  for (const [x, y] of crack) ctx.lineTo(x, y);
+  ctx.lineTo(-70, 5);
+  ctx.lineTo(70, 5);
+  ctx.lineTo(70, -100);
   ctx.closePath();
   ctx.fillStyle = PALETTE.shell;
   ctx.fill();
-  drawMark(ctx, 42, -38, 10.5, Math.PI / 2 + 0.1, 'blue');
-  drawMark(ctx, 6, -6, 6.5, 0.3, 'red');
-  drawMark(ctx, 36, -2, 7, -0.2, 'red');
-  ellipse(ctx, 20, -2, LIE.rx, 12);
+  drawMark(ctx, 39, -44, 10.5, Math.PI / 2 + 0.1, 'blue');
+  drawMark(ctx, 5, -9, 6.5, 0.3, 'red');
+  drawMark(ctx, 33, -6, 7, -0.2, 'red');
+  ellipse(ctx, 14, -2, LIE.rx, 12);
   ctx.fillStyle = PALETTE.shellShade;
   ctx.fill();
   ctx.restore();
   ctx.beginPath();
-  ctx.moveTo(LIE_CRACK[0][0], LIE_CRACK[0][1]);
-  for (const [x, y] of LIE_CRACK) ctx.lineTo(x, y);
+  ctx.moveTo(crack[0][0], crack[0][1]);
+  for (const [x, y] of crack) ctx.lineTo(x, y);
   ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
   ctx.strokeStyle = PALETTE.outline;
@@ -820,18 +842,18 @@ function drawLying(ctx, p) {
 
   // Face, low on the head near the floor.
   const sleepy = { ...p, lookX: 0, lookY: 0, blink: 0 };
-  drawEye(ctx, -42, -21, -1, sleepy);
-  drawEye(ctx, -22, -22, 1, sleepy);
+  drawEye(ctx, -38, -28, -1, sleepy);
+  drawEye(ctx, -19, -29, 1, sleepy);
   ctx.fillStyle = PALETTE.cheek + '0.75)';
-  ellipse(ctx, -51, -14, 5, 3);
+  ellipse(ctx, -47, -21, 5, 3);
   ctx.fill();
-  ellipse(ctx, -12, -16, 5, 3);
+  ellipse(ctx, -10, -23, 5, 3);
   ctx.fill();
   // Little "ω" cat mouth.
   ctx.beginPath();
-  ctx.moveTo(-36, -14);
-  ctx.quadraticCurveTo(-34, -11, -32, -14);
-  ctx.quadraticCurveTo(-30, -11, -28, -14);
+  ctx.moveTo(-33, -21);
+  ctx.quadraticCurveTo(-31, -18, -29, -21);
+  ctx.quadraticCurveTo(-27, -18, -25, -21);
   ctx.lineWidth = 1.8;
   ctx.lineCap = 'round';
   ctx.strokeStyle = PALETTE.outline;
@@ -839,7 +861,7 @@ function drawLying(ctx, p) {
 
   // Arm tucked in at the bottom front.
   ctx.save();
-  ctx.translate(-3, -11);
+  ctx.translate(-4, -13);
   ctx.rotate(0.55);
   ellipse(ctx, 0, 6, 7.5, 9.5);
   fillStroke(ctx, PALETTE.limb, 2);
