@@ -290,8 +290,9 @@ function ovalLeg(ctx, x, y, angle, len, width, shade = null) {
     for (let i = 0; i <= steps; i++) {
       const t = (i / steps) * Math.PI * 2;
       const u = Math.cos(t); // -1 (top, under the belly) .. 1 (tip)
-      // Rounder at the top, a soft point at the tip, widest a bit above the middle.
-      const p = u > 0 ? 0.78 : 0.5;
+      // Round at the top; at the tip 0.5 would be fully round and higher values
+      // pointier, so 0.62 gives a point with a softly rounded end.
+      const p = u > 0 ? 0.62 : 0.5;
       const half = width * Math.pow(Math.max(0, 1 - u * u), p) * (1 - 0.22 * u);
       ctx.lineTo(len * u, half * Math.sign(Math.sin(t)));
     }
