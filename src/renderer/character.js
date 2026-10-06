@@ -1,183 +1,307 @@
-// Procedural drawing of the companion ("Mochi", a round little cat-blob).
+// Procedural drawing of the companion: Togepi, a little egg-shell Pokémon.
 // Everything is drawn relative to his feet at (0, 0); up is negative y.
 // Wrapped in an IIFE so its helpers don't leak into the page's global scope.
 (function () {
 'use strict';
 
 const PALETTE = {
-  outline: '#4a3226',
-  body: '#ffb46b',
-  bodyShade: '#f59a4c',
-  belly: '#ffe6c7',
-  innerEar: '#ff9eaa',
-  cheek: 'rgba(255, 120, 130, ',
-  eye: '#2e211a',
+  outline: '#5b4534',
+  head: '#f8e7a2',
+  headShade: '#ecd27e',
+  headBack: '#eedb94',
+  shell: '#fffdf7',
+  shellShade: 'rgba(150, 150, 200, 0.16)',
+  red: '#e8505b',
+  blue: '#4a86d0',
+  cheek: 'rgba(247, 140, 140, ',
+  eye: '#2a211c',
   white: '#ffffff',
-  mouth: '#7a3b2e',
-  tongue: '#ff7d8a',
+  mouth: '#b8434f',
+  tongue: '#f58a95',
 };
 
-const BODY_RX = 40;
-const BODY_RY = 41;
-const BODY_CY = -45;
+// Body: an egg, a little taller than wide. The top is his yellow head, the
+// bottom the shell.
+const CY = -52; // body centre
+const R = 41; // half width
+const RY = 45; // half height
+const FACE_Y = -74; // eye line
+
+// Spikes on top of the head. Seen from the front there are three big ones:
+// the centre one and one at each top corner of the head, pointing mostly up.
+// Two smaller ones sit further back and only peek out between them.
+// Angles are degrees around the egg, -90 = straight up.
+//   base: where the spike sits on the head, hw: half its width at the base,
+//   tip: direction it points, len: how far it sticks out past the head.
+const FRONT_SPIKES = [
+  { base: -146, hw: 20, tip: -138, len: 16.5 },
+  { base: -90, hw: 18, tip: -90, len: 15 },
+  { base: -34, hw: 20, tip: -42, len: 16.5 },
+];
+const BACK_SPIKES = [
+  { base: -114, hw: 8, tip: -113, len: 7 },
+  { base: -66, hw: 8, tip: -67, len: 7 },
+];
+
+// Zig-zag edge of the shell: [x, y offset from the body centre] (front view).
+// The two ends are snapped onto the egg's outline.
+function zigzag(lift) {
+  const pts = [
+    [-41, 0], [-32, -6], [-23, 1], [-13, -6.5], [-4, 0], [6, -5.5],
+    [15, 1], [25, -6], [33, -0.5], [41, 0],
+  ].map(([x, y]) => [x, CY + y - lift]);
+  for (const i of [0, pts.length - 1]) {
+    const y = pts[i][1];
+    pts[i][0] = Math.sign(pts[i][0]) * R * Math.sqrt(1 - ((y - CY) / RY) ** 2);
+  }
+  return pts;
+}
+const ZIGZAG = zigzag(0);
+const ZIGZAG_BACK = zigzag(9);
+
+// Triangle markings on the shell: [x, y, size, rotation (rad), colour]
+const MARKS_FRONT = [
+  [3, -32, 10.5, Math.PI / 2 + 0.12, 'blue'],
+  [-24, -25, 7.5, 0.2, 'red'],
+  [28, -40, 7, -0.5, 'red'],
+  [-36, -44, 6, 1.2, 'blue'],
+  [16, -13, 6, 0.1, 'red'],
+];
+const MARKS_BACK = [
+  [-4, -36, 10, 0.4, 'blue'],
+  [24, -25, 7, -0.3, 'red'],
+  [-26, -21, 7, 0.9, 'red'],
+  [33, -48, 5.5, 1.6, 'red'],
+];
+
+const TAU = Math.PI * 2;
 
 function ellipse(ctx, x, y, rx, ry, rot = 0) {
   ctx.beginPath();
-  ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot, 0, Math.PI * 2);
+  ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot, 0, TAU);
 }
 
-function fillStroke(ctx, fill, lineWidth = 3) {
+function fillStroke(ctx, fill, lineWidth = 2.2) {
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = lineWidth;
   ctx.strokeStyle = PALETTE.outline;
-  ctx.stroke();
-}
-
-function drawTail(ctx, p) {
-  const side = -p.facing; // tail sticks out the back
-  const wag = p.tailWag;
-  ctx.save();
-  ctx.translate(side * 30, -22);
-  ctx.rotate(side * (0.5 + wag));
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.quadraticCurveTo(side * 26, -6, side * 24, -30);
+  ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.lineWidth = 15;
-  ctx.strokeStyle = PALETTE.outline;
   ctx.stroke();
-  ctx.lineWidth = 9;
-  ctx.strokeStyle = PALETTE.body;
-  ctx.stroke();
-  ctx.restore();
 }
 
-function drawFoot(ctx, x, lift, p) {
-  ctx.save();
-  if (p.feet === 'dangle') {
-    // Little kicking legs hanging down.
-    const kick = Math.sin(p.t * 14 + x) * 4;
-    ctx.beginPath();
-    ctx.moveTo(x * 0.7, -10);
-    ctx.lineTo(x + kick * 0.5, 4 + kick);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 11;
-    ctx.strokeStyle = PALETTE.outline;
-    ctx.stroke();
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = PALETTE.body;
-    ctx.stroke();
-    ellipse(ctx, x + kick * 0.5, 6 + kick, 9, 6);
-    fillStroke(ctx, PALETTE.body, 2.5);
-  } else if (p.feet === 'sit') {
-    ellipse(ctx, x * 1.15, -4, 11, 7, x > 0 ? -0.3 : 0.3);
-    fillStroke(ctx, PALETTE.belly, 2.5);
-  } else {
-    ellipse(ctx, x, -5 - lift, 11, 7);
-    fillStroke(ctx, PALETTE.body, 2.5);
+// Point at angle `deg` around the egg, `r` measured in half-widths (R = on the outline).
+function polar(deg, r) {
+  const a = (deg * Math.PI) / 180;
+  return [Math.cos(a) * r, CY + Math.sin(a) * r * (RY / R)];
+}
+
+function eggArc(ctx, fromDeg, toDeg) {
+  ctx.ellipse(0, CY, R, RY, 0, rad(fromDeg), rad(toDeg));
+}
+
+// Spikes for the current pose. When he turns to one side (3/4 view) they
+// shift that way: the near-side spike gets shorter, the far back spike shows more.
+function spikesFor(p) {
+  const turn = p.view === 'back' ? 0 : p.facing;
+  const shift = turn * 7;
+  const front = FRONT_SPIKES.map((sp) => {
+    const nearSide = Math.sign(sp.tip + 90) === turn;
+    const farSide = Math.sign(sp.tip + 90) === -turn;
+    return {
+      ...sp,
+      base: sp.base + shift,
+      tip: sp.tip + shift,
+      len: sp.len * (nearSide ? 0.82 : farSide ? 1.05 : 1),
+    };
+  });
+  const back = BACK_SPIKES.map((sp) => {
+    const nearSide = Math.sign(sp.tip + 90) === turn;
+    return { ...sp, base: sp.base + shift, tip: sp.tip + shift, len: sp.len * (nearSide ? 0.55 : turn ? 1.25 : 1) };
+  });
+  return { front, back };
+}
+
+// Outline of one spike from its first base point to its second, with a soft tip.
+function spikeCurve(ctx, sp, baseR) {
+  const [b1x, b1y] = polar(sp.base - sp.hw, baseR);
+  const [b2x, b2y] = polar(sp.base + sp.hw, baseR);
+  const [tx, ty] = polar(sp.tip, R + sp.len);
+  const [mx, my] = polar(sp.base, baseR);
+  // Control points halfway up each side, nudged outwards so the sides bulge slightly.
+  const bulge = 0.18;
+  const c1x = (b1x + tx) / 2 + ((b1x + tx) / 2 - mx) * bulge;
+  const c1y = (b1y + ty) / 2 + ((b1y + ty) / 2 - my) * bulge;
+  const c2x = (b2x + tx) / 2 + ((b2x + tx) / 2 - mx) * bulge;
+  const c2y = (b2y + ty) / 2 + ((b2y + ty) / 2 - my) * bulge;
+  const round = 0.2;
+  ctx.quadraticCurveTo(c1x, c1y, tx + (c1x - tx) * round, ty + (c1y - ty) * round);
+  ctx.quadraticCurveTo(tx, ty, tx + (c2x - tx) * round, ty + (c2y - ty) * round);
+  ctx.quadraticCurveTo(c2x, c2y, b2x, b2y);
+}
+
+function rad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+// Silhouette of head + body: a circle with the front spikes on top.
+function bodyPath(ctx, spikes) {
+  ctx.beginPath();
+  eggArc(ctx, 0, 180); // bottom half, right to left
+  let angle = -180;
+  for (const sp of spikes) {
+    eggArc(ctx, angle, sp.base - sp.hw);
+    spikeCurve(ctx, sp, R);
+    angle = sp.base + sp.hw;
   }
-  ctx.restore();
+  eggArc(ctx, angle, 0);
+  ctx.closePath();
 }
 
-function drawEar(ctx, side, p) {
+// A spike further back on the head; drawn before the body so only its tip shows.
+function drawBackSpike(ctx, sp) {
+  ctx.beginPath();
+  const [bx, by] = polar(sp.base - sp.hw, R - 6);
+  ctx.moveTo(bx, by);
+  spikeCurve(ctx, sp, R - 6);
+  ctx.closePath();
+  fillStroke(ctx, PALETTE.headBack);
+}
+
+function shellPath(ctx, zig) {
+  ctx.beginPath();
+  ctx.moveTo(zig[0][0], zig[0][1]);
+  for (let i = 1; i < zig.length; i++) ctx.lineTo(zig[i][0], zig[i][1]);
+  const last = zig[zig.length - 1];
+  const startA = Math.atan2((last[1] - CY) / RY, last[0] / R);
+  const endA = Math.atan2((zig[0][1] - CY) / RY, zig[0][0] / R);
+  ctx.ellipse(0, CY, R, RY, 0, startA, endA);
+  ctx.closePath();
+}
+
+function drawMark(ctx, x, y, size, rot, color) {
   ctx.save();
-  ctx.translate(side * 23, BODY_CY - 30);
-  ctx.rotate(side * (0.25 + p.earFlop));
+  ctx.translate(x, y);
+  ctx.rotate(rot);
   ctx.beginPath();
-  ctx.moveTo(-12, 8);
-  ctx.quadraticCurveTo(-4, -22, 2, -24);
-  ctx.quadraticCurveTo(8, -18, 13, 8);
+  for (let i = 0; i < 3; i++) {
+    const a = -Math.PI / 2 + (i * TAU) / 3;
+    ctx.lineTo(Math.cos(a) * size, Math.sin(a) * size);
+  }
   ctx.closePath();
-  fillStroke(ctx, PALETTE.body);
-  ctx.beginPath();
-  ctx.moveTo(-6, 4);
-  ctx.quadraticCurveTo(-1, -12, 2, -14);
-  ctx.quadraticCurveTo(6, -10, 7, 4);
-  ctx.closePath();
-  ctx.fillStyle = PALETTE.innerEar;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = size * 0.7;
+  ctx.strokeStyle = PALETTE[color];
+  ctx.stroke();
+  ctx.fillStyle = PALETTE.shell;
   ctx.fill();
   ctx.restore();
 }
 
-function drawArm(ctx, side, p) {
-  ctx.save();
-  let angle;
+// --------------------------------------------------------------- limbs
+
+function drawFoot(ctx, side, p) {
+  const lift = Math.max(0, Math.sin(p.walkPhase + (side > 0 ? Math.PI : 0))) * p.stepHeight;
+  if (p.feet === 'dangle') {
+    const kick = Math.sin(p.t * 13 + side) * 3;
+    ellipse(ctx, side * 19, 0 + kick, 9.5, 10, side * 0.25);
+  } else if (p.feet === 'sit') {
+    ellipse(ctx, side * 27, -8.5, 13, 9.5, side * -0.5);
+  } else {
+    ellipse(ctx, side * 21 + side * lift * 0.25, -8.5 - lift, 11.5, 8.5);
+  }
+  fillStroke(ctx, PALETTE.head, 2.3);
+}
+
+function armAngle(side, p) {
+  // Local +y of the nub points along the arm. Angle a gives direction (-sin a, cos a).
+  const lead = side === p.facing;
   switch (p.arms) {
     case 'up':
-      angle = -side * (2.4 + Math.sin(p.t * 16 + side) * 0.25);
-      break;
-    case 'wave':
-      angle = -side * (1.6 + Math.sin(p.t * 9) * 0.5);
-      break;
+      return -side * (2.35 + Math.sin(p.t * 15 + side) * 0.2);
     case 'flail':
-      angle = -side * (1.5 + Math.sin(p.t * 22 + side * 2) * 0.8);
-      break;
+      return -side * (1.6 + Math.sin(p.t * 20 + side * 2) * 0.7);
+    case 'wave':
+      return lead ? -side * (2.5 + Math.sin(p.t * 11) * 0.45) : -side * 0.45;
+    case 'hold':
+      return side * 2.0;
+    case 'hug':
+      return side * 1.25;
+    case 'cheer':
+      return -side * (1.9 + Math.abs(Math.sin(p.t * 8)) * 0.4);
+    case 'fists':
+      return -side * (0.9 + Math.sin(p.t * 18) * 0.15);
     default:
-      angle = side * (0.35 + Math.sin(p.walkPhase + (side > 0 ? 0 : Math.PI)) * p.armSwing);
+      return -side * (0.3 + Math.sin(p.walkPhase + (side > 0 ? 0 : Math.PI)) * p.armSwing);
   }
-  ctx.translate(side * 33, BODY_CY + 8);
-  ctx.rotate(angle);
-  ellipse(ctx, 0, 9, 7, 11);
-  fillStroke(ctx, PALETTE.body, 2.5);
+}
+
+function drawArm(ctx, side, p) {
+  const inward = p.arms === 'hold' || p.arms === 'hug';
+  ctx.save();
+  ctx.translate(side * (inward ? 30 : 36), CY + (inward ? 10 : 2));
+  ctx.rotate(armAngle(side, p));
+  ellipse(ctx, 0, 6, 6.5, 8.5);
+  fillStroke(ctx, PALETTE.head, 2.3);
   ctx.restore();
 }
 
-function drawEye(ctx, x, y, p) {
+// --------------------------------------------------------------- face
+
+function drawEye(ctx, x, y, side, p) {
   ctx.save();
-  // Eyes drift towards whatever he's looking at.
-  ctx.translate(x + p.lookX * 2.5, y + p.lookY * 2);
+  ctx.translate(x + p.lookX * 2, y + p.lookY * 1.5);
   ctx.strokeStyle = PALETTE.eye;
   ctx.fillStyle = PALETTE.eye;
   ctx.lineCap = 'round';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.4;
   const open = 1 - p.blink;
+  const closedArc = (dir) => {
+    ctx.beginPath();
+    ctx.moveTo(-4.5, 0);
+    ctx.quadraticCurveTo(0, dir * 5, 4.5, 0);
+    ctx.stroke();
+  };
   switch (p.eyes) {
     case 'happy': // ^ ^
-      ctx.beginPath();
-      ctx.moveTo(-6, 2);
-      ctx.quadraticCurveTo(0, -7, 6, 2);
-      ctx.stroke();
+      closedArc(-1);
       break;
-    case 'closed': // sleepy arcs
-      ctx.beginPath();
-      ctx.moveTo(-6, -1);
-      ctx.quadraticCurveTo(0, 5, 6, -1);
-      ctx.stroke();
+    case 'content': // ‿ ‿ (peaceful, eyes closed)
+    case 'closed':
+      closedArc(1);
       break;
     case 'squint': // > <
       ctx.beginPath();
-      ctx.moveTo(x < 0 ? -5 : 5, -5);
-      ctx.lineTo(x < 0 ? 5 : -5, 0);
-      ctx.lineTo(x < 0 ? -5 : 5, 5);
+      ctx.moveTo(-side * 4, -4);
+      ctx.lineTo(side * 3.5, 0);
+      ctx.lineTo(-side * 4, 4);
       ctx.stroke();
       break;
-    case 'dizzy': {
+    case 'sad':
+    case 'angry': {
+      ellipse(ctx, 0, 1, 3, 3.8 * Math.max(0.1, open));
+      ctx.fill();
+      ctx.fillStyle = PALETTE.white;
+      ellipse(ctx, -0.9, -0.3, 1.1, 1.2);
+      ctx.fill();
+      // Brows: worried (inner end up) or angry (inner end down).
+      const inner = p.eyes === 'sad' ? -9.5 : -4.5;
+      const outer = p.eyes === 'sad' ? -6 : -8.5;
       ctx.beginPath();
-      const turns = 2.2;
-      for (let i = 0; i <= 40; i++) {
-        const a = (i / 40) * turns * Math.PI * 2 + p.t * 8 * (x < 0 ? 1 : -1);
-        const r = (i / 40) * 7;
-        const px = Math.cos(a) * r;
-        const py = Math.sin(a) * r;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
+      ctx.moveTo(side * 5, outer);
+      ctx.lineTo(-side * 3, inner);
       ctx.lineWidth = 2;
       ctx.stroke();
       break;
     }
     default: {
-      const big = p.eyes === 'wide' ? 1.3 : 1;
-      const ry = 8 * big * Math.max(0.08, open);
-      ellipse(ctx, 0, 0, 6.5 * big, ry);
+      const big = p.eyes === 'wide' ? 1.25 : p.eyes === 'small' ? 0.8 : 1;
+      ellipse(ctx, 0, 0, 3.7 * big, 5.5 * big * Math.max(0.1, open));
       ctx.fill();
       if (open > 0.4) {
-        // Highlights shift a little with where he's looking.
         ctx.fillStyle = PALETTE.white;
-        ellipse(ctx, -2 + p.lookX * 2, -3 + p.lookY * 2, 2.6 * big, 2.8 * big);
-        ctx.fill();
-        ellipse(ctx, 2.2 + p.lookX * 1.5, 3 + p.lookY * 1.5, 1.2 * big, 1.2 * big);
+        ellipse(ctx, -1.1 + p.lookX * 0.6, -2, 1.6 * big, 1.9 * big);
         ctx.fill();
       }
     }
@@ -189,49 +313,275 @@ function drawMouth(ctx, x, y, p) {
   ctx.save();
   ctx.translate(x, y);
   ctx.strokeStyle = PALETTE.outline;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  switch (p.mouth) {
-    case 'open': // happy open mouth
+  let kind = p.mouth;
+  if (kind === 'talk') kind = Math.sin(p.t * 16) > 0 ? 'open' : 'smile';
+  if (kind === 'chew') kind = Math.sin(p.t * 12) > 0 ? 'smallSmile' : 'flat';
+  const openMouth = (w, h) => {
+    ctx.beginPath();
+    ctx.moveTo(-w, -1);
+    ctx.quadraticCurveTo(0, -2, w, -1);
+    ctx.quadraticCurveTo(w * 0.6, h, 0, h);
+    ctx.quadraticCurveTo(-w * 0.6, h, -w, -1);
+    ctx.closePath();
+    ctx.fillStyle = PALETTE.mouth;
+    ctx.fill();
+    ctx.stroke();
+    ellipse(ctx, 0, h * 0.62, w * 0.45, h * 0.25);
+    ctx.fillStyle = PALETTE.tongue;
+    ctx.fill();
+  };
+  switch (kind) {
+    case 'open':
+      openMouth(4.2, 6);
+      break;
+    case 'smile': // small open smile, his usual face
+      openMouth(3, 4);
+      break;
+    case 'smallSmile':
       ctx.beginPath();
-      ctx.moveTo(-6, -1);
-      ctx.quadraticCurveTo(0, 10, 6, -1);
-      ctx.closePath();
+      ctx.moveTo(-3.5, 0);
+      ctx.quadraticCurveTo(0, 3.5, 3.5, 0);
+      ctx.stroke();
+      break;
+    case 'o':
+      ellipse(ctx, 0, 1.5, 2.6, 3.3);
       ctx.fillStyle = PALETTE.mouth;
       ctx.fill();
       ctx.stroke();
-      ellipse(ctx, 0, 4, 3, 2);
-      ctx.fillStyle = PALETTE.tongue;
-      ctx.fill();
       break;
-    case 'o':
-      ellipse(ctx, 0, 2, 3.5, 4.5);
+    case 'frown':
+      ctx.beginPath();
+      ctx.moveTo(-3.5, 2.5);
+      ctx.quadraticCurveTo(0, -1.5, 3.5, 2.5);
+      ctx.stroke();
+      break;
+    case 'growl': // angry open frown
+      ctx.beginPath();
+      ctx.moveTo(-4, 3);
+      ctx.quadraticCurveTo(0, -2.5, 4, 3);
+      ctx.closePath();
       ctx.fillStyle = PALETTE.mouth;
       ctx.fill();
       ctx.stroke();
       break;
     case 'wavy':
       ctx.beginPath();
-      ctx.moveTo(-7, 1);
-      ctx.quadraticCurveTo(-3.5, -3, 0, 1);
-      ctx.quadraticCurveTo(3.5, 5, 7, 1);
+      ctx.moveTo(-4.5, 1);
+      ctx.quadraticCurveTo(-2.2, -1.5, 0, 1);
+      ctx.quadraticCurveTo(2.2, 3.5, 4.5, 1);
       ctx.stroke();
       break;
     case 'flat':
       ctx.beginPath();
-      ctx.moveTo(-3, 1);
-      ctx.lineTo(3, 1);
+      ctx.moveTo(-2.5, 1);
+      ctx.lineTo(2.5, 1);
       ctx.stroke();
       break;
-    default: // cat smile "w"
-      ctx.beginPath();
-      ctx.moveTo(-6, 0);
-      ctx.quadraticCurveTo(-3, 4, 0, 0);
-      ctx.quadraticCurveTo(3, 4, 6, 0);
-      ctx.stroke();
+    default:
+      openMouth(3, 4);
   }
   ctx.restore();
+}
+
+// --------------------------------------------------------------- props
+
+function drawApple(ctx, x, y, progress) {
+  // Bites are taken out of it as `progress` goes 0 -> 1.
+  const bites = Math.min(3, Math.floor(progress * 4));
+  if (bites >= 3 && progress > 0.9) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.save();
+  if (bites > 0) {
+    ctx.beginPath();
+    ctx.rect(-30, -30, 60, 60);
+    const biteSpots = [[-10, -4], [9, -6], [0, -11]];
+    for (let i = 0; i < bites; i++) {
+      ctx.moveTo(biteSpots[i][0] + 5, biteSpots[i][1]);
+      ctx.arc(biteSpots[i][0], biteSpots[i][1], 5, 0, TAU);
+    }
+    ctx.clip('evenodd');
+  }
+  ellipse(ctx, 0, 0, 11, 10.5);
+  ctx.fillStyle = '#e53941';
+  ctx.fill();
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ellipse(ctx, -3.5, -3, 2.2, 3, -0.5);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fill();
+  ctx.restore();
+  // Stem + leaf.
+  ctx.beginPath();
+  ctx.moveTo(0, -9.5);
+  ctx.lineTo(1, -13.5);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ellipse(ctx, 4.5, -13.5, 3.8, 2, -0.4);
+  fillStroke(ctx, '#6cbf5a', 1.4);
+  ctx.restore();
+}
+
+function drawDaisy(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * TAU;
+    ellipse(ctx, Math.cos(a) * size * 0.75, Math.sin(a) * size * 0.75, size * 0.55, size * 0.32, a);
+    fillStroke(ctx, '#ffffff', 1.2);
+  }
+  ellipse(ctx, 0, 0, size * 0.42, size * 0.42);
+  fillStroke(ctx, '#ffd23f', 1.2);
+  ctx.restore();
+}
+
+function drawFlower(ctx, x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.quadraticCurveTo(3, 4, -1, 16);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = '#5fae4e';
+  ctx.stroke();
+  ellipse(ctx, 5, 5, 4.5, 2.2, -0.6);
+  fillStroke(ctx, '#78c766', 1.3);
+  drawDaisy(ctx, 0, -14, 7.5);
+  ctx.restore();
+}
+
+function drawBall(ctx, x, y, rot) {
+  const r = 11;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, Math.PI, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#e53941';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-r, 0);
+  ctx.lineTo(r, 0);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ellipse(ctx, 0, 0, r, r);
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  ellipse(ctx, 0, 0, 3, 3);
+  fillStroke(ctx, '#ffffff', 1.8);
+  ctx.restore();
+}
+
+function drawBackpackBag(ctx, p) {
+  const side = -p.facing;
+  ctx.save();
+  ctx.translate(side * 37, CY + 4);
+  ctx.rotate(side * 0.12);
+  ctx.beginPath();
+  ctx.roundRect(-11, -18, 22, 34, 8);
+  fillStroke(ctx, '#3f7ec9', 2.4);
+  ctx.beginPath();
+  ctx.roundRect(-8, 2, 16, 11, 4);
+  fillStroke(ctx, '#5a97dc', 1.8);
+  ctx.restore();
+}
+
+function drawBackpackStrap(ctx, p) {
+  const side = -p.facing;
+  ctx.beginPath();
+  ctx.moveTo(side * 30, CY - 8);
+  ctx.quadraticCurveTo(side * 10, CY + 4, side * 6, CY + 30);
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.lineWidth = 3.4;
+  ctx.strokeStyle = '#3f7ec9';
+  ctx.stroke();
+}
+
+// --------------------------------------------------------------- body
+
+function drawBodyAndShell(ctx, p, back) {
+  const spikes = spikesFor(p);
+  for (const sp of spikes.back) drawBackSpike(ctx, sp);
+
+  // Head + body in yellow.
+  bodyPath(ctx, spikes.front);
+  fillStroke(ctx, PALETTE.head);
+
+  // Soft shading low on the head.
+  ctx.save();
+  bodyPath(ctx, spikes.front);
+  ctx.clip();
+  ellipse(ctx, 0, CY + 6, R + 4, 22);
+  ctx.fillStyle = PALETTE.headShade;
+  ctx.globalAlpha = 0.45;
+  ctx.fill();
+  ctx.restore();
+
+  // Shell.
+  const zig = back ? ZIGZAG_BACK : ZIGZAG;
+  const shift = back ? 0 : p.facing * 3; // a hint of 3/4 view
+  shellPath(ctx, zig);
+  ctx.fillStyle = PALETTE.shell;
+  ctx.fill();
+  ctx.save();
+  shellPath(ctx, zig);
+  ctx.clip();
+  for (const [x, y, s, rot, c] of back ? MARKS_BACK : MARKS_FRONT) drawMark(ctx, x + shift, y, s, rot, c);
+  ellipse(ctx, 6, CY + 40, R + 6, 18);
+  ctx.fillStyle = PALETTE.shellShade;
+  ctx.fill();
+  ctx.restore();
+  shellPath(ctx, zig);
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+function drawFace(ctx, p) {
+  const fx = p.facing * 3.5;
+  drawEye(ctx, fx - 11.5, FACE_Y, -1, p);
+  drawEye(ctx, fx + 11.5, FACE_Y, 1, p);
+  const blush = p.blush;
+  if (blush > 0.01) {
+    ctx.fillStyle = PALETTE.cheek + (0.35 + 0.5 * blush) + ')';
+    ellipse(ctx, fx - 21, FACE_Y + 6, 5.5 + blush, 3.2);
+    ctx.fill();
+    ellipse(ctx, fx + 21, FACE_Y + 6, 5.5 + blush, 3.2);
+    ctx.fill();
+    if (blush > 0.8) {
+      // Little blush hatching when he's really flustered.
+      ctx.strokeStyle = 'rgba(220, 90, 100, 0.7)';
+      ctx.lineWidth = 1.1;
+      for (const sx of [-21, 21]) {
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(fx + sx + i * 2.6 - 1, FACE_Y + 7.5);
+          ctx.lineTo(fx + sx + i * 2.6 + 1, FACE_Y + 4.5);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+  drawMouth(ctx, fx, FACE_Y + 9, p);
 }
 
 /**
@@ -244,66 +594,58 @@ function drawCharacter(ctx, p) {
   ctx.rotate(p.tilt);
   ctx.translate(0, p.bob);
 
-  // Soft ground shadow is drawn by the caller (it shouldn't tilt).
-
-  ctx.save();
-  // Squash & stretch around the feet.
-  ctx.scale(p.scaleX, p.scaleY);
-
-  drawTail(ctx, p);
-
-  const leftLift = Math.max(0, Math.sin(p.walkPhase)) * p.stepHeight;
-  const rightLift = Math.max(0, Math.sin(p.walkPhase + Math.PI)) * p.stepHeight;
-  drawFoot(ctx, -17, leftLift, p);
-  drawFoot(ctx, 17, rightLift, p);
-
-  drawEar(ctx, -1, p);
-  drawEar(ctx, 1, p);
-
-  // Body.
-  ellipse(ctx, 0, BODY_CY, BODY_RX, BODY_RY);
-  fillStroke(ctx, PALETTE.body);
-  // Shading on the lower back.
-  ctx.save();
-  ellipse(ctx, 0, BODY_CY, BODY_RX - 1.5, BODY_RY - 1.5);
-  ctx.clip();
-  ellipse(ctx, -p.facing * 14, BODY_CY + 30, 40, 22);
-  ctx.fillStyle = PALETTE.bodyShade;
-  ctx.globalAlpha = 0.35;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  // Belly patch.
-  const faceX = p.facing * 5;
-  ellipse(ctx, faceX * 0.6, BODY_CY + 18, 23, 19);
-  ctx.fillStyle = PALETTE.belly;
-  ctx.fill();
-  ctx.restore();
-
-  drawArm(ctx, -1, p);
-  drawArm(ctx, 1, p);
-
-  // Face.
-  const eyeY = BODY_CY - 10;
-  drawEye(ctx, faceX - 14, eyeY, p);
-  drawEye(ctx, faceX + 14, eyeY, p);
-
-  if (p.blush > 0.01) {
-    ctx.fillStyle = PALETTE.cheek + (0.25 + 0.45 * p.blush) + ')';
-    ellipse(ctx, faceX - 24, eyeY + 9, 6.5, 4);
-    ctx.fill();
-    ellipse(ctx, faceX + 24, eyeY + 9, 6.5, 4);
-    ctx.fill();
+  if (p.view === 'lying') {
+    // Lying on his tummy, head towards the facing direction.
+    ctx.scale(1.18, 0.8);
+    ctx.translate(0, CY);
+    ctx.rotate(p.facing * 0.62);
+    ctx.translate(0, -CY);
   }
 
-  // Tiny nose.
-  ctx.fillStyle = PALETTE.innerEar;
-  ellipse(ctx, faceX, eyeY + 6, 2.5, 1.8);
-  ctx.fill();
+  ctx.save();
+  ctx.scale(p.scaleX, p.scaleY);
+  const back = p.view === 'back';
 
-  drawMouth(ctx, faceX, eyeY + 9, p);
+  if (p.prop === 'backpack' && !back) drawBackpackBag(ctx, p);
+
+  if (p.feet !== 'stand' || back) {
+    drawFoot(ctx, -1, p);
+    drawFoot(ctx, 1, p);
+  }
+  if (back) {
+    drawArm(ctx, -1, p);
+    drawArm(ctx, 1, p);
+  }
+
+  drawBodyAndShell(ctx, p, back);
+
+  if (back) {
+    if (p.prop === 'backpack') {
+      ctx.save();
+      ctx.translate(0, 0);
+      ctx.beginPath();
+      ctx.roundRect(-14, CY - 4, 28, 36, 9);
+      fillStroke(ctx, '#3f7ec9', 2.4);
+      ctx.restore();
+    }
+  } else {
+    if (p.feet === 'stand') {
+      drawFoot(ctx, -1, p);
+      drawFoot(ctx, 1, p);
+    }
+    drawFace(ctx, p);
+    if (p.prop === 'backpack') drawBackpackStrap(ctx, p);
+    if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY + 6);
+    drawArm(ctx, -1, p);
+    drawArm(ctx, 1, p);
+    // The apple is held up in front, over his hands.
+    if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY + 4, p.propProgress);
+  }
 
   ctx.restore();
   ctx.restore();
+
+  if (p.prop === 'ball') drawBall(ctx, p.ballX, -11, p.ballRot);
 }
 
 function defaultPose() {
@@ -317,18 +659,23 @@ function defaultPose() {
     walkPhase: 0,
     stepHeight: 0,
     armSwing: 0,
+    view: 'front', // front | back | lying
     feet: 'stand', // stand | sit | dangle
-    arms: 'down', // down | up | wave | flail
-    eyes: 'open', // open | wide | happy | closed | squint | dizzy
-    mouth: 'smile', // smile | open | o | wavy | flat
+    arms: 'down', // down | up | wave | flail | hold | hug | cheer | fists
+    eyes: 'open', // open | wide | small | happy | content | closed | squint | sad | angry
+    mouth: 'smile', // smile | smallSmile | open | o | frown | growl | wavy | flat | talk | chew
     blink: 0,
     lookX: 0,
     lookY: 0,
-    blush: 0.3,
-    tailWag: 0,
-    earFlop: 0,
+    blush: 0.35,
+    prop: null, // null | apple | flower | ball | backpack
+    propProgress: 0,
+    ballX: 0,
+    ballRot: 0,
   };
 }
+
+// --------------------------------------------------------------- effects
 
 function drawHeart(ctx, x, y, size, alpha) {
   ctx.save();
@@ -340,7 +687,7 @@ function drawHeart(ctx, x, y, size, alpha) {
   ctx.bezierCurveTo(-10, -4, -6, -12, 0, -6);
   ctx.bezierCurveTo(6, -12, 10, -4, 0, 3);
   ctx.closePath();
-  ctx.fillStyle = '#ff5d7a';
+  ctx.fillStyle = '#f2596f';
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = '#b8304d';
@@ -356,7 +703,7 @@ function drawStar(ctx, x, y, size, rot, alpha) {
   ctx.beginPath();
   for (let i = 0; i < 10; i++) {
     const r = i % 2 === 0 ? size : size * 0.45;
-    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const a = (i / 10) * TAU - Math.PI / 2;
     ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
   }
   ctx.closePath();
@@ -368,10 +715,10 @@ function drawStar(ctx, x, y, size, rot, alpha) {
   ctx.restore();
 }
 
-function drawText(ctx, text, x, y, size, alpha, color = '#4a3226') {
+function drawText(ctx, text, x, y, size, alpha, color = PALETTE.outline) {
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.font = `bold ${size}px "Comic Sans MS", "Chalkboard SE", system-ui, sans-serif`;
+  ctx.font = `bold ${size}px "Chalkboard SE", "Comic Sans MS", "Segoe Print", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 4;
@@ -386,11 +733,89 @@ function drawPuff(ctx, x, y, r, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ellipse(ctx, x, y, r, r * 0.7);
-  ctx.fillStyle = '#e9e1d8';
+  ctx.fillStyle = '#efe9e0';
   ctx.fill();
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(120,100,90,0.5)';
   ctx.stroke();
+  ctx.restore();
+}
+
+// Overlay symbols from the reference sheet, drawn near his head.
+function drawSoundLines(ctx, x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  const pulse = 1 + Math.sin(t * 14) * 0.15;
+  for (const [a, len] of [[-1.0, 9], [-0.45, 10], [0.1, 8]]) {
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
+    ctx.lineTo(Math.cos(a) * (6 + len * pulse), Math.sin(a) * (6 + len * pulse));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawAngerMark(ctx, x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  const s = 1 + Math.sin(t * 10) * 0.12;
+  ctx.scale(s, s);
+  ctx.strokeStyle = '#e0303e';
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2);
+    ctx.beginPath();
+    ctx.moveTo(2.5, -8);
+    ctx.quadraticCurveTo(2.5, -2.5, 8, -2.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawScribble(ctx, x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#3a2f2a';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  for (let i = 0; i <= 120; i++) {
+    const a = i * 0.55 + t * 3;
+    const r = 7 + Math.sin(i * 0.37) * 3.5;
+    const px = Math.cos(a) * r * 1.25 + Math.sin(i * 0.11) * 3;
+    const py = Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-8, 10);
+  ctx.lineTo(-11, 15);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSweat(ctx, x, y, t) {
+  ctx.save();
+  ctx.translate(x, y + Math.sin(t * 3) * 1.5);
+  ctx.beginPath();
+  ctx.moveTo(0, -6);
+  ctx.quadraticCurveTo(5, 2, 0, 4);
+  ctx.quadraticCurveTo(-5, 2, 0, -6);
+  ctx.fillStyle = '#9fd3f5';
+  ctx.fill();
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = '#4b8fc0';
+  ctx.stroke();
+  for (const [dx, dy, r] of [[8, -12, 2.2], [12, -6, 1.6]]) {
+    ellipse(ctx, dx, dy, r, r);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -401,6 +826,12 @@ window.Character = {
   drawStar,
   drawText,
   drawPuff,
-  BODY_CY,
+  drawDaisy,
+  drawSoundLines,
+  drawAngerMark,
+  drawScribble,
+  drawSweat,
+  BODY_CY: CY,
+  HEAD_TOP: CY - RY - 16,
 };
 })();

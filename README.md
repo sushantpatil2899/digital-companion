@@ -1,6 +1,8 @@
 # Desktop Companion
 
-A little desktop pet that lives on your screen. Meet **Mochi**, a round orange cat-blob who walks around the bottom of your screen, naps, and reacts when you play with him.
+A little desktop pet that lives on your screen: **Togepi**, drawn in code from a reference sheet of 20 poses. He walks around the bottom of your screen, keeps himself busy, naps, and reacts when you play with him.
+
+> Togepi and the Poké Ball are © Nintendo / Creatures / GAME FREAK / The Pokémon Company. This is a personal fan project: keep it on your own computer and don't publish or distribute builds of it.
 
 ## Playing with him
 
@@ -8,12 +10,16 @@ A little desktop pet that lives on your screen. Meet **Mochi**, a round orange c
 | --- | --- |
 | **Click and drag** | Gets picked up and dangles from your cursor, swinging as you move him around |
 | **Let go** | Drops to the ground and lands with a squish |
-| **Fling him** (drag fast, then let go) | Flies off ("Wheee!"), bounces off the screen edges, and gets dizzy after a hard landing |
-| **Click him** | A pat on the head: he gets happy and shows a heart. Wakes him up if he's asleep |
-| **Click and hold** (without moving) | Petting: he gets happy and keeps giving off hearts while you hold |
-| **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Take a nap / Wake up*, *Stay put*, *Start at login*, *Quit* |
+| **Fling him** (drag fast, then let go) | Flies off ("Wheee!") and bounces off the screen edges. A hard landing leaves him **confused** |
+| **Throw him 3 times within a minute** | He gets **angry** and stomps off. A pat makes up for it |
+| **Click him** | A pat on the head: he's **happy** and shows a heart. Wakes him (**surprised**) if he's asleep |
+| **Click and hold** (without moving) | **Getting a hug**: eyes closed, arms around himself, hearts while you hold |
+| **Leave the cursor resting on him** | He gets **shy**: blushes, with a sweat drop |
+| **Leave the cursor near him** | He gets **curious**: "?" |
+| **Come back after being away** | He **waves** at you (he also waves when he starts up and wakes up) |
+| **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Do something…*, *Take a nap / Wake up*, *Stay put*, *Start at login*, *Quit* |
 
-When you leave him alone he wanders, runs, sits, looks around, hops now and then, and dozes off (Zzz) after a while. He watches your cursor when it's nearby.
+On his own he walks, runs, **sits**, **blinks** and smiles, **jumps**, **talks**, **eats an apple**, **holds a flower**, **plays with his ball**, **goes on an adventure** with his backpack, turns around to watch your screen (**back view**), falls **asleep** after a while, and gets **sad** if you ignore him for a long time. *Do something…* in the menu lets you ask him for any of these.
 
 ## Running
 
@@ -44,8 +50,8 @@ The installer goes in `dist/`. Once he's installed, turn on *Start at login* fro
 
 ## Making him your own
 
-- `src/main/companion.js`: `TUNING` sets speeds, gravity, bounciness and how soon he gets sleepy. `chooseNext()` sets how often he does each thing on his own.
-- `src/renderer/character.js`: `PALETTE` sets his colours. The drawing functions set his shape and expressions.
+- `src/main/companion.js`: `TUNING` sets speeds, gravity, bounciness and how soon he gets sleepy, sad, curious, shy or angry. `ACTIVITIES` sets how often he does each thing on his own.
+- `src/renderer/character.js`: `PALETTE` sets his colours. `FRONT_SPIKES` / `BACK_SPIKES`, `zigzag()` and `MARKS_FRONT` set his head spikes, shell edge and shell markings. The drawing functions set his expressions and props.
 - `src/renderer/renderer.js`: `computePose()` maps each state to a pose and expression, and also has the particle effects.
 
 ## How it works

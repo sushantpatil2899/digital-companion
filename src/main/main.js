@@ -4,6 +4,19 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } = require('electron');
 const { Companion } = require('./companion');
 
+// Entries for the "Do something…" menu: [activity, label].
+const ACTIVITY_MENU = [
+  ['eat', 'Eat an apple'],
+  ['play', 'Play with the ball'],
+  ['flower', 'Smell a flower'],
+  ['talk', 'Chatter'],
+  ['wave', 'Wave'],
+  ['adventure', 'Go on an adventure'],
+  ['jump', 'Jump'],
+  ['sit', 'Sit down'],
+  ['backView', 'Turn around'],
+];
+
 // The window is a small transparent square that travels around the screen.
 // The character's feet sit at (WIN_W / 2, WIN_H - FOOT_MARGIN) inside it.
 const WIN_W = 220;
@@ -49,8 +62,8 @@ function createWindow() {
 
   companion = new Companion({
     bounds,
-    halfWidth: 42,
-    height: 95,
+    halfWidth: 46,
+    height: 113,
     x: (bounds.left + bounds.right) / 2,
     // Drop in from a bit above the floor so he lands on startup.
     y: bounds.floor - 260,
@@ -155,8 +168,8 @@ function updateClickThrough(cursor) {
   if (!CLICK_THROUGH) return;
   let over = true;
   if (!press && companion.state !== 'grabbed') {
-    const dx = (cursor.x - companion.x) / 52;
-    const dy = (cursor.y - (companion.y - 46)) / 56;
+    const dx = (cursor.x - companion.x) / 54;
+    const dy = (cursor.y - (companion.y - 55)) / 62;
     over = dx * dx + dy * dy <= 1;
   }
   const ignore = !over;
@@ -192,7 +205,7 @@ ipcMain.on('tray-icon', (_e, dataUrl) => {
   let image = nativeImage.createFromDataURL(dataUrl);
   image = image.resize({ width: process.platform === 'darwin' ? 18 : 24 });
   tray = new Tray(image);
-  tray.setToolTip('Desktop Companion');
+  tray.setToolTip('Togepi');
   if (process.platform === 'linux') {
     // Most Linux trays only support a fixed context menu, not click events.
     tray.setContextMenu(buildMenu());
@@ -235,6 +248,17 @@ function buildMenu() {
   const sleeping = companion && companion.state === 'sleep';
   const items = [
     { label: 'Come here', click: callHere },
+    {
+      label: 'Do something…',
+      submenu: ACTIVITY_MENU.map(([name, label]) => ({
+        label,
+        enabled: companion ? companion.isGrounded() : false,
+        click: () => {
+          companion.doActivity(name);
+          refreshTrayMenu();
+        },
+      })),
+    },
     {
       label: sleeping ? 'Wake up' : 'Take a nap',
       click: () => {

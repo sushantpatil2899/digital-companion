@@ -13,12 +13,46 @@ const TUNING = {
   airDrag: 0.35, // fraction of velocity lost per second while airborne
   wallBounce: 0.55, // fraction of speed kept when hitting a wall
   floorBounce: 0.35, // fraction of vertical speed kept on a hard landing
+  playSpeed: 95, // px/s, dribbling his ball
+  adventureSpeed: 85, // px/s, off on an adventure with his backpack
   hardLanding: 900, // px/s impact speed that counts as a "hard" landing
-  dizzyLanding: 1700, // px/s impact speed that makes him dizzy
+  confusedLanding: 1700, // px/s impact speed that leaves him confused
   maxThrowSpeed: 4000, // px/s
+  throwSpeed: 600, // px/s release speed that counts as a throw (vs. a drop)
+  angryThrows: 3, // this many throws ...
+  angryWindow: 60, // ... within this many seconds make him angry
   sleepAfter: 90, // seconds without interaction before he gets sleepy
+  sadAfter: 300, // seconds without interaction before he may get sad
   petToHappy: 0.3, // seconds of holding before hearts start appearing
+  curiousAfter: 1.5, // seconds the cursor lingers near him before he gets curious
+  curiousCooldown: 25,
+  shyAfter: 2, // seconds the cursor rests on him (no click) before he gets shy
+  shyCooldown: 20,
+  waveAway: 30, // seconds the cursor must be far away before he waves on its return
 };
+
+// Things he does on his own, with how likely each one is.
+const ACTIVITIES = [
+  ['walk', 30],
+  ['run', 5],
+  ['idle', 15],
+  ['sit', 10],
+  ['lookAround', 5],
+  ['jump', 5],
+  ['talk', 7],
+  ['eat', 5],
+  ['flower', 5],
+  ['play', 6],
+  ['adventure', 3],
+  ['backView', 4],
+];
+// What he may do while "stay put" is on.
+const STAY_ACTIVITIES = ['idle', 'sit', 'lookAround', 'talk', 'eat', 'flower', 'backView'];
+// Activities you can ask for from the menu.
+const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', 'sit', 'sleep', 'jump', 'backView'];
+
+// States the cursor reactions (curious / shy / wave) may interrupt.
+const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
 
 const STATES = [
   'idle',
@@ -30,10 +64,22 @@ const STATES = [
   'grabbed',
   'fall',
   'land',
-  'dizzy',
+  'confused',
   'happy',
+  'hug',
   'surprised',
   'lookAround',
+  'talk',
+  'eat',
+  'flower',
+  'play',
+  'adventure',
+  'backView',
+  'sad',
+  'angry',
+  'shy',
+  'curious',
+  'wave',
 ];
 
 function rand(min, max, rng) {
@@ -76,6 +122,15 @@ class Companion {
     this.petting = 0; // seconds of continuous petting
     this.lastPet = -Infinity;
     this.paused = false; // when true he stays put (no wandering)
+
+    this.throwTimes = []; // recent throws, for getting angry
+    this.grumpyUntil = 0; // stomps off with an angry face until this time
+    this.greeted = false; // waves once after first landing
+    this.hoverOn = 0; // seconds the cursor has rested on him
+    this.hoverNear = 0; // seconds the cursor has lingered near him
+    this.cursorFar = 0; // seconds the cursor has been far away
+    this.lastCurious = -Infinity;
+    this.lastShy = -Infinity;
 
     // Pendulum swing while being carried (radians, rad/s).
     this.swing = 0;
@@ -172,7 +227,12 @@ class Companion {
     this.vy = vy;
     this.lastInteraction = this.time;
     this.enter('fall');
-    this.emit(speed > 600 ? 'throw' : 'drop');
+    if (speed > TUNING.throwSpeed) {
+      this.throwTimes.push(this.time);
+      this.emit('throw');
+    } else {
+      this.emit('drop');
+    }
   }
 
   /** Called every tick while the mouse button is held on him. `dt` = seconds. */
@@ -183,16 +243,17 @@ class Companion {
     this.petting += dt;
     this.happiness = clamp(this.happiness + dt * 0.15, 0, 1);
     if (this.state === 'sleep') {
-      // Gentle petting doesn't wake him fully; he smiles in his sleep.
-      if (this.petting > 2.5) this.enter('happy', 2.5);
+      // Gentle petting doesn't wake him fully; he snuggles into a hug.
+      if (this.petting > 2.5) this.enter('hug', 1.5);
       return;
     }
-    if (this.state !== 'happy') {
-      this.enter('happy', 1.5);
+    if (this.state !== 'hug') {
+      this.enter('hug', 1.5);
     } else {
-      // Keep him happy while the petting continues.
+      // Keep hugging while the button is held.
       this.stateDuration = Math.max(this.stateDuration, this.stateTime + 0.8);
     }
+    this.grumpyUntil = 0;
     this.vx = 0;
     if (this.petting > TUNING.petToHappy && Math.floor((this.petting - dt) * 3) !== Math.floor(this.petting * 3)) {
       this.emit('heart');
@@ -211,6 +272,7 @@ class Companion {
     }
     this.happiness = clamp(this.happiness + 0.05, 0, 1);
     this.vx = 0;
+    this.grumpyUntil = 0;
     if (this.state === 'happy') {
       this.stateDuration = Math.max(this.stateDuration, this.stateTime + 1.2);
     } else {
@@ -232,6 +294,24 @@ class Companion {
     }
     this.facing = this.targetX > this.x ? 1 : -1;
     this.enter('run');
+  }
+
+  /** Do one of MENU_ACTIVITIES on request. Returns false if he can't right now. */
+  doActivity(name) {
+    if (!MENU_ACTIVITIES.includes(name) || !this.isGrounded()) return false;
+    this.lastInteraction = this.time;
+    this.grumpyUntil = 0;
+    this.vx = 0;
+    if (name === 'sleep') {
+      this.enter('sleep', 60);
+      this.emit('sleep');
+    } else if (name === 'wave') {
+      this.enter('wave', 2.2);
+      this.emit('wave');
+    } else {
+      this.startActivity(name);
+    }
+    return true;
   }
 
   // ---------------------------------------------------------------- update
@@ -317,20 +397,30 @@ class Companion {
         // Bounce.
         this.vy = -impact * TUNING.floorBounce;
         this.vx *= 0.6;
-        this.emit(impact > TUNING.dizzyLanding ? 'thud' : 'bounce');
-        if (impact > TUNING.dizzyLanding) this.dizzyPending = true;
+        this.emit(impact > TUNING.confusedLanding ? 'thud' : 'bounce');
+        if (impact > TUNING.confusedLanding) this.confusedPending = true;
         return;
       }
       this.vx = 0;
       this.vy = 0;
       this.swing = 0;
-      if (this.dizzyPending) {
-        this.dizzyPending = false;
-        this.enter('dizzy', 2.5);
-        this.emit('dizzy');
+      this.emit('land');
+      this.throwTimes = this.throwTimes.filter((t) => this.time - t < TUNING.angryWindow);
+      if (this.throwTimes.length >= TUNING.angryThrows) {
+        this.throwTimes = [];
+        this.confusedPending = false;
+        this.enter('angry', 2.5);
+        this.emit('angry');
+      } else if (this.confusedPending) {
+        this.confusedPending = false;
+        this.enter('confused', 2.5);
+        this.emit('confused');
+      } else if (!this.greeted) {
+        this.greeted = true;
+        this.enter('wave', 2.2);
+        this.emit('wave');
       } else {
         this.enter('land', 0.25);
-        this.emit('land');
       }
     }
   }
@@ -345,8 +435,15 @@ class Companion {
 
     switch (this.state) {
       case 'walk':
-      case 'run': {
-        const speed = this.state === 'run' ? TUNING.runSpeed : TUNING.walkSpeed;
+      case 'run':
+      case 'play':
+      case 'adventure': {
+        const speed = {
+          walk: TUNING.walkSpeed,
+          run: TUNING.runSpeed,
+          play: TUNING.playSpeed,
+          adventure: TUNING.adventureSpeed,
+        }[this.state];
         const dir = Math.sign(this.targetX - this.x);
         this.facing = dir || this.facing;
         this.vx = dir * speed;
@@ -362,8 +459,17 @@ class Companion {
       case 'sleep':
         this.vx = 0;
         if (this.stateTime > this.stateDuration) {
-          this.enter('lookAround', 1.5);
-          this.emit('yawn');
+          // Wakes up on his own and says hi.
+          this.enter('wave', 2.2);
+          this.emit('wave');
+        }
+        break;
+      case 'angry':
+        this.vx = 0;
+        if (this.stateTime >= this.stateDuration) {
+          // Stomp off in a huff.
+          this.grumpyUntil = this.time + 4;
+          this.startActivity('walk');
         }
         break;
       default:
@@ -371,10 +477,46 @@ class Companion {
         if (this.stateTime >= this.stateDuration) this.chooseNext();
     }
 
+    if (cursor) this.reactToCursor(dt, cursor);
+
     // Look towards the cursor when it's close and he's not busy.
-    if (cursor && ['idle', 'sit', 'happy'].includes(this.state)) {
+    if (cursor && ['idle', 'sit', 'happy', 'curious', 'shy', 'wave'].includes(this.state)) {
       const dx = cursor.x - this.x;
       if (Math.abs(dx) > 20 && Math.abs(dx) < 400) this.facing = dx > 0 ? 1 : -1;
+    }
+  }
+
+  /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
+  reactToCursor(dt, cursor) {
+    const dx = cursor.x - this.x;
+    const dy = cursor.y - (this.y - 48);
+    const dist = Math.hypot(dx, dy);
+    const on = (dx / 52) ** 2 + (dy / 58) ** 2 <= 1;
+    const near = !on && dist < 170;
+    this.hoverOn = on ? this.hoverOn + dt : 0;
+    this.hoverNear = near ? this.hoverNear + dt : 0;
+
+    const free = INTERRUPTIBLE.includes(this.state) && this.time - this.lastInteraction > 2;
+    if (dist > 500) {
+      this.cursorFar += dt;
+    } else if (dist < 250) {
+      const wasAway = this.cursorFar > TUNING.waveAway;
+      this.cursorFar = 0;
+      if (wasAway && free) {
+        this.enter('wave', 2.2);
+        this.emit('wave');
+        return;
+      }
+    }
+    if (!free) return;
+    if (this.hoverOn > TUNING.shyAfter && this.time - this.lastShy > TUNING.shyCooldown) {
+      this.lastShy = this.time;
+      this.enter('shy', 3);
+      this.emit('shy');
+    } else if (this.hoverNear > TUNING.curiousAfter && this.time - this.lastCurious > TUNING.curiousCooldown) {
+      this.lastCurious = this.time;
+      this.enter('curious', 2.5);
+      this.emit('curious');
     }
   }
 
@@ -384,40 +526,103 @@ class Companion {
     const idleFor = this.time - this.lastInteraction;
 
     if (this.paused) {
-      this.enter(r < 0.7 ? 'idle' : 'sit', rand(2, 5, this.rng));
+      const pick = STAY_ACTIVITIES[Math.floor(r * STAY_ACTIVITIES.length)];
+      this.startActivity(pick);
       return;
     }
 
+    if (idleFor > TUNING.sadAfter && r < 0.2) {
+      this.enter('sad', rand(6, 10, this.rng));
+      this.emit('sad');
+      return;
+    }
     if (idleFor > TUNING.sleepAfter && r < 0.35) {
       this.enter('sleep', rand(20, 60, this.rng));
       this.emit('sleep');
       return;
     }
 
-    if (r < 0.45) {
-      this.startWalk(this.rng() < 0.15 ? 'run' : 'walk');
-    } else if (r < 0.65) {
-      this.enter('idle', rand(1.5, 4, this.rng));
-    } else if (r < 0.8) {
-      this.enter('sit', rand(3, 8, this.rng));
-    } else if (r < 0.92) {
-      this.enter('lookAround', rand(1.5, 2.5, this.rng));
-    } else {
-      this.vy = -rand(500, 800, this.rng);
-      this.vx = this.facing * rand(0, 120, this.rng);
-      this.enter('jump');
-      this.emit('jump');
+    const total = ACTIVITIES.reduce((sum, [, w]) => sum + w, 0);
+    let pick = this.rng() * total;
+    for (const [name, weight] of ACTIVITIES) {
+      pick -= weight;
+      if (pick < 0) {
+        this.startActivity(name);
+        return;
+      }
+    }
+    this.startActivity('idle');
+  }
+
+  /** Start one activity (used by chooseNext and doActivity). */
+  startActivity(name) {
+    const rng = this.rng;
+    switch (name) {
+      case 'walk':
+        this.startMove('walk', 80, 600);
+        break;
+      case 'run':
+        this.startMove('run', 150, 700);
+        break;
+      case 'play':
+        this.startMove('play', 120, 320);
+        this.emit('play');
+        break;
+      case 'adventure': {
+        const width = this.bounds.right - this.bounds.left;
+        this.startMove('adventure', width * 0.5, Math.min(width * 0.9, 1600));
+        this.emit('adventure');
+        break;
+      }
+      case 'jump':
+        this.vy = -rand(500, 800, rng);
+        this.vx = this.facing * rand(0, 120, rng);
+        this.enter('jump');
+        this.emit('jump');
+        break;
+      case 'idle':
+        this.enter('idle', rand(1.5, 4, rng));
+        break;
+      case 'sit':
+        this.enter('sit', rand(3, 8, rng));
+        break;
+      case 'lookAround':
+        this.enter('lookAround', rand(1.5, 2.5, rng));
+        break;
+      case 'talk':
+        this.enter('talk', rand(2.5, 4, rng));
+        this.emit('talk');
+        break;
+      case 'eat':
+        this.enter('eat', 5);
+        this.emit('eat');
+        break;
+      case 'flower':
+        this.enter('flower', rand(4, 6, rng));
+        this.emit('flower');
+        break;
+      case 'backView':
+        this.enter('backView', rand(3, 5, rng));
+        break;
+      default:
+        throw new Error(`unknown activity ${name}`);
     }
   }
 
-  startWalk(kind) {
+  /** Walk-like movement of a random distance in [minD, maxD]. */
+  startMove(kind, minD, maxD) {
     const b = this.bounds;
     const minX = b.left + this.halfWidth;
     const maxX = b.right - this.halfWidth;
     const width = maxX - minX;
-    const distance = rand(80, Math.max(120, Math.min(width * 0.5, 600)), this.rng);
+    const distance = rand(Math.min(minD, width * 0.5), Math.max(minD, Math.min(maxD, width)), this.rng);
     let dir = this.rng() < 0.5 ? -1 : 1;
-    if (this.x + dir * distance > maxX || this.x + dir * distance < minX) dir = -dir;
+    if (this.x + dir * distance > maxX || this.x + dir * distance < minX) {
+      // Turn around if there's more room the other way.
+      const roomLeft = this.x - minX;
+      const roomRight = maxX - this.x;
+      dir = roomRight >= roomLeft ? 1 : -1;
+    }
     this.targetX = clamp(this.x + dir * distance, minX, maxX);
     this.facing = dir;
     this.enter(kind);
@@ -433,11 +638,13 @@ class Companion {
       vy: this.vy,
       swing: this.swing,
       grabOffset: this.grabOffset,
+      stateDuration: this.stateDuration,
       happiness: this.happiness,
       petting: this.petting,
+      grumpy: this.time < this.grumpyUntil,
       time: this.time,
     };
   }
 }
 
-module.exports = { Companion, TUNING, STATES };
+module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES };
