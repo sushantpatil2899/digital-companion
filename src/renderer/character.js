@@ -245,19 +245,46 @@ function drawMark(ctx, x, y, size, rot, color) {
 // A foot: a rounded cone, i.e. the outline wrapped around a big circle
 // (the rounded end, centred at (x, y)) and a small one (the soft tip) `len`
 // away in direction `angle`. `tipRound` is the tip radius / end radius.
-function footShape(ctx, x, y, angle, len, width, tipRound = 0.45) {
+// `shade`, if given, is called (in body coordinates, clipped to the foot)
+// to darken part of it, e.g. where the belly hangs over it.
+function footShape(ctx, x, y, angle, len, width, tipRound = 0.45, shade = null) {
   const rt = width * tipRound;
   const cx = len - rt; // centre of the tip circle
   const a = Math.acos(Math.min(1, (width - rt) / cx)); // where the straight sides touch
+  const outline = () => {
+    ctx.beginPath();
+    ctx.arc(cx, 0, rt, -a, a); // round the tip
+    ctx.arc(0, 0, width, a, Math.PI * 2 - a); // and the back
+    ctx.closePath();
+  };
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.arc(cx, 0, rt, -a, a); // round the tip
-  ctx.arc(0, 0, width, a, Math.PI * 2 - a); // and the back
-  ctx.closePath();
-  fillStroke(ctx, PALETTE.limb, 2);
+  outline();
+  ctx.fillStyle = PALETTE.limb;
+  ctx.fill();
+  if (shade) {
+    ctx.save();
+    ctx.clip();
+    ctx.rotate(-angle);
+    ctx.translate(-x, -y);
+    shade(ctx);
+    ctx.restore();
+    outline(); // shade() drew its own path; rebuild ours for the stroke
+  }
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
   ctx.restore();
+}
+
+// Shadow of the round belly falling across the tops of the legs, so the
+// belly reads as hanging out in front of them.
+function bellyShadow(ctx) {
+  ellipse(ctx, 0, CY + RY_BELLY - 1, R * 0.92, 8);
+  ctx.fillStyle = 'rgba(170, 120, 60, 0.32)';
+  ctx.fill();
 }
 
 function drawFoot(ctx, side, p) {
@@ -265,14 +292,14 @@ function drawFoot(ctx, side, p) {
   if (p.feet === 'dangle') {
     // Hanging down from under the belly, kicking.
     const kick = Math.sin(p.t * 13 + side) * 3;
-    footShape(ctx, side * 18, -18 + kick, Math.atan2(1, side * 0.62), 22, 11.5, 0.6);
+    footShape(ctx, side * 23, -18 + kick, Math.atan2(1, side * 0.62), 22, 13, 0.55, bellyShadow);
   } else if (p.feet === 'sit') {
     // Plump feet sticking out in front, tapering in towards the body.
     footShape(ctx, side * 31, -10 - SIT_DROP, Math.atan2(-0.8, -side * 0.6), 15, 10.5, 0.5);
   } else {
     // Standing: little cones poking out from under the belly, tips down.
     // Standing: the feet splay outwards, tips pointing down and out.
-    footShape(ctx, side * (18 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 11.5, 0.6);
+    footShape(ctx, side * (23 + lift * 0.25), -21 - lift, Math.atan2(1, side * 0.62), 23, 13, 0.55, bellyShadow);
   }
 }
 
@@ -594,13 +621,13 @@ function drawBackpackBag(ctx, p) {
 // - near strap: leaves the top of the bag, goes over his shoulder, down past
 //   his arm and back into the bottom of the bag (his arm sits in the loop);
 // - far strap: shows over his other shoulder at the edge of his body.
-function strapStroke(ctx) {
+function strapStroke(ctx, scale = 1) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 7.5;
+  ctx.lineWidth = 7.5 * scale;
   ctx.strokeStyle = PALETTE.outline;
   ctx.stroke();
-  ctx.lineWidth = 4.8;
+  ctx.lineWidth = 4.8 * scale;
   ctx.strokeStyle = BAG;
   ctx.stroke();
   // Stitching down the middle of the strap.
@@ -626,10 +653,11 @@ function drawBackpackStraps(ctx, p) {
   bodyPath(ctx, spikesFor(p).front);
   ctx.clip();
   ctx.beginPath();
-  // Follows just inside the outline of his far shoulder, down behind his arm.
-  ctx.moveTo(far * 34, CY - 36);
-  ctx.bezierCurveTo(far * 41, CY - 28, far * 45, CY - 16, far * 46, CY - 2);
-  strapStroke(ctx);
+  // A short band just inside the edge of his far shoulder, starting at the
+  // shell's edge and running down behind his arm.
+  ctx.moveTo(far * 38, CY - 19);
+  ctx.quadraticCurveTo(far * 44, CY - 13, far * 46, CY - 3);
+  strapStroke(ctx, 0.8);
   ctx.restore();
   ctx.restore();
 }

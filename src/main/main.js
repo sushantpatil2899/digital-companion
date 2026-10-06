@@ -3,6 +3,7 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } = require('electron');
 const { Companion, TUNING } = require('./companion');
+const { px } = require('./px');
 
 // Entries for the "Do something…" menu: [activity, label].
 const ACTIVITY_MENU = [
@@ -51,7 +52,7 @@ let press = null; // { x, y, t } while the mouse button is down on him
 let lastWinPos = { x: NaN, y: NaN };
 
 function boundsForPoint(point) {
-  const display = screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) });
+  const display = screen.getDisplayNearestPoint({ x: px(point.x), y: px(point.y) });
   const wa = display.workArea;
   return { left: wa.x, right: wa.x + wa.width, top: wa.y, floor: wa.y + wa.height };
 }
@@ -72,8 +73,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: WIN_W,
     height: WIN_H,
-    x: Math.round(companion.x - WIN_W / 2),
-    y: Math.round(companion.y - (WIN_H - FOOT_MARGIN)),
+    x: px(companion.x - WIN_W / 2),
+    y: px(companion.y - (WIN_H - FOOT_MARGIN)),
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
@@ -145,8 +146,8 @@ function tick() {
   companion.setBounds(boundsForPoint({ x: companion.x, y: companion.y - 10 }));
   companion.update(dt, cursor);
 
-  const wx = Math.round(companion.x - WIN_W / 2);
-  const wy = Math.round(companion.y - (WIN_H - FOOT_MARGIN));
+  const wx = px(companion.x - WIN_W / 2);
+  const wy = px(companion.y - (WIN_H - FOOT_MARGIN));
   if (wx !== lastWinPos.x || wy !== lastWinPos.y) {
     win.setPosition(wx, wy);
     lastWinPos = { x: wx, y: wy };
