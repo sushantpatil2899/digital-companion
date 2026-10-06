@@ -121,7 +121,7 @@ function drawParticles(ctx) {
         drawStar(ctx, p.x, p.y, p.size, k * 6, alpha);
         break;
       case 'zzz':
-        drawText(ctx, 'z', p.x, p.y, p.size * (0.7 + k * 0.6), alpha, '#5b6bb5');
+        drawText(ctx, 'z', p.x, p.y, p.size * (0.7 + k * 0.7), alpha, '#2e2420');
         break;
       case 'text':
         drawText(ctx, p.text, p.x, p.y, p.size, alpha);
@@ -235,16 +235,15 @@ function computePose(f, dt) {
       break;
     case 'sleep':
       p.view = 'lying';
-      p.feet = 'sit';
       p.eyes = 'closed';
-      p.mouth = 'flat';
       p.blink = 0;
-      p.scaleY = 1 + Math.sin(t * 1.5) * 0.025;
+      p.scaleY = 1 + Math.sin(t * 1.5) * 0.03; // slow breathing
       p.blush = 0.6;
       zzzTimer -= dt;
       if (zzzTimer <= 0) {
         zzzTimer = 1.3;
-        spawn('zzz', 26 * -f.facing, HEAD_TOP + 30, { vx: -12 * f.facing, vy: -22, max: 2.2, size: 15 });
+        // Rising from above the shell end, like the reference.
+        spawn('zzz', 22 * -f.facing, -82, { vx: 10 * -f.facing, vy: -24, max: 2.4, size: 16 });
       }
       break;
     case 'jump':
