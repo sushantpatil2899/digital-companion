@@ -1,0 +1,15 @@
+{
+  "name": "digital-companion",
+  "version": "0.1.0",
+  "description": "A little desktop pet that wanders around your screen. Pick him up, throw him, pet him.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": ["desktop-pet", "electron", "companion"],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.5.1"
+  }
+}
