@@ -100,6 +100,9 @@ function handleEvent(name) {
     case 'lonely':
       spawn('text', 30, HEAD_TOP + 4, { text: '…', vy: -15, max: 1.5, size: 18 });
       break;
+    case 'reminderAck':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Got it!', vy: -12, max: 1.6, size: 14 });
+      break;
     case 'eventEnded':
       spawn('text', 0, HEAD_TOP - 10, { text: 'All done!', vy: -12, max: 1.8, size: 14 });
       break;
@@ -169,6 +172,51 @@ function walkCycle(p, f, dt, speed, step) {
   p.lookY = 0;
 }
 
+// His everyday face (idle, walking, sitting, looking around) follows his mood.
+// `moving` = walking, so the face and gait can differ a little.
+function applyMoodFace(p, f, moving) {
+  const band = f.band || 'content';
+  const tired = f.energy != null && f.energy < 0.25;
+  switch (band) {
+    case 'cheerful':
+      p.eyes = 'open';
+      p.mouth = moving ? 'open' : 'smile';
+      p.blush = Math.max(p.blush, 0.6);
+      if (moving) p.bob *= 1.3; // a bit of a spring in his step
+      break;
+    case 'content':
+      p.eyes = 'open';
+      p.mouth = 'smallSmile';
+      break;
+    case 'meh':
+      p.eyes = 'meh';
+      p.mouth = 'flat';
+      break;
+    case 'sad':
+      p.eyes = 'sad';
+      p.mouth = 'frown';
+      p.blush = 0.2;
+      p.lookY = 0.55; // looking down at his feet
+      p.lookX *= 0.4;
+      p.tilt += f.facing * 0.03;
+      if (moving) {
+        p.stepHeight = 3;
+        p.bob *= 0.5;
+        p.armSwing = 0.15;
+      }
+      break;
+    case 'grumpy':
+      p.eyes = 'angry';
+      p.mouth = 'frown';
+      p.blush = 0.6;
+      if (moving) p.stepHeight = 6.5; // stompy
+      break;
+    default:
+  }
+  // Droopy eyes when he's running out of energy (unless sad or cross).
+  if (tired && (band === 'cheerful' || band === 'content' || band === 'meh')) p.eyes = 'sleepy';
+}
+
 function computePose(f, dt) {
   const p = defaultPose();
   const t = clock;
@@ -213,15 +261,16 @@ function computePose(f, dt) {
         overlay = 'anger';
         break;
       }
-      // Every so often a peaceful, eyes-closed smile (the "Blinking" panel).
-      if (Math.floor(st / 2.5) % 3 === 2) {
+      applyMoodFace(p, f, false);
+      // When he's happy, every so often a peaceful, eyes-closed smile (the "Blinking" panel).
+      if ((f.band === 'cheerful' || f.band === 'content') && Math.floor(st / 2.5) % 3 === 2) {
         p.eyes = 'content';
         p.mouth = 'smallSmile';
       }
       break;
     case 'walk':
-      walkCycle(p, f, dt, 10, 5);
-      p.mouth = 'open';
+      walkCycle(p, f, dt, f.band === 'sad' ? 7 : 10, 5);
+      applyMoodFace(p, f, true);
       if (f.grumpy) {
         // Stomping off after being thrown around too much.
         p.eyes = 'angry';
@@ -259,6 +308,8 @@ function computePose(f, dt) {
       p.feet = 'sit';
       p.scaleY *= 0.95;
       p.scaleX = 1.03;
+      applyMoodFace(p, f, false);
+      if (f.band === 'sad') p.scaleY *= 0.97; // slumped
       break;
     case 'sleep':
       p.view = 'lying';
@@ -347,6 +398,8 @@ function computePose(f, dt) {
       p.lookX = Math.sin(st * 3);
       p.lookY = -0.2;
       p.tilt = Math.sin(st * 3) * 0.05;
+      applyMoodFace(p, f, false);
+      p.lookX = Math.sin(st * 3);
       break;
     case 'talk':
       p.mouth = 'talk';
@@ -460,7 +513,9 @@ function drawOverlay(ctx, kind, p) {
     case 'sign': {
       let title = frame.eventTitle || '';
       if (title.length > 18) title = `${title.slice(0, 17)}…`;
-      C.drawSign(ctx, 'Meeting in 5!', title, clock);
+      const kind = frame.reminderKind || '5';
+      const text = { 30: 'Meeting in 30 min', 5: 'Meeting in 5!', now: 'Meeting now!' }[kind] || 'Meeting soon!';
+      C.drawSign(ctx, text, title, clock, kind === 'now');
       break;
     }
     case 'waveLines': {

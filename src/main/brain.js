@@ -8,8 +8,12 @@
 //   hunger    0 = full,   1 = starving         (rises over time, eating lowers it)
 //   boredom   0 = busy,   1 = very bored       (rises while idle, play lowers it)
 //   affection 1 = loved,  0 = lonely           (decays, pats and hugs raise it)
-// Mood is -1 (grumpy) .. 1 (cheerful). It drifts towards what his needs
-// suggest, and is nudged directly by being patted or thrown around.
+// Mood is -1 (sad) .. 1 (cheerful). It slowly drifts towards what his needs
+// suggest, and is nudged directly by you: pats and hugs lift it, throws drop
+// it. His own activities only help through his needs (eating fixes hunger,
+// which lifts his mood), so he can't simply cheer himself up.
+// Rough handling also makes him grumpy for a few minutes (grumpiness, kept by
+// the companion), which overrides the mood band.
 
 const NEEDS = {
   // Per-second drift rates.
@@ -24,7 +28,9 @@ const NEEDS = {
   seekCooldown: 240,
   sadCooldown: 120, // s between sad spells (doubles the same way)
   attentionGrace: 600, // s after a pat/hug before he asks for attention again
-  moodDrift: 1 / 90, // how fast mood follows his needs
+  moodDrift: 1 / 240, // how fast mood follows his needs (changes over minutes)
+  grumpyFade: 1 / 180, // grumpiness fades in ~3 min
+  grumpyPerThrow: 0.35,
   // How hard each kind of state works him (multiplies energyDrain).
   effort: { run: 3, play: 3, adventure: 2.5, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },
   // States where he's not doing anything interesting (boredom rises).
@@ -35,13 +41,14 @@ const NEEDS = {
 
 // One-off changes when he starts an activity (or is interacted with).
 const EFFECTS = {
-  eat: { hunger: -0.65, energy: 0.05, mood: 0.1 },
-  play: { boredom: -0.4, energy: -0.04, mood: 0.12 },
-  adventure: { boredom: -0.55, energy: -0.06, mood: 0.1 },
-  flower: { boredom: -0.15, mood: 0.12 },
-  talk: { boredom: -0.1, mood: 0.05 },
+  eat: { hunger: -0.65, energy: 0.05 },
+  play: { boredom: -0.4, energy: -0.04 },
+  adventure: { boredom: -0.55, energy: -0.06 },
+  visitScreen: { boredom: -0.35, energy: -0.04 },
+  flower: { boredom: -0.15 },
+  talk: { boredom: -0.1 },
   run: { boredom: -0.12 },
-  jump: { boredom: -0.08, mood: 0.04 },
+  jump: { boredom: -0.08 },
   pat: { affection: 0.22, mood: 0.15 },
   hugPerSecond: { affection: 0.15, mood: 0.15 },
   throw: { mood: -0.18, affection: -0.04 },
@@ -65,9 +72,12 @@ function defaultContext() {
     quiet: false, // in a meeting / presenting: keep still and quiet
     quietReason: null,
     frontApp: null,
+    visibleApps: [], // apps with a window showing on any screen
     nextEvent: null, // { title, start, end } (ms epoch)
     inEvent: null,
-    eventSoon: false, // one-shot: an event starts in ~5 minutes
+    now: Date.now(), // wall clock (ms)
+    presenting: false,
+    reminder: null, // one-shot: { kind: '30' | '5', event } an event starts soon
     eventEnded: false, // one-shot
   };
 }
@@ -87,10 +97,28 @@ function apply(needs, mood, effect, scale = 1) {
   return Math.max(-1, Math.min(1, mood + (effect.mood || 0) * scale));
 }
 
-// What mood his needs "suggest", -1..1.
+// What mood his needs "suggest", -1..1:
+//   all needs fine              ~ +0.3..0.4 content
+//   well loved and needs fine   ~ +0.7      cheerful
+//   one need clearly unmet      ~  0        meh
+//   two unmet / very lonely     <  -0.3     sad
 function moodTarget(needs) {
-  const t = 0.9 * (needs.affection - 0.4) + 0.5 * (needs.energy - 0.4) - 0.8 * Math.max(0, needs.hunger - 0.5) - 0.5 * Math.max(0, needs.boredom - 0.6);
-  return Math.max(-1, Math.min(1, t * 1.6));
+  const hungry = clamp01((needs.hunger - 0.5) / 0.4);
+  const tired = clamp01((0.35 - needs.energy) / 0.3);
+  const bored = clamp01((needs.boredom - 0.6) / 0.35);
+  const lonely = clamp01((0.4 - needs.affection) / 0.35);
+  const loved = clamp01((needs.affection - 0.6) / 0.4);
+  const t = 0.3 + 0.45 * loved - 0.4 * hungry - 0.35 * tired - 0.3 * bored - 0.65 * lonely;
+  return Math.max(-1, Math.min(1, t));
+}
+
+/** Which face/mood he shows. */
+function moodBand(mood, grumpiness = 0) {
+  if (grumpiness > 0.3) return 'grumpy';
+  if (mood > 0.45) return 'cheerful';
+  if (mood > 0.1) return 'content';
+  if (mood > -0.25) return 'meh';
+  return 'sad';
 }
 
 /** Advance needs and mood by `dt` seconds while in `state`. Returns the new mood. */
@@ -128,11 +156,11 @@ function catchUp(needs, mood, seconds) {
   return mood + (moodTarget(needs) - mood) * Math.min(1, s / 600);
 }
 
-const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'backView', 'sleep', 'sad', 'seek'];
+const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek'];
 // Still, silent things he may do while "Stay put" is on or you're in a meeting.
 const STAY = ['idle', 'sit', 'lookAround', 'eat', 'flower', 'backView', 'sleep', 'sad', 'talk'];
 const QUIET = ['idle', 'sit', 'backView', 'sleep', 'eat', 'flower'];
-const ENERGETIC = ['run', 'jump', 'play', 'adventure'];
+const ENERGETIC = ['run', 'jump', 'play', 'adventure', 'visitScreen'];
 
 /**
  * Score every activity he could start now. Higher = more appealing.
@@ -152,18 +180,20 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
   const rng = opts.rng || Math.random;
 
   const s = {
-    walk: [0.45 + 0.35 * boredom + 0.15 * energy, 'wander'],
+    walk: [0.4 + 0.1 * boredom + 0.1 * energy, 'wander'],
     run: [energy > 0.5 ? 0.1 + 0.35 * happy * energy : 0, 'full of beans'],
     idle: [0.4, 'chill'],
-    sit: [0.25 + 0.7 * tired, 'rest legs'],
+    sit: [0.2 + 0.6 * tired, 'rest legs'],
     lookAround: [0.2 + 0.25 * boredom, 'curious'],
     jump: [energy > 0.4 ? 0.08 + 0.3 * happy * energy : 0, 'happy hop'],
     talk: [0.15 + 0.3 * happy, 'chatty'],
     eat: [hunger > 0.5 ? 1.6 * hunger * hunger : 0, 'hungry'],
     flower: [0.12 + 0.2 * happy, 'smell flowers'],
-    play: [energy > 0.3 ? 0.08 + 1.0 * boredom * energy : 0, 'bored'],
-    adventure: [energy > 0.5 ? 0.04 + 0.7 * boredom * energy : 0, 'restless'],
+    play: [energy > 0.3 ? 0.05 + 1.2 * boredom * energy : 0, 'bored'],
+    adventure: [energy > 0.5 ? 0.04 + 0.8 * boredom * energy : 0, 'restless'],
     backView: [0.12, 'watch your screen'],
+    // Only offered when there's another screen he can walk to.
+    visitScreen: [opts.canVisitScreen && energy > 0.45 ? 0.1 + 0.9 * boredom * energy : 0, 'explore another screen'],
     sleep: [energy < 0.55 ? 1.8 * tired * tired : 0, 'tired'],
     sad: [affection < 0.35 && opts.sadReady !== false ? 1.3 * (0.35 - affection) / 0.35 : 0, 'lonely'],
     seek: [affection < 0.45 && opts.cursorKnown && opts.seekReady !== false ? 0.4 + 1.2 * (0.45 - affection) / 0.45 : 0, 'wants attention'],
@@ -193,10 +223,40 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     add('sleep', 0.9 + Math.min(1, ctx.awayFor / 600), 'you are away');
     scale('seek', 0, 'you are away');
     scale('sad', 0.3, 'you are away');
-    for (const n of ['walk', 'run', 'play', 'adventure', 'talk', 'jump']) scale(n, 0.4, 'you are away');
+    for (const n of ['walk', 'run', 'play', 'adventure', 'visitScreen', 'talk', 'jump']) scale(n, 0.4, 'you are away');
   }
   // Sad and seeking you don't make sense when he's fairly content.
   if (mood > 0.4) scale('sad', 0.3, 'in a good mood');
+
+  // His mood colours what he feels like doing.
+  const band = moodBand(mood, opts.grumpiness || 0);
+  if (band === 'sad') {
+    for (const n of ['run', 'jump', 'adventure', 'visitScreen']) scale(n, 0, 'feeling sad');
+    if (boredom < 0.85) scale('play', 0.3, 'feeling sad');
+    scale('talk', 0.3, 'feeling sad');
+    scale('flower', 0.5, 'feeling sad');
+    add('sit', 0.3, 'feeling sad');
+    add('idle', 0.1, 'feeling sad');
+  } else if (band === 'meh') {
+    for (const n of ['run', 'jump']) scale(n, 0.5, 'meh');
+    scale('talk', 0.6, 'meh');
+    add('walk', 0.1, 'meh');
+    add('sit', 0.1, 'meh');
+  } else if (band === 'cheerful') {
+    add('jump', 0.15, 'cheerful');
+    add('run', 0.1, 'cheerful');
+    add('talk', 0.15, 'cheerful');
+    add('flower', 0.1, 'cheerful');
+  } else if (band === 'grumpy') {
+    scale('talk', 0.2, 'grumpy');
+    scale('seek', 0, 'grumpy');
+    scale('flower', 0.5, 'grumpy');
+  }
+  // After a long walk, have a rest.
+  if (opts.afterLongWalk) {
+    add('sit', 0.2, 'just walked a long way');
+    add('idle', 0.1, 'just walked a long way');
+  }
 
   let allowed = ALL;
   if (opts.paused) allowed = STAY;
@@ -220,4 +280,4 @@ function pick(scored, rng = Math.random) {
   return scored[0];
 }
 
-module.exports = { NEEDS, EFFECTS, defaultNeeds, defaultContext, drift, catchUp, apply, moodTarget, scoreActivities, pick, STAY, QUIET };
+module.exports = { NEEDS, EFFECTS, defaultNeeds, defaultContext, drift, catchUp, apply, moodTarget, moodBand, scoreActivities, pick, STAY, QUIET };

@@ -58,33 +58,75 @@ test('hour and day come from the clock', () => {
   assert.strictEqual(c.day, '2026-10-07');
 });
 
-test('calendar: "soon" 5 minutes before, quiet during, "ended" after', () => {
+test('calendar: reminders at 30 and 5 minutes (once each), "ended" after', () => {
   const k = clock();
   const t = new ContextTracker({ now: k.now });
-  const start = k.t + 10 * 60 * 1000;
+  const start = k.t + 45 * 60 * 1000;
   t.setEvents([{ title: 'Standup', start, end: start + 15 * 60 * 1000 }]);
+  assert.ok(!t.update(0).reminder);
+  k.add(16 * 60); // 29 min to go
   let c = t.update(0);
-  assert.strictEqual(c.nextEvent.title, 'Standup');
-  assert.ok(!c.eventSoon);
-  k.add(6 * 60);
-  c = t.update(0);
-  assert.strictEqual(c.eventSoon, true);
-  assert.ok(!t.update(0).eventSoon, 'only once');
+  assert.strictEqual(c.reminder.kind, '30');
+  assert.strictEqual(c.reminder.event.title, 'Standup');
+  assert.ok(!t.update(0).reminder, 'only once');
+  k.add(25 * 60); // 4 min to go
+  assert.strictEqual(t.update(0).reminder.kind, '5');
+  assert.ok(!t.update(0).reminder, 'only once');
   k.add(5 * 60);
   c = t.update(0);
   assert.strictEqual(c.inEvent.title, 'Standup');
-  assert.strictEqual(c.quiet, true);
   k.add(16 * 60);
-  c = t.update(0);
-  assert.strictEqual(c.eventEnded, true);
-  assert.strictEqual(c.quiet, false);
+  assert.strictEqual(t.update(0).eventEnded, true);
 });
 
-test('front app quiet mode', () => {
+test('calendar: skip the 30-minute reminder if the event is already close', () => {
+  const k = clock();
+  const t = new ContextTracker({ now: k.now });
+  t.setEvents([{ title: 'Soon', start: k.t + 3 * 60 * 1000, end: k.t + 30 * 60 * 1000 }]);
+  assert.strictEqual(t.update(0).reminder.kind, '5');
+  assert.ok(!t.update(0).reminder);
+});
+
+function inMeetingTracker(apps) {
+  const k = clock();
+  const t = new ContextTracker({ now: k.now });
+  t.setEvents([{ title: 'Sync', start: k.t - 60000, end: k.t + 30 * 60000 }]);
+  if (apps) t.setApps(apps);
+  return t;
+}
+
+test('quiet only when you are really in the meeting', () => {
+  // Calendar event on, but you're working in another app: not quiet.
+  let c = inMeetingTracker({ watching: true, frontApp: 'Claude', visibleApps: ['Claude', 'Finder'] }).update(0);
+  assert.strictEqual(c.quiet, false);
+  // Meeting app in front: quiet.
+  c = inMeetingTracker({ watching: true, frontApp: 'zoom.us', frontKind: 'meeting' }).update(0);
+  assert.strictEqual(c.quiet, true);
+  // Zoom showing on your other screen during the event: quiet.
+  c = inMeetingTracker({ watching: true, frontApp: 'Notes', meetingAppVisible: true }).update(0);
+  assert.strictEqual(c.quiet, true);
+  assert.match(c.quietReason, /another screen/);
+  // A Meet tab in any browser window: quiet, even with no calendar event.
   const t = new ContextTracker({ now: clock().now });
-  t.setQuiet(true, 'meeting', 'zoom.us');
+  t.setApps({ watching: true, frontApp: 'Notes', meetingTab: true });
+  assert.strictEqual(t.update(0).quiet, true);
+  // Zoom window left open, no event and not in front: not quiet.
+  const u = new ContextTracker({ now: clock().now });
+  u.setApps({ watching: true, frontApp: 'Notes', meetingAppVisible: true });
+  assert.strictEqual(u.update(0).quiet, false);
+});
+
+test('without app watching, a calendar event still means quiet (fallback)', () => {
+  const c = inMeetingTracker(null).update(0);
+  assert.strictEqual(c.quiet, true);
+  assert.strictEqual(c.quietReason, 'calendar event');
+});
+
+test('presenting app in front', () => {
+  const t = new ContextTracker({ now: clock().now });
+  t.setApps({ watching: true, frontApp: 'Keynote', frontKind: 'presenting' });
   const c = t.update(0);
   assert.strictEqual(c.quiet, true);
-  assert.strictEqual(c.quietReason, 'meeting');
-  assert.strictEqual(c.frontApp, 'zoom.us');
+  assert.strictEqual(c.presenting, true);
+  assert.strictEqual(c.frontApp, 'Keynote');
 });

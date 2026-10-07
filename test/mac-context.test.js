@@ -42,3 +42,43 @@ test('calendar: parses events and turns errors into readable messages', () => {
   assert.match(parseCalendarOutput('{"error":"denied"}').error, /Privacy & Security/);
   assert.match(parseCalendarOutput('garbage').error, /Unexpected/);
 });
+
+const { parseWindowsOutput, summarize, browserTabsScript } = require('../src/main/mac/front-app');
+const { classifyUrl } = require('../src/main/settings');
+
+test('window list: parses the script output', () => {
+  const w = parseWindowsOutput('{"windows":[{"app":"zoom.us","x":1512,"y":0,"width":1280,"height":800},{"bad":1}]}');
+  assert.deepStrictEqual(w.map((x) => x.app), ['zoom.us']);
+  assert.strictEqual(parseWindowsOutput('nope'), null);
+});
+
+test('meeting tabs: Meet / Zoom web always; Teams web only counts like an open meeting app', () => {
+  assert.strictEqual(classifyUrl('https://meet.google.com/abc-defg-hij', DEFAULTS), 'meeting');
+  assert.strictEqual(classifyUrl('https://meet.google.com/', DEFAULTS), null);
+  assert.strictEqual(classifyUrl('https://app.zoom.us/wc/123/join', DEFAULTS), 'meeting');
+  assert.strictEqual(classifyUrl('https://teams.microsoft.com/v2/', DEFAULTS), 'meetingApp');
+  assert.strictEqual(classifyUrl('https://github.com', DEFAULTS), null);
+});
+
+test('summary: what is on screen, across all screens', () => {
+  const windows = [
+    { app: 'Claude', x: 0, y: 0, width: 1500, height: 900 },
+    { app: 'zoom.us', x: 1512, y: 0, width: 1200, height: 800 },
+    { app: 'Google Chrome', x: 1600, y: 100, width: 900, height: 700 },
+  ];
+  const s = summarize('Claude', windows, { 'Google Chrome': ['https://meet.google.com/abc-defg-hij'] }, DEFAULTS);
+  assert.strictEqual(s.frontKind, null);
+  assert.strictEqual(s.meetingAppVisible, true);
+  assert.strictEqual(s.meetingTab, true);
+  assert.deepStrictEqual(s.visibleApps, ['Claude', 'zoom.us', 'Google Chrome']);
+  const t = summarize('Claude', [{ app: 'Claude' }], { Safari: ['https://teams.microsoft.com/v2/'] }, DEFAULTS);
+  assert.strictEqual(t.meetingTab, false);
+  assert.strictEqual(t.meetingAppVisible, true, 'Teams web counts as an open meeting app');
+});
+
+test('browser tab script uses the right words for Safari vs Chrome', () => {
+  assert.match(browserTabsScript('Safari'), /current tab/);
+  assert.match(browserTabsScript('Safari'), /miniaturized/);
+  assert.match(browserTabsScript('Google Chrome'), /active tab/);
+  assert.match(browserTabsScript('Google Chrome'), /minimized is false/);
+});

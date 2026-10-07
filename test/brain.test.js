@@ -157,7 +157,7 @@ test('companion: lonely Togepi walks over to your cursor', () => {
   c.mood = -0.4;
   const cursor = { x: 1500, y: 500 };
   let closest = Infinity;
-  for (let i = 0; i < 60 * 40; i++) {
+  for (let i = 0; i < 60 * 120; i++) {
     c.update(1 / 60, cursor);
     closest = Math.min(closest, Math.abs(c.x - 1500));
   }
@@ -235,36 +235,138 @@ test('companion: if you keep ignoring him he asks less and less often', () => {
   assert.strictEqual(c.ignoredAsks, 0);
 });
 
-test('companion + tracker: sign before a meeting, quiet during it, "all done" after', () => {
+function meetingSetup(minutesAhead) {
   const { ContextTracker } = require('../src/main/context');
   const k = { t: new Date('2026-10-06T10:00:00').getTime() };
   const tracker = new ContextTracker({ now: () => k.t });
   const c = grounded(new Companion({ bounds, x: 500, rng: seeded(3) }));
-  const start = k.t + 4 * 60 * 1000;
+  const start = k.t + minutesAhead * 60 * 1000;
   tracker.setEvents([{ title: 'Standup', start, end: start + 10 * 60 * 1000 }]);
   const states = new Set();
-  const step = (seconds) => {
+  const step = (seconds, cursor = { x: 900, y: 500 }) => {
     const events = [];
     for (let i = 0; i < seconds * 20; i++) {
       k.t += 50;
       if (i % 40 === 0) c.setContext(tracker.update(0));
-      c.update(1 / 20, { x: 900, y: 500 });
+      c.update(1 / 20, cursor);
       events.push(...c.drainEvents());
       states.add(c.state);
     }
     return events;
   };
-  const before = step(12);
-  assert.ok(before.includes('eventSoon'), before.join(','));
-  assert.ok(states.has('sign'), [...states].join(','));
+  return { c, k, tracker, step, states };
+}
+
+test('reminder: the sign stays up until you click it, then he says "Got it!"', () => {
+  const { c, step } = meetingSetup(4);
+  const ev = step(10);
+  assert.ok(ev.includes('reminder'), ev.join(','));
+  step(120); // two minutes later he's still holding it
+  assert.strictEqual(c.state, 'sign');
+  assert.strictEqual(c.snapshot().reminderKind, '5');
   assert.strictEqual(c.snapshot().eventTitle, 'Standup');
-  step(4 * 60); // meeting starts
-  const during = new Set();
-  for (let i = 0; i < 60; i++) {
-    step(5);
-    during.add(c.state);
+  c.pat();
+  assert.ok(c.drainEvents().includes('reminderAck'));
+  assert.strictEqual(c.state, 'wave');
+  step(30);
+  assert.notStrictEqual(c.state, 'sign');
+});
+
+test('reminder: clicking the sign itself counts as being on him', () => {
+  const { c, step } = meetingSetup(4);
+  step(15);
+  assert.strictEqual(c.state, 'sign');
+  assert.ok(c.isOver({ x: c.x + 40, y: c.y - 180 }), 'sign board');
+  assert.ok(!c.isOver({ x: c.x + 40, y: c.y - 240 }), 'above the sign');
+});
+
+test('reminder: 30 min, then 5 min, then "now" if you never click; dropped after the meeting', () => {
+  const { c, step } = meetingSetup(31);
+  step(90);
+  assert.strictEqual(c.snapshot().reminderKind, '30');
+  c.pat(); // seen the 30-minute one
+  step(26 * 60);
+  assert.strictEqual(c.snapshot().reminderKind, '5', 'a new reminder at 5 minutes');
+  assert.strictEqual(c.state, 'sign');
+  step(6 * 60); // meeting has started, still not clicked
+  assert.strictEqual(c.snapshot().reminderKind, 'now');
+  assert.strictEqual(c.state, 'sign');
+  step(10 * 60); // meeting over
+  assert.strictEqual(c.reminder, null);
+  assert.notStrictEqual(c.state, 'sign');
+});
+
+test('reminder: if you were away it waits, and shows up when you come back', () => {
+  const { c, tracker, step } = meetingSetup(4);
+  tracker.setLocked(true);
+  step(30);
+  assert.notStrictEqual(c.state, 'sign');
+  tracker.setLocked(false);
+  const ev = step(15);
+  assert.ok(ev.includes('reminder'), ev.join(','));
+  assert.ok(c.state === 'sign' || c.state === 'run', c.state);
+});
+
+test('mood: left alone for an hour he ends up meh or sad, not cheerful; pats bring him back', () => {
+  const c = grounded(new Companion({ bounds, rng: seeded(8) }));
+  for (let i = 0; i < 20 * 3600; i++) c.update(1 / 20);
+  assert.ok(['meh', 'sad'].includes(c.moodBand()), `${c.moodBand()} (${c.mood.toFixed(2)}) needs ${JSON.stringify(c.needs)}`);
+  for (let i = 0; i < 5; i++) {
+    c.enter('idle', 10);
+    c.pat();
   }
-  for (const s of during) assert.ok(['idle', 'sit', 'backView', 'sleep', 'eat', 'flower', 'lookAround', 'curious', 'shy', 'wave', 'sign'].includes(s), `during meeting: ${s}`);
-  const after = step(6 * 60);
-  assert.ok(after.includes('eventEnded'), after.join(','));
+  for (let i = 0; i < 20 * 600; i++) c.update(1 / 20);
+  assert.ok(['content', 'cheerful'].includes(c.moodBand()), `${c.moodBand()} (${c.mood.toFixed(2)})`);
+});
+
+test('mood: his own activities don\'t lift his mood directly', () => {
+  for (const name of ['eat', 'play', 'adventure', 'flower', 'talk', 'jump', 'run']) {
+    assert.ok(!brain.EFFECTS[name].mood, name);
+  }
+});
+
+test('mood: throwing him around makes him grumpy for a few minutes', () => {
+  const c = grounded(new Companion({ bounds, rng: seeded() }));
+  c.grab({ x: c.x, y: c.y - 50 });
+  for (let i = 0; i < 6; i++) {
+    c.update(1 / 60);
+    c.drag({ x: 900 + i * 60, y: 600 - i * 40 });
+  }
+  c.release();
+  c.grab({ x: c.x, y: c.y - 50 });
+  for (let i = 0; i < 6; i++) {
+    c.update(1 / 60);
+    c.drag({ x: 300 + i * 60, y: 600 - i * 40 });
+  }
+  c.release();
+  assert.strictEqual(c.moodBand(), 'grumpy');
+  for (let i = 0; i < 60 * 300; i++) c.update(1 / 60);
+  assert.notStrictEqual(c.moodBand(), 'grumpy');
+});
+
+test('mood bands', () => {
+  assert.strictEqual(brain.moodBand(0.6), 'cheerful');
+  assert.strictEqual(brain.moodBand(0.3), 'content');
+  assert.strictEqual(brain.moodBand(0), 'meh');
+  assert.strictEqual(brain.moodBand(-0.5), 'sad');
+  assert.strictEqual(brain.moodBand(0.6, 0.5), 'grumpy');
+});
+
+test('a sad Togepi doesn\'t run, jump or go on adventures', () => {
+  const w = winners(200, needs({ boredom: 0.7, energy: 0.9, affection: 0.1 }), ctx(), { mood: -0.6, cursorKnown: false });
+  for (const n of ['run', 'jump', 'adventure']) assert.ok(!w[n], `${n}: ${JSON.stringify(w)}`);
+});
+
+test('pacing: he settles into things instead of switching every few seconds', () => {
+  const c = grounded(new Companion({ bounds, rng: seeded(12) }));
+  let decisions = 0;
+  const orig = c.chooseNext.bind(c);
+  c.chooseNext = () => {
+    decisions += 1;
+    orig();
+  };
+  const minutes = 30;
+  for (let i = 0; i < 20 * 60 * minutes; i++) c.update(1 / 20, { x: 800, y: 500 });
+  const avg = (minutes * 60) / decisions;
+  assert.ok(avg >= 10, `a decision every ${avg.toFixed(1)} s`);
 });

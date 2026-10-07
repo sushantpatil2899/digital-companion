@@ -5,8 +5,8 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
-const { Settings, classifyApp } = require('./settings');
-const { FrontAppWatcher } = require('./mac/front-app');
+const { Settings } = require('./settings');
+const { AppWatcher } = require('./mac/front-app');
 const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
 
@@ -75,21 +75,20 @@ const IS_MAC = process.platform === 'darwin';
 function applyWatchApps(on) {
   if (frontApp) frontApp.stop();
   frontApp = null;
-  tracker.setQuiet(false);
+  tracker.setApps({ watching: false });
   tracker.setNote('apps', null);
   showAfterPresenting();
   if (!on || !IS_MAC) return;
-  frontApp = new FrontAppWatcher((r) => {
-    if (r.error) {
+  tracker.setApps({ watching: true });
+  frontApp = new AppWatcher(
+    () => settings.values,
+    (r) => {
       tracker.setNote('apps', r.error);
-      return;
-    }
-    tracker.setNote('apps', null);
-    const kind = classifyApp(r.name, settings.values);
-    tracker.setQuiet(!!kind, kind, r.name);
-    if (kind === 'presenting') hideForPresenting();
-    else showAfterPresenting();
-  });
+      tracker.setApps({ watching: true, ...r });
+      if (r.frontKind === 'presenting') hideForPresenting();
+      else showAfterPresenting();
+    },
+  );
   frontApp.start();
 }
 
@@ -227,6 +226,10 @@ function showBrain() {
   });
 }
 
+function allDisplays() {
+  return screen.getAllDisplays().map((d) => ({ bounds: d.bounds, workArea: d.workArea }));
+}
+
 function boundsForPoint(point) {
   const display = screen.getDisplayNearestPoint({ x: px(point.x), y: px(point.y) });
   const wa = display.workArea;
@@ -246,6 +249,7 @@ function createWindow() {
     // Drop in from a bit above the floor so he lands on startup.
     y: bounds.floor - 260,
   });
+  companion.setScreens(allDisplays());
   loadBrain();
 
   win = new BrowserWindow({
@@ -321,8 +325,7 @@ function tick() {
   }
   if (companion.state === 'grabbed') companion.drag(cursor);
 
-  // While airborne or held he may cross onto another monitor.
-  companion.setBounds(boundsForPoint({ x: companion.x, y: companion.y - 10 }));
+  // (He works out which monitor he's on himself, from the display list.)
   companion.update(dt, cursor);
 
   const wx = px(companion.x - WIN_W / 2);
@@ -415,7 +418,11 @@ function callHere() {
     companion.comeTo(c.x);
     return;
   }
-  // On another screen (or mid-air): drop him in from just above the cursor.
+  // On another screen: he walks over through the screen edges.
+  if (companion.isGrounded() && companion.comeTo(c.x, c.y)) return;
+  // Mid-air, or screens that don't touch: drop him in from just above the cursor.
+  companion.route = null;
+  companion.crossing = null;
   companion.setBounds(target);
   companion.x = c.x;
   companion.y = Math.min(c.y - 40, companion.bounds.floor);
@@ -521,8 +528,14 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.platform === 'darwin' && app.dock) app.dock.hide();
     createWindow();
+    // Monitors plugged in / unplugged / rearranged.
+    const updateScreens = () => {
+      if (companion) companion.setScreens(allDisplays());
+    };
+    screen.on('display-added', updateScreens);
+    screen.on('display-removed', updateScreens);
     screen.on('display-metrics-changed', () => {
-      if (companion) companion.setBounds(boundsForPoint({ x: companion.x, y: companion.y - 10 }));
+      updateScreens();
     });
   });
   app.on('before-quit', saveBrain);

@@ -15,6 +15,13 @@ const DEFAULTS = {
   quietApps: ['zoom.us', 'Microsoft Teams', 'FaceTime', 'Webex', 'Cisco Webex Meetings', 'Skype', 'Around', 'Discord'],
   // Apps where he hides completely (presenting).
   presentApps: ['Keynote', 'Microsoft PowerPoint'],
+  // Browsers whose open tabs are checked for meetings.
+  browsers: ['Google Chrome', 'Arc', 'Brave Browser', 'Microsoft Edge', 'Safari'],
+  // Tab addresses that always mean you're in a meeting (matched anywhere in the URL).
+  meetingUrls: ['meet.google.com/', 'zoom.us/wc', 'zoom.us/j/', 'whereby.com/', 'around.co/'],
+  // Web apps you might also just leave open for chat: these count as a
+  // meeting only while a calendar event is on (like a meeting app's window).
+  meetingAppUrls: ['teams.microsoft.com', 'teams.live.com', '.webex.com/'],
 };
 
 class Settings {
@@ -51,6 +58,21 @@ class Settings {
   }
 }
 
+/**
+ * What a browser tab URL says about meetings: 'meeting' (Meet call, Zoom web
+ * meeting, …), 'meetingApp' (Teams / Webex web app: a meeting only during a
+ * calendar event) or null.
+ */
+function classifyUrl(url, settings) {
+  if (!url) return null;
+  const u = String(url).toLowerCase();
+  // Google Meet's landing page (no meeting code) isn't a meeting.
+  if (/meet\.google\.com\/?(\?.*)?$/.test(u) || /meet\.google\.com\/landing/.test(u)) return null;
+  if ((settings.meetingUrls || []).some((m) => u.includes(m.toLowerCase()))) return 'meeting';
+  if ((settings.meetingAppUrls || []).some((m) => u.includes(m.toLowerCase()))) return 'meetingApp';
+  return null;
+}
+
 /** Which list (if any) an app name is on: 'presenting', 'meeting' or null. */
 function classifyApp(name, settings) {
   if (!name) return null;
@@ -61,4 +83,4 @@ function classifyApp(name, settings) {
   return null;
 }
 
-module.exports = { Settings, DEFAULTS, classifyApp };
+module.exports = { Settings, DEFAULTS, classifyApp, classifyUrl };

@@ -10,6 +10,7 @@
 // src/main/brain.js.
 
 const brain = require('./brain');
+const screensLib = require('./screens');
 
 const TUNING = {
   gravity: 2600, // px/s^2
@@ -42,7 +43,7 @@ const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', '
 
 // Area around his body that counts as the cursor being "on him", relative to
 // his feet in screen px (an ellipse centred `cy` above the feet).
-const HIT = { cy: 70, rx: 60, ry: 72 };
+const HIT = { cy: 70, rx: 60, ry: 72, signHalfWidth: 64, signBottom: 140, signTop: 205 };
 
 // States the cursor reactions (curious / shy / wave) may interrupt.
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
@@ -113,13 +114,24 @@ class Companion {
     this.time = 0;
     this.lastInteraction = 0;
     this.needs = brain.defaultNeeds();
-    this.mood = 0.3; // -1 grumpy .. 1 cheerful
+    this.mood = 0.3; // -1 sad .. 1 cheerful
+    this.grumpiness = 0; // 0..1, raised by being thrown, fades over minutes
+    this.lastMoveDistance = 0;
+    // Multiple monitors (see src/main/screens.js). Empty = just `bounds`.
+    this.screens = [];
+    this.screenIndex = 0;
+    this.crossing = null; // the screen link he's deliberately crossing right now
+    this.route = null; // { target, links, x, then, gait } while travelling between screens
+    this.softLanding = false; // a deliberate drop: land gently, no bounce
     this.context = brain.defaultContext();
     this.lastActivity = null;
     this.lastScores = [];
     this.lastCursor = null;
     this.afterMove = null; // state to enter when the current walk/run arrives
-    this.pendingGreet = null; // 'return' | 'morning' | 'plugged' | 'eventSoon' | 'eventEnded'
+    this.pendingGreet = null; // 'return' | 'morning' | 'plugged' | 'eventEnded'
+    // Meeting reminder he's holding a sign for, until you click it:
+    // { kind: '30' | '5' | 'now', event, acknowledged }
+    this.reminder = null;
     this.lastGreetDay = null;
     this.lastSeekAt = -Infinity;
     this.lastSadAt = -Infinity;
@@ -147,13 +159,172 @@ class Companion {
     this.events = []; // one-shot events for the renderer (sounds/particles)
   }
 
-  setBounds(bounds) {
+  setBounds(bounds, keepX = false) {
     this.bounds = { ...bounds };
     if (this.state !== 'grabbed') {
-      this.x = clamp(this.x, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth);
-      if (this.y > this.bounds.floor) this.y = this.bounds.floor;
+      if (!this.crossing && !keepX) this.x = clamp(this.x, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth);
+      // Snap onto the floor, except while rising past it (springing up a screen).
+      if (this.y > this.bounds.floor && (this.isGrounded() || this.vy >= 0)) this.y = this.bounds.floor;
       if (this.y < this.bounds.floor && this.isGrounded()) this.enter('fall');
     }
+  }
+
+  // ---------------------------------------------------------------- screens
+
+  /** All displays, as Electron gives them: [{ bounds, workArea }]. */
+  setScreens(displays) {
+    this.screens = screensLib.makeScreens(displays);
+    if (!this.screens.length) return;
+    if (this.route && this.route.target >= this.screens.length) this.route = null;
+    this.crossing = null;
+    this.screenIndex = screensLib.screenAt(this.screens, this.x, this.y - 10);
+    this.setBounds(this.screens[this.screenIndex]);
+  }
+
+  /** Which screen his feet are on now; switch walls/floor when that changes. */
+  updateScreen() {
+    if (!this.screens.length) return;
+    const idx = screensLib.screenAt(this.screens, this.x, this.y - 10);
+    if (idx === this.screenIndex) return;
+    this.screenIndex = idx;
+    // Just came through an edge: don't yank him fully inside the new screen,
+    // he walks (or flies) the rest of the way in.
+    const cameThrough = !!this.crossing;
+    if (this.crossing && this.crossing.to === idx) {
+      if (this.crossing.kind === 'drop') this.softLanding = true;
+      this.crossing = null;
+    }
+    this.setBounds(this.screens[idx], cameThrough);
+  }
+
+  /** Screens he could walk to from here. */
+  reachableScreens() {
+    if (this.screens.length < 2) return [];
+    return screensLib.linksFrom(this.screens, this.screenIndex, this.halfWidth).map((l) => l.to);
+  }
+
+  /** Travel to screen `target` through the edges, then walk to `x` and do `then`. */
+  travelTo(target, x, then = null, gait = 'walk') {
+    const links = screensLib.route(this.screens, this.screenIndex, target, this.halfWidth);
+    if (!links) return false;
+    this.route = { target, links, x, then, gait };
+    this.continueRoute();
+    return true;
+  }
+
+  /** Take the next step of the current route. Returns false if there's nothing to do. */
+  continueRoute() {
+    const r = this.route;
+    if (!r) return false;
+    this.crossing = null;
+    if (this.screenIndex === r.target) {
+      this.route = null;
+      const sc = this.screens[r.target];
+      // Somewhere new: have a look around before deciding what's next.
+      this.walkTo(clamp(r.x, sc.left + this.halfWidth, sc.right - this.halfWidth), r.gait, r.then || { state: 'lookAround', duration: 4 });
+      return true;
+    }
+    let link = r.links.find((l) => l.from === this.screenIndex);
+    if (!link) {
+      // Off the planned path (e.g. dropped somewhere else): plan again.
+      const again = screensLib.route(this.screens, this.screenIndex, r.target, this.halfWidth);
+      if (!again || !again.length) {
+        this.route = null;
+        return false;
+      }
+      r.links = again;
+      link = again[0];
+    }
+    this.approach(link, r.gait);
+    return true;
+  }
+
+  /** Walk to where a crossing starts (or straight through a side edge). */
+  approach(link, gait) {
+    const sign = link.dir === 'right' ? 1 : -1;
+    const sc = this.screens[this.screenIndex];
+    const inside = (x) => clamp(x, sc.left + this.halfWidth, sc.right - this.halfWidth);
+    if (link.kind === 'walk' || link.kind === 'drop') {
+      // Just keep walking through the edge.
+      this.crossing = link;
+      this.walkTo(link.edgeX + sign * (this.halfWidth + 60), gait, null);
+    } else if (link.kind === 'hop') {
+      // Take a run-up so he's at the top of the hop as he crosses the edge.
+      const { vy } = this.hopVelocity(link.rise + 70);
+      const runUp = Math.max(this.halfWidth + 5, 200 * (vy / TUNING.gravity));
+      this.walkTo(inside(link.edgeX - sign * runUp), gait, { cross: link });
+    } else {
+      // Stacked: get under / over the shared part of the edge first.
+      this.walkTo(clamp(this.x, link.rangeLeft, link.rangeRight), gait, { cross: link });
+    }
+  }
+
+  hopVelocity(height) {
+    return { vy: Math.sqrt(2 * TUNING.gravity * Math.max(20, height)) };
+  }
+
+  /** The actual crossing move at the end of the approach. */
+  startCross(link) {
+    this.crossing = link;
+    this.vx = 0;
+    switch (link.kind) {
+      case 'hop': {
+        this.vy = -this.hopVelocity(link.rise + 70).vy;
+        this.vx = (link.dir === 'right' ? 1 : -1) * 200;
+        this.facing = Math.sign(this.vx);
+        this.enter('jump');
+        this.emit('hop');
+        break;
+      }
+      case 'fall':
+        // Step off the bottom of this screen onto the one below.
+        this.softLanding = true;
+        this.vy = 120;
+        this.enter('fall');
+        this.emit('dropDown');
+        break;
+      case 'spring': {
+        // Big spring jump up through the top edge onto the screen above.
+        const target = this.screens[link.to];
+        this.vy = -this.hopVelocity(this.y - target.floor + 90).vy;
+        this.enter('jump');
+        this.emit('spring');
+        break;
+      }
+      default:
+        this.crossing = null;
+    }
+  }
+
+  /** Walk/run to `x` on this screen, then do `then` (or decide what's next). */
+  walkTo(x, gait = 'walk', then = null) {
+    this.targetX = x;
+    this.lastMoveDistance = Math.abs(x - this.x);
+    if (Math.abs(x - this.x) < 3) {
+      this.afterMove = then;
+      this.arrive();
+      return;
+    }
+    this.facing = x > this.x ? 1 : -1;
+    this.enter(gait);
+    this.afterMove = then;
+  }
+
+  /** Reached the end of a walk/run. */
+  arrive() {
+    if (this.afterMove) {
+      const next = this.afterMove;
+      this.afterMove = null;
+      if (next.cross) {
+        this.startCross(next.cross);
+        return;
+      }
+      this.enter(next.state, next.duration);
+      if (next.event) this.emit(next.event);
+      return;
+    }
+    if (this.route && this.continueRoute()) return;
+    this.chooseNext();
   }
 
   isGrounded() {
@@ -171,6 +342,11 @@ class Companion {
 
   emit(name) {
     this.events.push(name);
+  }
+
+  /** cheerful | content | meh | sad | grumpy */
+  moodBand() {
+    return brain.moodBand(this.mood, this.grumpiness);
   }
 
   /** 0..1 version of mood, used by the renderer for blush. */
@@ -223,6 +399,9 @@ class Companion {
 
   /** Pointer pressed on the character. `point` = cursor in screen coords. */
   grab(point) {
+    this.route = null;
+    this.crossing = null;
+    this.softLanding = false;
     this.grabOffset = { x: point.x - this.x, y: point.y - this.y };
     this.cursorHistory = [{ t: this.time, x: point.x, y: point.y }];
     this.vx = 0;
@@ -278,6 +457,7 @@ class Companion {
     if (speed > TUNING.throwSpeed) {
       this.throwTimes.push(this.time);
       this.applyEffect('throw');
+      this.grumpiness = Math.min(1, this.grumpiness + brain.NEEDS.grumpyPerThrow);
       this.emit('throw');
     } else {
       this.applyEffect('drop');
@@ -288,6 +468,7 @@ class Companion {
   /** Called every tick while the mouse button is held on him. `dt` = seconds. */
   pet(dt) {
     if (['grabbed', 'fall', 'jump'].includes(this.state)) return;
+    if (this.showingReminder() && this.acknowledgeReminder()) return;
     this.lastInteraction = this.time;
     this.lastPet = this.time;
     this.petting += dt;
@@ -313,6 +494,7 @@ class Companion {
   /** Quick click without dragging: a pat on the head (or a wake-up call). */
   pat() {
     if (!this.isGrounded()) return;
+    if (this.showingReminder() && this.acknowledgeReminder()) return;
     this.lastInteraction = this.time;
     if (this.state === 'sleep') {
       this.petting = 0;
@@ -332,22 +514,36 @@ class Companion {
     this.emit('heart');
   }
 
-  /** Run along the floor to `x` (e.g. when called from the menu). */
-  comeTo(x) {
-    if (!this.isGrounded()) return;
+  /**
+   * Run along the floor to below (x, y), e.g. from the menu. On another screen
+   * he goes there through the screen edges.
+   * @returns {boolean} false if he can't get there on foot (screens don't touch)
+   */
+  comeTo(x, y) {
+    if (!this.isGrounded()) return false;
     this.lastInteraction = this.time;
+    if (this.screens.length > 1 && y != null) {
+      const target = screensLib.screenAt(this.screens, x, y);
+      if (target !== this.screenIndex) {
+        this.endStayPut();
+        this.applyEffect('attention');
+        return this.travelTo(target, x, { state: 'happy', duration: 1 }, 'run');
+      }
+    }
     const minX = this.bounds.left + this.halfWidth;
     const maxX = this.bounds.right - this.halfWidth;
     this.targetX = clamp(x, minX, maxX);
     if (Math.abs(this.targetX - this.x) < 5) {
       this.enter('happy', 1);
-      return;
+      return true;
     }
     this.endStayPut(); // you're sending him somewhere, so he's no longer staying put
     this.applyEffect('attention');
+    this.route = null;
     this.afterMove = null;
     this.facing = this.targetX > this.x ? 1 : -1;
     this.enter('run');
+    return true;
   }
 
   /** Do one of MENU_ACTIVITIES on request. Returns false if he can't right now. */
@@ -384,6 +580,7 @@ class Companion {
     this.stateTime += dt;
     if (cursor) this.lastCursor = { x: cursor.x, y: cursor.y };
     this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context);
+    this.grumpiness = Math.max(0, this.grumpiness - brain.NEEDS.grumpyFade * dt);
     // Petting "charge" fades once the rubbing stops.
     if (this.time - this.lastPet > 0.4) this.petting = Math.max(0, this.petting - dt * 2);
     // Tell the menu once when "Stay put" runs out.
@@ -393,6 +590,7 @@ class Companion {
       this.emit('stayPutEnded');
     }
 
+    this.updateScreen();
     switch (this.state) {
       case 'grabbed':
         this.updateGrabbed(dt);
@@ -427,16 +625,17 @@ class Companion {
     this.swing *= Math.max(0, 1 - 6 * dt);
     if (Math.abs(this.vx) > 30) this.facing = this.vx > 0 ? 1 : -1;
 
-    // Walls.
+    // Walls (except the edge he's deliberately crossing through).
     const minX = b.left + this.halfWidth;
     const maxX = b.right - this.halfWidth;
-    if (this.x < minX) {
+    const open = this.crossing ? this.crossing.dir : null;
+    if (this.x < minX && this.vx <= 0 && open !== 'left') {
       this.x = minX;
       if (this.vx < 0) {
         this.vx = -this.vx * TUNING.wallBounce;
         if (Math.abs(this.vx) > 300) this.emit('bonk');
       }
-    } else if (this.x > maxX) {
+    } else if (this.x > maxX && this.vx >= 0 && open !== 'right') {
       this.x = maxX;
       if (this.vx > 0) {
         this.vx = -this.vx * TUNING.wallBounce;
@@ -446,7 +645,7 @@ class Companion {
 
     // Ceiling.
     const minY = b.top + this.height;
-    if (this.y < minY) {
+    if (this.y < minY && open !== 'up') {
       this.y = minY;
       if (this.vy < 0) {
         this.vy = -this.vy * TUNING.wallBounce;
@@ -455,9 +654,20 @@ class Companion {
     }
 
     // Floor.
-    if (this.y >= b.floor && this.vy >= 0) {
+    if (this.y >= b.floor && this.vy >= 0 && open !== 'down') {
       this.y = b.floor;
       const impact = this.vy;
+      if (this.softLanding) {
+        // A deliberate drop onto another screen: land on his feet.
+        this.softLanding = false;
+        this.crossing = null;
+        this.vx = 0;
+        this.vy = 0;
+        this.swing = 0;
+        this.emit('land');
+        this.enter('land', 0.35);
+        return;
+      }
       if (impact > TUNING.hardLanding) {
         // Bounce.
         this.vy = -impact * TUNING.floorBounce;
@@ -514,17 +724,17 @@ class Companion {
         this.vx = dir * speed;
         this.x += this.vx * dt;
         const arrived = dir === 0 || Math.sign(this.targetX - this.x) !== dir;
-        if (arrived || this.x <= minX || this.x >= maxX) {
-          this.x = clamp(arrived ? this.targetX : this.x, minX, maxX);
+        // The edge he's crossing through is open; the others are walls.
+        const openLeft = this.crossing && this.crossing.dir === 'left';
+        const openRight = this.crossing && this.crossing.dir === 'right';
+        // Only a wall he's heading towards stops him (just after coming through
+        // an edge, the wall behind him is still close).
+        const hitWall = (dir < 0 && !openLeft && this.x <= minX) || (dir > 0 && !openRight && this.x >= maxX);
+        if (arrived || hitWall) {
+          if (!this.crossing) this.x = clamp(arrived ? this.targetX : this.x, minX, maxX);
+          else if (arrived) this.x = this.targetX;
           this.vx = 0;
-          if (this.afterMove) {
-            const next = this.afterMove;
-            this.afterMove = null;
-            this.enter(next.state, next.duration);
-            if (next.event) this.emit(next.event);
-          } else {
-            this.chooseNext();
-          }
+          this.arrive();
         }
         break;
       }
@@ -562,7 +772,8 @@ class Companion {
         if (this.stateTime >= this.stateDuration) this.chooseNext();
     }
 
-    if (this.pendingGreet && this.isFreeForReaction()) this.react(this.pendingGreet);
+    this.updateReminder();
+    if (this.pendingGreet && this.isFreeForReaction() && !this.showingReminder()) this.react(this.pendingGreet);
     if (cursor) this.reactToCursor(dt, cursor);
 
     // Look towards the cursor when it's close and he's not busy.
@@ -576,7 +787,14 @@ class Companion {
   isOver(point) {
     const dx = (point.x - this.x) / HIT.rx;
     const dy = (point.y - (this.y - HIT.cy)) / HIT.ry;
-    return dx * dx + dy * dy <= 1;
+    if (dx * dx + dy * dy <= 1) return true;
+    // The sign he holds up above his head is clickable too.
+    if (this.state === 'sign') {
+      const sx = Math.abs(point.x - this.x);
+      const sy = this.y - point.y;
+      return sx <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop;
+    }
+    return false;
   }
 
   /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
@@ -613,10 +831,15 @@ class Companion {
 
   /** Pick the next autonomous behaviour from his needs, mood and context. */
   chooseNext() {
+    if (this.route && this.continueRoute()) return;
+    this.crossing = null;
     const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
       paused: this.paused,
       cursorKnown: !!this.lastCursor,
       last: this.lastActivity,
+      grumpiness: this.grumpiness,
+      afterLongWalk: this.lastActivity === 'walk' && this.lastMoveDistance > 350,
+      canVisitScreen: this.reachableScreens().length > 0,
       seekReady:
         this.time - this.lastSeekAt >= brain.NEEDS.seekCooldown * this.backoff() &&
         this.time - this.lastAttentionAt >= brain.NEEDS.attentionGrace,
@@ -637,7 +860,7 @@ class Companion {
     // Remember one-shot happenings until he's free to react to them.
     if (ctx.justReturned) this.pendingGreet = 'return';
     else if (ctx.justPluggedIn) this.pendingGreet = this.pendingGreet || 'plugged';
-    if (ctx.eventSoon) this.pendingGreet = 'eventSoon';
+    if (ctx.reminder) this.reminder = { ...ctx.reminder, acknowledged: false };
     if (ctx.eventEnded) this.pendingGreet = this.pendingGreet || 'eventEnded';
     // First time he sees you on a new day: say good morning.
     if (ctx.day && !ctx.userAway && ctx.hour >= 5 && this.lastGreetDay !== ctx.day) {
@@ -646,6 +869,46 @@ class Companion {
     }
     // Wake up when you come back (or when your meeting is about to start).
     if (this.state === 'sleep' && prev.userAway && !ctx.userAway) this.enter('surprised', 0.9);
+  }
+
+  // ---------------------------------------------------------------- reminders
+
+  /** Holding up (or on his way to hold up) an unanswered meeting sign. */
+  showingReminder() {
+    return !!this.reminder && !this.reminder.acknowledged && (this.state === 'sign' || (this.afterMove && this.afterMove.state === 'sign'));
+  }
+
+  updateReminder() {
+    const r = this.reminder;
+    if (!r) return;
+    const now = this.context.now;
+    if (now >= r.event.end) {
+      // The meeting's over: nothing to remind you about any more.
+      this.reminder = null;
+      if (this.state === 'sign') this.enter('idle', 2);
+      return;
+    }
+    if (r.acknowledged) return;
+    if (now >= r.event.start) r.kind = 'now';
+    // Keep holding the sign up until you click it; come back to it after
+    // being picked up, and show it when you return if you were away.
+    if (!this.showingReminder() && this.isGrounded() && this.state !== 'grabbed' && !this.context.userAway) {
+      if (['hug', 'happy', 'surprised', 'land', 'confused', 'angry'].includes(this.state) && this.stateTime < this.stateDuration) return;
+      this.pendingGreet = null;
+      this.emit('reminder');
+      this.goToCursorThen({ state: 'sign', duration: Infinity }, 'run');
+    }
+  }
+
+  /** You clicked the sign (or him): got it. */
+  acknowledgeReminder() {
+    if (!this.reminder || this.reminder.acknowledged) return false;
+    this.reminder.acknowledged = true;
+    this.applyEffect('attention');
+    this.emit('reminderAck');
+    this.vx = 0;
+    this.enter('wave', 1.8);
+    return true;
   }
 
   /** Not busy with you / in the air, so he can react to something. */
@@ -672,11 +935,6 @@ class Companion {
         this.emit('charging');
         this.enter('happy', 1.5);
         break;
-      case 'eventSoon':
-        // Come to where you're looking and hold up a "Meeting in 5!" sign.
-        this.emit('eventSoon');
-        this.goToCursorThen({ state: 'sign', duration: 8 }, 'run');
-        break;
       case 'eventEnded':
         this.emit('eventEnded');
         this.enter('wave', 2);
@@ -693,6 +951,11 @@ class Companion {
       this.enter(then.state, then.duration);
       if (then.event) this.emit(then.event);
       return;
+    }
+    // Your cursor is on another screen: go there through the edges.
+    if (this.screens.length > 1) {
+      const target = screensLib.screenAt(this.screens, this.lastCursor.x, this.lastCursor.y);
+      if (target !== this.screenIndex && this.travelTo(target, this.lastCursor.x, then, gait)) return;
     }
     this.targetX = clamp(this.lastCursor.x, minX, maxX);
     if (Math.abs(this.targetX - this.x) < 30) {
@@ -711,6 +974,7 @@ class Companion {
     const c = this.context;
     if (c.onBattery && c.batteryLevel != null && c.batteryLevel < 0.2) f *= 0.75;
     if (this.needs.energy < 0.2) f *= 0.8;
+    if (this.moodBand() === 'sad') f *= 0.7; // trudging
     return f;
   }
 
@@ -727,6 +991,8 @@ class Companion {
       savedAt: Date.now(),
       needs: { ...this.needs },
       mood: this.mood,
+      band: this.moodBand(),
+      grumpiness: this.grumpiness,
       lastGreetDay: this.lastGreetDay,
     };
   }
@@ -750,7 +1016,8 @@ class Companion {
       state: this.state,
       needs: { ...this.needs },
       mood: this.mood,
-      context: { ...this.context },
+      context: { ...this.context, screens: this.screens.length, screenIndex: this.screenIndex },
+      reminder: this.reminder ? { title: this.reminder.event.title, kind: this.reminder.kind, acknowledged: this.reminder.acknowledged } : null,
       paused: this.paused,
       stayPutLeft: this.stayPutLeft(),
       scores: this.lastScores.map((s) => ({ name: s.name, score: Math.round(s.score * 100) / 100, why: s.why })),
@@ -764,7 +1031,7 @@ class Companion {
     this.applyEffect(name);
     switch (name) {
       case 'walk':
-        this.startMove('walk', 80, 600);
+        this.startMove('walk', 150, 800);
         break;
       case 'run':
         this.startMove('run', 150, 700);
@@ -786,16 +1053,16 @@ class Companion {
         this.emit('jump');
         break;
       case 'idle':
-        this.enter('idle', rand(1.5, 4, rng));
+        this.enter('idle', rand(6, 15, rng));
         break;
       case 'sit':
-        this.enter('sit', rand(3, 8, rng));
+        this.enter('sit', rand(12, 30, rng));
         break;
       case 'lookAround':
-        this.enter('lookAround', rand(1.5, 2.5, rng));
+        this.enter('lookAround', rand(3, 5, rng));
         break;
       case 'talk':
-        this.enter('talk', rand(2.5, 4, rng));
+        this.enter('talk', rand(4, 6, rng));
         this.emit('talk');
         break;
       case 'eat':
@@ -803,11 +1070,11 @@ class Companion {
         this.emit('eat');
         break;
       case 'flower':
-        this.enter('flower', rand(4, 6, rng));
+        this.enter('flower', rand(6, 10, rng));
         this.emit('flower');
         break;
       case 'backView':
-        this.enter('backView', rand(3, 5, rng));
+        this.enter('backView', rand(6, 10, rng));
         break;
       case 'sleep': {
         // Nap until rested: longer when more tired, and much longer at night.
@@ -822,6 +1089,18 @@ class Companion {
         this.enter('sad', rand(6, 10, rng));
         this.emit('sad');
         break;
+      case 'visitScreen': {
+        // Wander over to a neighbouring screen, through the edge they share.
+        const options = this.reachableScreens();
+        const to = options[Math.floor(rng() * options.length)];
+        const sc = to != null ? this.screens[to] : null;
+        if (!sc || !this.travelTo(to, rand(sc.left + this.halfWidth + 60, sc.right - this.halfWidth - 60, rng), null, 'walk')) {
+          this.startMove('walk', 150, 800);
+        } else {
+          this.emit('visitScreen');
+        }
+        break;
+      }
       case 'seek':
         // Lonely: go and stand under your cursor hoping for attention.
         this.lastSeekAt = this.time;
@@ -850,6 +1129,7 @@ class Companion {
       dir = roomRight >= roomLeft ? 1 : -1;
     }
     this.targetX = clamp(this.x + dir * distance, minX, maxX);
+    this.lastMoveDistance = Math.abs(this.targetX - this.x);
     this.facing = dir;
     this.afterMove = null;
     this.enter(kind);
@@ -868,8 +1148,10 @@ class Companion {
       stateDuration: this.stateDuration,
       happiness: this.happiness,
       mood: this.mood,
+      band: this.moodBand(),
       energy: this.needs.energy,
-      eventTitle: this.context.nextEvent ? this.context.nextEvent.title : null,
+      eventTitle: this.reminder ? this.reminder.event.title : this.context.nextEvent ? this.context.nextEvent.title : null,
+      reminderKind: this.reminder && !this.reminder.acknowledged ? this.reminder.kind : null,
       petting: this.petting,
       grumpy: this.time < this.grumpyUntil,
       time: this.time,

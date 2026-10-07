@@ -51,11 +51,11 @@ function bar(label, value, goodness, text) {
   return `<div class="row"><span>${label}</span><div class="bar"><i style="width:${Math.round(value * 100)}%;background:${color(goodness)}"></i></div><span class="num">${text}</span></div>`;
 }
 
-function moodBar(mood) {
-  // Centred bar: left = grumpy, right = cheerful.
+function moodBar(mood, band) {
+  // Centred bar: left = sad, right = cheerful.
   const w = Math.abs(mood) * 50;
   const left = mood >= 0 ? 50 : 50 - w;
-  const face = mood > 0.4 ? 'cheerful' : mood > 0 ? 'content' : mood > -0.4 ? 'meh' : 'grumpy';
+  const face = band || (mood > 0.45 ? 'cheerful' : mood > 0.1 ? 'content' : mood > -0.25 ? 'meh' : 'sad');
   return `<div class="row"><span>Mood</span><div class="bar"><i style="left:${left}%;width:${w}%;background:${color((mood + 1) / 2)}"></i></div><span class="num">${face}</span></div>`;
 }
 
@@ -79,7 +79,7 @@ function render(b) {
       const v = b.needs[k];
       const goodness = good === 'high' ? v : 1 - v;
       return bar(label, v, goodness, `${Math.round(v * 100)}%`);
-    }).join('') + moodBar(b.mood);
+    }).join('') + moodBar(b.mood, b.band);
 
   const c = b.context;
   const rows = [
@@ -91,6 +91,9 @@ function render(b) {
     ],
   ];
   if (c.frontApp) rows.push(['Front app', c.frontApp]);
+  if (c.visibleApps && c.visibleApps.length) rows.push(['On screen', c.visibleApps.slice(0, 8).join(', ')]);
+  if (c.screens > 1) rows.push(['Screens', `${c.screens} (he's on #${(c.screenIndex || 0) + 1})`]);
+  if (b.reminder) rows.push(['Reminder', `${b.reminder.title} (${b.reminder.kind === 'now' ? 'now' : `in ${b.reminder.kind} min`}${b.reminder.acknowledged ? ', seen' : ', waiting for a click'})`]);
   if (c.inEvent) rows.push(['In event', `${c.inEvent.title} (until ${fmtTime(c.inEvent.end)})`]);
   if (c.nextEvent) rows.push(['Next event', `${c.nextEvent.title} at ${fmtTime(c.nextEvent.start)}`]);
   if (c.error) rows.push(['Note', c.error]);

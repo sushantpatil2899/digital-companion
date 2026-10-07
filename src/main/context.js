@@ -28,7 +28,8 @@ class ContextTracker {
     this.awaySince = null;
     this.battery = { level: null, charging: null };
     this.onBattery = false;
-    this.quiet = { on: false, reason: null, frontApp: null };
+    // What the app watcher (macOS) sees; see setApps().
+    this.apps = { watching: false, frontApp: null, frontKind: null, meetingAppVisible: false, meetingTab: false };
     this.calendar = { nextEvent: null, inEvent: null };
     this.alertedEvents = new Set(); // events we've already said "soon" about
     this.lastInEvent = null;
@@ -64,9 +65,17 @@ class ContextTracker {
     this.onBattery = !b.charging;
   }
 
-  /** Front app / meeting detection (stage 2). */
-  setQuiet(on, reason = null, frontApp = null) {
-    this.quiet = { on: !!on, reason: on ? reason : null, frontApp };
+  /**
+   * What's on your screens (macOS "Notice which app I'm using").
+   * @param {object} a
+   * @param {boolean} a.watching          the feature is on
+   * @param {string}  [a.frontApp]        name of the app in front
+   * @param {string}  [a.frontKind]       'meeting' | 'presenting' | null for the front app
+   * @param {boolean} [a.meetingAppVisible] a meeting app has a window showing on any screen
+   * @param {boolean} [a.meetingTab]      a browser window on any screen shows a meeting tab
+   */
+  setApps(a) {
+    this.apps = { watching: false, frontApp: null, frontKind: null, meetingAppVisible: false, meetingTab: false, ...a };
   }
 
   /** Calendar events (stage 2): [{ title, start, end }] with ms epoch times. */
@@ -98,18 +107,38 @@ class ContextTracker {
       if (cal.nextEvent.end > now) cal.inEvent = cal.nextEvent;
       cal.nextEvent = null;
     }
-    // "Starting soon" once per event (about 5 minutes before).
-    if (cal.nextEvent && cal.nextEvent.start - now <= 5 * 60 * 1000) {
+    // Reminders: once at ~30 minutes before an event and once at ~5 minutes.
+    if (cal.nextEvent) {
+      const left = cal.nextEvent.start - now;
       const key = `${cal.nextEvent.title}@${cal.nextEvent.start}`;
-      if (!this.alertedEvents.has(key)) {
-        this.alertedEvents.add(key);
-        this.pending.eventSoon = true;
+      if (left <= 5 * 60 * 1000) {
+        if (!this.alertedEvents.has(`${key}#5`)) {
+          this.alertedEvents.add(`${key}#5`);
+          this.alertedEvents.add(`${key}#30`); // too late for the 30-minute one
+          this.pending.reminder = { kind: '5', event: cal.nextEvent };
+        }
+      } else if (left <= 30 * 60 * 1000 && !this.alertedEvents.has(`${key}#30`)) {
+        this.alertedEvents.add(`${key}#30`);
+        this.pending.reminder = { kind: '30', event: cal.nextEvent };
       }
     }
     // "Just ended" when the event we were in is over.
     if (this.lastInEvent && !cal.inEvent) this.pending.eventEnded = true;
     this.lastInEvent = cal.inEvent;
     const inEvent = cal.inEvent;
+
+    // Quiet only when you're actually in a meeting (or presenting). With app
+    // watching off we can't tell, so a calendar event counts as a meeting.
+    const a = this.apps;
+    let quietReason = null;
+    if (a.watching) {
+      if (a.frontKind === 'presenting') quietReason = 'presenting';
+      else if (a.frontKind === 'meeting') quietReason = `meeting (${a.frontApp})`;
+      else if (a.meetingTab) quietReason = 'meeting (browser tab)';
+      else if (a.meetingAppVisible && inEvent) quietReason = 'meeting (on another screen)';
+    } else if (inEvent) {
+      quietReason = 'calendar event';
+    }
 
     const date = new Date(now);
     const ctx = {
@@ -121,9 +150,12 @@ class ContextTracker {
       onBattery: this.onBattery,
       batteryLevel: this.battery.level,
       charging: this.battery.charging,
-      quiet: this.quiet.on || !!inEvent,
-      quietReason: this.quiet.on ? this.quiet.reason : inEvent ? 'calendar' : null,
-      frontApp: this.quiet.frontApp,
+      now,
+      quiet: !!quietReason,
+      quietReason,
+      presenting: quietReason === 'presenting',
+      frontApp: a.watching ? a.frontApp : null,
+      visibleApps: a.watching && a.visibleApps ? a.visibleApps : [],
       nextEvent: this.calendar.nextEvent,
       inEvent: this.calendar.inEvent,
       error: Object.values(this.notes).join(' ') || null,

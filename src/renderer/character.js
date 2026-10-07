@@ -416,6 +416,27 @@ function drawEye(ctx, x, y, side, p) {
       ctx.lineTo(-side * 4, 4);
       ctx.stroke();
       break;
+    case 'meh':
+    case 'sleepy': {
+      // Half-closed eyes: a flat upper lid over the eye ("meh"), lower when tired.
+      const lid = p.eyes === 'meh' ? -1.6 : 0.6;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-6, lid, 12, 10);
+      ctx.clip();
+      ellipse(ctx, 0, 0, 3.7, 5.5);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.white;
+      ellipse(ctx, -1.1, lid + 1.7, 1.3, 1.3);
+      ctx.fill();
+      ctx.restore();
+      ctx.beginPath();
+      ctx.moveTo(-4.6, lid);
+      ctx.lineTo(4.6, lid);
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+      break;
+    }
     case 'sad':
     case 'angry': {
       ellipse(ctx, 0, 1, 3, 3.8 * Math.max(0.1, open));
@@ -1026,7 +1047,7 @@ function defaultPose() {
     view: 'front', // front | back | lying
     feet: 'stand', // stand | sit | dangle
     arms: 'down', // down | up | wave | flail | hold | hug | cheer | fists
-    eyes: 'open', // open | wide | small | happy | content | closed | squint | sad | angry
+    eyes: 'open', // open | wide | small | happy | content | closed | squint | sad | angry | meh | sleepy
     mouth: 'smile', // smile | smallSmile | open | o | frown | growl | wavy | flat | talk | chew
     blink: 0,
     lookX: 0,
@@ -1183,12 +1204,15 @@ function drawSweat(ctx, x, y, t) {
   ctx.restore();
 }
 
-// A little sign he holds up over his head (e.g. "Meeting in 5!").
-function drawSign(ctx, line1, line2, t) {
-  const w = 104;
+// A little sign he holds up over his head (e.g. "Meeting in 5!"), with a
+// small green "OK ✓" tag showing it can be clicked away. `urgent` makes it
+// bounce more (the meeting is starting now).
+function drawSign(ctx, line1, line2, t, urgent = false) {
+  const w = 108;
   const h = line2 ? 38 : 26;
   const cx = 0;
-  const top = -172 + (line2 ? 0 : 6) + Math.sin(t * 5) * 1.5;
+  const bob = urgent ? Math.abs(Math.sin(t * 9)) * -4 : Math.sin(t * 5) * 1.5;
+  const top = -167 + (line2 ? 0 : 6) + bob;
   ctx.save();
   // Two sticks down to his raised hands.
   ctx.lineCap = 'round';
@@ -1206,7 +1230,7 @@ function drawSign(ctx, line1, line2, t) {
   // Board.
   ctx.beginPath();
   ctx.roundRect(cx - w / 2, top, w, h, 8);
-  ctx.fillStyle = '#fff7e2';
+  ctx.fillStyle = urgent ? '#ffe9d6' : '#fff7e2';
   ctx.fill();
   ctx.lineWidth = 2.2;
   ctx.strokeStyle = PALETTE.outline;
@@ -1214,13 +1238,34 @@ function drawSign(ctx, line1, line2, t) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = PALETTE.outline;
-  ctx.font = 'bold 13px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
+  // Shrink the text if it doesn't fit on the board.
+  const fit = (text, size, weight) => {
+    let px = size;
+    do {
+      ctx.font = `${weight}${px}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
+      px -= 0.5;
+    } while (ctx.measureText(text).width > w - 12 && px > 8);
+  };
+  fit(line1, 13, 'bold ');
   ctx.fillText(line1, cx, top + (line2 ? 12 : h / 2 + 0.5));
   if (line2) {
-    ctx.font = '11px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
+    fit(line2, 11, '');
     ctx.fillStyle = '#7a6656';
     ctx.fillText(line2, cx, top + 27);
   }
+  // "OK ✓" tag hanging off the bottom-right corner.
+  const tx = cx + w / 2 - 20;
+  const ty = top + h - 6;
+  ctx.beginPath();
+  ctx.roundRect(tx - 15, ty, 30, 15, 7);
+  ctx.fillStyle = '#6cb86a';
+  ctx.fill();
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  ctx.fillText('OK ✓', tx, ty + 7.8);
   ctx.restore();
 }
 
