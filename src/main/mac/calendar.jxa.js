@@ -8,6 +8,18 @@
 ObjC.import('EventKit');
 ObjC.import('Foundation');
 
+// Values from EventKit can come back as nil or as an NSNull object.
+function isMissing(obj) {
+  if (!obj) return true;
+  try {
+    if (obj.isNil()) return true;
+    if (obj.isKindOfClass($.NSNull)) return true;
+  } catch (err) {
+    // not an ObjC object: treat as present
+  }
+  return false;
+}
+
 function authStatus() {
   // 0 not determined, 1 restricted, 2 denied, 3 full access, 4 write-only
   return Number($.EKEventStore.authorizationStatusForEntityType(0));
@@ -46,9 +58,14 @@ function run(argv) {
   const until = $.NSDate.dateWithTimeIntervalSinceNow(hours * 3600);
   // A little in the past too, so an event you're in right now is included.
   const from = $.NSDate.dateWithTimeIntervalSinceNow(-6 * 3600);
-  const predicate = store.predicateForEventsWithStartDateEndDateCalendars(from, until, null);
+  // All event calendars. (Passing null for "all" becomes NSNull in JXA, which
+  // EventKit can't handle, so pass the real list.)
+  const calendars = store.calendarsForEntityType(0);
+  if (isMissing(calendars) || Number(calendars.count) === 0) return JSON.stringify({ events: [] });
+  const predicate = store.predicateForEventsWithStartDateEndDateCalendars(from, until, calendars);
   const found = store.eventsMatchingPredicate(predicate);
   const events = [];
+  if (isMissing(found)) return JSON.stringify({ events });
   const nowMs = Number(now.timeIntervalSince1970) * 1000;
   for (let i = 0; i < Number(found.count); i++) {
     const e = found.objectAtIndex(i);
@@ -60,7 +77,7 @@ function run(argv) {
     let declined = false;
     try {
       const attendees = e.attendees;
-      if (attendees && !attendees.isNil()) {
+      if (!isMissing(attendees)) {
         for (let j = 0; j < Number(attendees.count); j++) {
           const a = attendees.objectAtIndex(j);
           if (a.isCurrentUser && Number(a.participantStatus) === 3) declined = true;
@@ -70,7 +87,13 @@ function run(argv) {
       // attendee info isn't essential
     }
     if (declined) continue;
-    events.push({ title: ObjC.unwrap(e.title) || 'Event', start, end });
+    let title = 'Event';
+    try {
+      if (!isMissing(e.title)) title = ObjC.unwrap(e.title) || 'Event';
+    } catch (err) {
+      // keep the default title
+    }
+    events.push({ title, start, end });
   }
   return JSON.stringify({ events });
 }
