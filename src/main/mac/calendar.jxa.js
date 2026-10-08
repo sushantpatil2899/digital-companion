@@ -1,7 +1,8 @@
 // JavaScript for Automation (run with `osascript -l JavaScript`): lists the
 // next few hours of events from the Mac Calendar app (which syncs your Google
 // Calendar) using EventKit, and prints them as JSON:
-//   {"events":[{"title":"Standup","start":1760000000000,"end":1760000900000}]}
+//   {"events":[{"title":"Standup","start":1760000000000,"end":1760000900000,
+//               "url":"…","location":"…","notes":"…"}]}
 // or {"error":"denied"|"restricted"|"…"} if it can't read them.
 // The first time, macOS asks whether Togepi may access your calendars.
 
@@ -93,7 +94,20 @@ function run(argv) {
     } catch (err) {
       // keep the default title
     }
-    events.push({ title, start, end });
+    // Where the video call link might be: the event's URL, location or notes.
+    const text = (v) => {
+      try {
+        if (isMissing(v)) return '';
+        if (v.absoluteString) return ObjC.unwrap(v.absoluteString) || '';
+        return ObjC.unwrap(v) || '';
+      } catch (err) {
+        return '';
+      }
+    };
+    const url = text(e.URL);
+    const location = text(e.location);
+    const notes = String(text(e.notes)).slice(0, 4000);
+    events.push({ title, start, end, url, location, notes });
   }
   return JSON.stringify({ events });
 }

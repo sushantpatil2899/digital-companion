@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
 const { Settings } = require('./settings');
@@ -30,7 +30,7 @@ const ACTIVITY_MENU = [
 // The window is a small transparent square that travels around the screen.
 // The character's feet sit at (WIN_W / 2, WIN_H - FOOT_MARGIN) inside it.
 const WIN_W = 220;
-const WIN_H = 220;
+const WIN_H = 240; // tall enough for a sticky note held over his head
 const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
 
@@ -65,6 +65,7 @@ let saveTimer = null;
 let suspendedAt = null;
 let brainWin = null;
 let brainTimer = null;
+let noteWin = null;
 let settings = null;
 let frontApp = null;
 let calendar = null;
@@ -251,6 +252,7 @@ function createWindow() {
     y: bounds.floor - 260,
   });
   companion.setScreens(allDisplays());
+  companion.nudges.setSettings(settings.get('nudges'));
   loadBrain();
 
   win = new BrowserWindow({
@@ -340,6 +342,7 @@ function tick() {
 
   const events = companion.drainEvents();
   if (events.includes('stayPutEnded')) refreshTrayMenu();
+  if (events.includes('noteDone')) sendNotes();
 
   win.webContents.send('frame', {
     ...companion.snapshot(),
@@ -372,9 +375,20 @@ ipcMain.on('press', () => {
 ipcMain.on('release', () => {
   if (!press) return;
   const held = (Date.now() - press.t) / 1000;
+  const at = press;
   press = null;
-  if (companion.state === 'grabbed') companion.release();
-  else if (held < CLICK_MAX) companion.pat();
+  if (companion.state === 'grabbed') {
+    companion.release();
+  } else if (held < CLICK_MAX) {
+    // The meeting sign's "Join" tag opens the call; anywhere else is a pat.
+    const link = companion.hitPart(at) === 'join' ? companion.meetingLink() : null;
+    if (link) {
+      companion.acknowledgeReminder();
+      shell.openExternal(link).catch(() => {});
+    } else {
+      companion.pat();
+    }
+  }
   // Otherwise it was a long pet; he stays happy for a moment on his own.
 });
 
@@ -479,6 +493,8 @@ function buildMenu() {
       },
     },
   ];
+  items.push({ label: 'Remind me…', click: showNotes });
+  items.push({ label: 'Wellbeing', submenu: wellbeingMenu() });
   items.push({
     label: 'Brain',
     submenu: [
@@ -519,6 +535,88 @@ function buildMenu() {
   items.push({ type: 'separator' }, { label: 'Quit', click: () => app.quit() });
   return Menu.buildFromTemplate(items);
 }
+
+function setNudge(key, value) {
+  const n = { ...settings.get('nudges'), [key]: value };
+  settings.set('nudges', n);
+  companion.nudges.setSettings(n);
+  refreshTrayMenu();
+}
+
+const BEDTIMES = ['22:00', '22:30', '23:00', '23:30', '00:00', '00:30'];
+
+function wellbeingMenu() {
+  const n = (settings && settings.get('nudges')) || {};
+  const glasses = companion ? companion.nudges.water : 0;
+  return [
+    { label: `Water today: ${glasses} glass${glasses === 1 ? '' : 'es'}`, enabled: false },
+    { type: 'separator' },
+    { label: `Drink water (every ${n.waterEvery} min)`, type: 'checkbox', checked: !!n.water, click: (i) => setNudge('water', i.checked) },
+    { label: `Stretch breaks (after ${n.stretchEvery} min)`, type: 'checkbox', checked: !!n.stretch, click: (i) => setNudge('stretch', i.checked) },
+    { label: `Rest your eyes (every ${n.eyesEvery} min)`, type: 'checkbox', checked: !!n.eyes, click: (i) => setNudge('eyes', i.checked) },
+    {
+      label: 'Bedtime nudge',
+      submenu: [
+        { label: 'Off', type: 'radio', checked: !n.bedtime, click: () => setNudge('bedtime', '') },
+        ...BEDTIMES.map((t) => ({ label: t, type: 'radio', checked: n.bedtime === t, click: () => setNudge('bedtime', t) })),
+      ],
+    },
+  ];
+}
+
+// --------------------------------------------------------------- "remind me" notes
+
+function sendNotes() {
+  if (noteWin && !noteWin.isDestroyed() && companion) noteWin.webContents.send('notes', companion.nudges.notes);
+}
+
+function showNotes() {
+  if (noteWin && !noteWin.isDestroyed()) {
+    noteWin.show();
+    noteWin.focus();
+    return;
+  }
+  noteWin = new BrowserWindow({
+    width: 360,
+    height: 480,
+    title: 'Remind me',
+    resizable: false,
+    alwaysOnTop: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'note-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  noteWin.loadFile(path.join(__dirname, '..', 'renderer', 'note.html'));
+  noteWin.webContents.on('did-finish-load', sendNotes);
+  noteWin.on('closed', () => {
+    noteWin = null;
+  });
+}
+
+ipcMain.on('note-add', (_e, n) => {
+  if (!companion || !n || typeof n.text !== 'string' || !Number.isFinite(n.at)) return;
+  if (n.at < Date.now() - 60 * 1000) return;
+  companion.addNote(n.text, n.at);
+  saveBrain();
+  sendNotes();
+});
+
+ipcMain.on('note-remove', (_e, id) => {
+  if (!companion || !Number.isFinite(id)) return;
+  companion.removeNote(id);
+  saveBrain();
+  sendNotes();
+});
+
+ipcMain.on('note-close', () => {
+  if (noteWin && !noteWin.isDestroyed()) noteWin.close();
+});
 
 // --------------------------------------------------------------- app
 

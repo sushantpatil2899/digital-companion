@@ -54,6 +54,7 @@ const EFFECTS = {
   throw: { mood: -0.18, affection: -0.04 },
   drop: { mood: -0.02 },
   attention: { affection: 0.03 }, // you asked him to do something / called him
+  nudgeThanks: { affection: 0.04, mood: 0.03 }, // you answered one of his nudges
   pluggedIn: { energy: 0.15, mood: 0.1 },
 };
 

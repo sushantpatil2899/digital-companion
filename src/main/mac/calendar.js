@@ -16,6 +16,26 @@ const MESSAGES = {
 };
 
 /** Parse the script's JSON output into { events } or { error }. */
+// Video call links we can offer a "Join" button for (https only).
+const MEETING_LINKS = [
+  /https:\/\/([\w-]+\.)*zoom\.us\/(j|my|w|wc\/join)\/[^\s"'<>()]+/i,
+  /https:\/\/meet\.google\.com\/[a-z]{3,4}-[a-z]{4}-[a-z]{3,4}\b[^\s"'<>()]*/i,
+  /https:\/\/teams\.(microsoft|live)\.com\/(l\/meetup-join|meet)\/[^\s"'<>()]+/i,
+  /https:\/\/[\w-]+\.webex\.com\/[^\s"'<>()]+/i,
+  /https:\/\/whereby\.com\/[^\s"'<>()]+/i,
+];
+
+/** The first video call link in an event's URL, location or notes, or null. */
+function findMeetingLink(...texts) {
+  for (const re of MEETING_LINKS) {
+    for (const t of texts) {
+      const m = re.exec(String(t || ''));
+      if (m) return m[0].replace(/[.,;:!?>\]]+$/, '');
+    }
+  }
+  return null;
+}
+
 function parseCalendarOutput(out) {
   let data;
   try {
@@ -26,7 +46,12 @@ function parseCalendarOutput(out) {
   if (data.error) return { error: MESSAGES[data.error] || `Calendar: ${data.error}` };
   const events = (data.events || [])
     .filter((e) => e && Number.isFinite(e.start) && Number.isFinite(e.end) && e.end > e.start)
-    .map((e) => ({ title: String(e.title || 'Event').slice(0, 80), start: e.start, end: e.end }));
+    .map((e) => {
+      const ev = { title: String(e.title || 'Event').slice(0, 80), start: e.start, end: e.end };
+      const link = findMeetingLink(e.url, e.location, e.notes);
+      if (link) ev.link = link;
+      return ev;
+    });
   return { events };
 }
 
@@ -72,4 +97,4 @@ class CalendarWatcher {
   }
 }
 
-module.exports = { CalendarWatcher, parseCalendarOutput };
+module.exports = { findMeetingLink, CalendarWatcher, parseCalendarOutput };

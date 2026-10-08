@@ -97,3 +97,36 @@ test('browser tab script uses the right words for Safari vs Chrome', () => {
   assert.match(browserTabsScript('Google Chrome'), /active tab/);
   assert.match(browserTabsScript('Google Chrome'), /minimized is false/);
 });
+
+test('calendar: finds the video call link for the Join button', () => {
+  const { findMeetingLink } = require('../src/main/mac/calendar');
+  assert.strictEqual(findMeetingLink('', 'https://us02web.zoom.us/j/8123456789?pwd=abc', ''), 'https://us02web.zoom.us/j/8123456789?pwd=abc');
+  assert.strictEqual(
+    findMeetingLink(null, 'Room 4', 'Join with Google Meet: https://meet.google.com/abc-defg-hij\nOr dial: +1 555'),
+    'https://meet.google.com/abc-defg-hij',
+  );
+  assert.strictEqual(
+    findMeetingLink('', '', 'Click here <https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d>'),
+    'https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d',
+  );
+  assert.strictEqual(findMeetingLink('https://acme.webex.com/meet/pat.', '', ''), 'https://acme.webex.com/meet/pat');
+  // Not a call link, or not https.
+  assert.strictEqual(findMeetingLink('https://docs.google.com/doc', 'Office', 'http://zoom.us/j/1'), null);
+  assert.strictEqual(findMeetingLink('https://meet.google.com/', '', ''), null);
+  const { parseCalendarOutput } = require('../src/main/mac/calendar');
+  const r = parseCalendarOutput(JSON.stringify({ events: [{ title: 'Sync', start: 1, end: 2, location: 'https://zoom.us/j/42' }, { title: 'Block', start: 1, end: 5 }] }));
+  assert.strictEqual(r.events[0].link, 'https://zoom.us/j/42');
+  assert.strictEqual(r.events[1].link, undefined);
+});
+
+test('settings: wellbeing nudges have defaults, and saved choices are kept', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-'));
+  assert.strictEqual(new Settings(dir).get('nudges').water, true);
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ nudges: { water: false, bedtime: '00:00', bogus: 1, eyesEvery: 'x' } }));
+  const n = new Settings(dir).get('nudges');
+  assert.strictEqual(n.water, false);
+  assert.strictEqual(n.bedtime, '00:00');
+  assert.strictEqual(n.eyesEvery, DEFAULTS.nudges.eyesEvery);
+  assert.strictEqual(n.stretch, true);
+  assert.strictEqual('bogus' in n, false);
+});

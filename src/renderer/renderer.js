@@ -26,7 +26,19 @@ let turn = 0; // eased 0..1 amount he's turned sideways
 
 // States where he turns to a 3/4 view towards where he's going or looking;
 // otherwise he faces you, like most panels of the reference sheet.
-const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5 };
+const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5, eyeRest: 1 };
+
+// What he says after you answer a nudge (or when he gives up on one), by
+// mood. When he's sad or cross he doesn't gush.
+const SAYS = {
+  reminderAck: { cheerful: 'Got it!', content: 'Got it', meh: 'ok.', sad: 'ok…', grumpy: 'Fine.' },
+  noteDone: { cheerful: 'Got it!', content: 'Got it', meh: 'ok.', sad: 'ok…', grumpy: 'Fine.' },
+  waterDone: { cheerful: 'Cheers!', content: 'Good job', meh: 'ok.', sad: 'thanks…', grumpy: 'Hmph. Good.' },
+  stretchDone: { cheerful: 'Ahh, nice!', content: 'Better?', meh: 'ok.', sad: 'thanks…', grumpy: 'Fine.' },
+  eyesDone: { cheerful: 'Ahh, better!', content: 'Better', meh: 'ok.', sad: '…better', grumpy: 'There.' },
+  bedtimeDone: { cheerful: 'Night night!', content: 'Night!', meh: 'night.', sad: 'night…', grumpy: 'Finally.' },
+  nudgeLater: { cheerful: 'Later then!', content: 'Later then…', meh: '…later.', sad: 'later…', grumpy: 'Ugh. Later.' },
+};
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -101,8 +113,19 @@ function handleEvent(name) {
       spawn('text', 30, HEAD_TOP + 4, { text: '…', vy: -15, max: 1.5, size: 18 });
       break;
     case 'reminderAck':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Got it!', vy: -12, max: 1.6, size: 14 });
+    case 'noteDone':
+    case 'waterDone':
+    case 'stretchDone':
+    case 'eyesDone':
+    case 'bedtimeDone':
+    case 'nudgeLater': {
+      const band = (frame && frame.band) || 'content';
+      spawn('text', 0, HEAD_TOP - 10, { text: SAYS[name][band] || SAYS[name].content, vy: -12, max: 1.6, size: 14 });
+      if (name === 'waterDone' && (band === 'cheerful' || band === 'content')) {
+        spawn('heart', 30, HEAD_TOP + 10, { vy: -30, max: 1.2, size: 9 });
+      }
       break;
+    }
     case 'eventEnded':
       spawn('text', 0, HEAD_TOP - 10, { text: 'All done!', vy: -12, max: 1.8, size: 14 });
       break;
@@ -216,6 +239,15 @@ function applyMoodFace(p, f, moving) {
   // Droopy eyes when he's running out of energy (unless sad or cross).
   if (tired && (band === 'cheerful' || band === 'content' || band === 'meh')) p.eyes = 'sleepy';
 }
+
+// Face for nudges and signs: his mood face, so he never smiles at you about
+// water when he's sad or cross.
+function nudgeFace(p, f) {
+  applyMoodFace(p, f, false);
+  if (f.band === 'sad') p.blush = 0.15;
+}
+
+const happyBand = (f) => f.band === 'cheerful' || f.band === 'content';
 
 function computePose(f, dt) {
   const p = defaultPose();
@@ -461,13 +493,78 @@ function computePose(f, dt) {
       overlay = 'question';
       break;
     case 'sign':
-      // Holding up a "Meeting in 5!" sign.
+    case 'note':
+      // Holding up a "Meeting in 5!" sign or your "remind me" note.
       p.arms = 'up';
-      p.eyes = 'wide';
-      p.mouth = 'open';
-      p.blink = 0;
+      nudgeFace(p, f);
+      if (f.band === 'cheerful') p.mouth = 'open';
+      if (f.board && f.board.urgent && happyBand(f)) {
+        p.eyes = 'wide';
+        p.mouth = 'open';
+      }
       p.bob = -Math.abs(Math.sin(t * 5)) * 1.5;
-      overlay = 'sign';
+      break;
+    case 'water':
+      // Bringing you a glass of water.
+      p.arms = 'hold';
+      p.prop = 'glass';
+      p.propProgress = 0.85;
+      nudgeFace(p, f);
+      p.bob = -Math.abs(Math.sin(t * 2)) * 1.2;
+      break;
+    case 'drink': {
+      // You drank, so he has a sip too.
+      const up = clamp(Math.min(st / 0.4, (duration - st) / 0.4), 0, 1);
+      p.arms = 'sip';
+      p.prop = 'glass';
+      p.glassLift = up;
+      p.propProgress = 0.85 - 0.5 * clamp(st / duration, 0, 1);
+      applyMoodFace(p, f, false);
+      if (happyBand(f)) p.eyes = 'content';
+      p.mouth = 'o';
+      p.blush = happyBand(f) ? 0.8 : p.blush;
+      break;
+    }
+    case 'stretch':
+      // A big, slow stretch: up on tiptoe, arms high.
+      p.arms = 'stretch';
+      nudgeFace(p, f);
+      if (happyBand(f) && Math.sin(t * 1.6) > 0.3) p.eyes = 'content';
+      p.scaleY *= 1.04 + Math.sin(t * 1.6) * 0.025;
+      p.scaleX *= 0.98;
+      p.bob = -2 - Math.max(0, Math.sin(t * 1.6)) * 3;
+      break;
+    case 'eyeRest':
+      // Shading his eyes, gazing far away (look 20 feet away for 20 seconds).
+      p.arms = 'shade';
+      nudgeFace(p, f);
+      p.lookX = f.facing;
+      p.lookY = -0.5;
+      p.tilt = -f.facing * 0.03;
+      break;
+    case 'bedtime': {
+      // Sleepy, yawning every few seconds.
+      nudgeFace(p, f);
+      if (f.band !== 'sad' && f.band !== 'grumpy') p.eyes = 'sleepy';
+      const phase = st % 4.5;
+      if (phase > 2.8) {
+        p.mouth = 'yawn';
+        p.eyes = 'closed';
+        p.arms = 'stretch';
+        p.scaleY *= 1.03;
+      }
+      p.tilt = Math.sin(t * 0.9) * 0.04;
+      break;
+    }
+    case 'nod':
+      // A small nod after you answer him: a smile only if he's in a good mood.
+      nudgeFace(p, f);
+      if (happyBand(f)) {
+        p.eyes = 'happy';
+        p.mouth = 'smile';
+        p.blush = 0.8;
+      }
+      p.bob = Math.max(0, Math.sin(st * 9)) * 3 * Math.max(0, 1 - st / duration);
       break;
     case 'wave':
       p.arms = 'wave';
@@ -510,14 +607,6 @@ function drawOverlay(ctx, kind, p) {
     case 'flower':
       C.drawDaisy(ctx, x, y + Math.sin(clock * 2) * 2, 5);
       break;
-    case 'sign': {
-      let title = frame.eventTitle || '';
-      if (title.length > 18) title = `${title.slice(0, 17)}…`;
-      const kind = frame.reminderKind || '5';
-      const text = { 30: 'Meeting in 30 min', 5: 'Meeting in 5!', now: 'Meeting now!' }[kind] || 'Meeting soon!';
-      C.drawSign(ctx, text, title, clock, kind === 'now');
-      break;
-    }
     case 'waveLines': {
       // Little motion arcs next to the waving hand.
       ctx.save();
@@ -584,6 +673,11 @@ function render(now) {
     // In a meeting: no "?" or chatter marks around him.
     if (frame.quiet && (overlay === 'question' || overlay === 'sound')) overlay = null;
     if (overlay) drawOverlay(ctx, overlay, pose);
+    // Whatever he's holding up over his head: a sign, a note or a speech bubble.
+    if (frame.board) {
+      if (frame.board.style === 'bubble') C.drawBubble(ctx, frame.board, clock);
+      else C.drawSign(ctx, frame.board, clock);
+    }
     ctx.restore();
 
     drawParticles(ctx);

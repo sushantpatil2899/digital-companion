@@ -11,6 +11,7 @@
 
 const brain = require('./brain');
 const screensLib = require('./screens');
+const { NudgeTracker, TIMING: NUDGE_TIMING, say, clockTime } = require('./nudges');
 
 const TUNING = {
   gravity: 2600, // px/s^2
@@ -42,8 +43,32 @@ const MOVING_ACTIVITIES = ['walk', 'run', 'play', 'adventure', 'jump'];
 const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', 'sit', 'sleep', 'jump', 'backView'];
 
 // Area around his body that counts as the cursor being "on him", relative to
-// his feet in screen px (an ellipse centred `cy` above the feet).
-const HIT = { cy: 70, rx: 60, ry: 72, signHalfWidth: 64, signBottom: 140, signTop: 205 };
+// his feet in screen px (an ellipse centred `cy` above the feet). The board
+// or bubble he holds up over his head is clickable too, and the meeting
+// sign's "Join" tag sits on its bottom-left corner.
+const HIT = {
+  cy: 70,
+  rx: 60,
+  ry: 72,
+  signHalfWidth: 64,
+  signBottom: 128,
+  signTop: 205,
+  join: { left: -66, right: -12, bottom: 126, top: 162 },
+};
+
+// How each nudge is shown (see src/main/nudges.js for when).
+const NUDGE = {
+  water: { state: 'water', walk: true, gait: 'walk', hold: NUDGE_TIMING.hold },
+  stretch: { state: 'stretch', walk: true, gait: 'walk', hold: NUDGE_TIMING.hold },
+  bedtime: { state: 'bedtime', walk: true, gait: 'walk', hold: NUDGE_TIMING.hold },
+  eyes: { state: 'eyeRest', walk: false, hold: NUDGE_TIMING.eyeRest },
+  note: { state: 'note', walk: true, gait: 'run', hold: Infinity },
+};
+const NUDGE_STATES = Object.values(NUDGE).map((n) => n.state);
+// States with something held up over his head that you can click.
+const BOARD_STATES = ['sign', ...NUDGE_STATES];
+// Busy with you, or just landed: a reminder waits until he's done.
+const REACTING = ['hug', 'happy', 'surprised', 'land', 'confused', 'angry', 'drink', 'nod'];
 
 // What he stops doing when you join a meeting (he sits down where he is).
 const BUSY_WHEN_QUIET = ['walk', 'run', 'play', 'adventure', 'lookAround', 'talk', 'eat', 'flower', 'curious', 'wave'];
@@ -78,6 +103,13 @@ const STATES = [
   'shy',
   'curious',
   'wave',
+  'water',
+  'drink',
+  'stretch',
+  'eyeRest',
+  'bedtime',
+  'note',
+  'nod',
 ];
 
 function rand(min, max, rng) {
@@ -135,6 +167,10 @@ class Companion {
     // Meeting reminder he's holding a sign for, until you click it:
     // { kind: '30' | '5' | 'now', event, acknowledged }
     this.reminder = null;
+    // Wellbeing nudges and "remind me" notes: when they're due, and the one
+    // he's showing you right now ({ kind, note?, shownAt, acknowledged }).
+    this.nudges = new NudgeTracker();
+    this.nudge = null;
     this.lastGreetDay = null;
     this.lastSeekAt = -Infinity;
     this.lastSadAt = -Infinity;
@@ -472,6 +508,7 @@ class Companion {
   pet(dt) {
     if (['grabbed', 'fall', 'jump'].includes(this.state)) return;
     if (this.showingReminder() && this.acknowledgeReminder()) return;
+    if (this.showingNudge() && this.acknowledgeNudge()) return;
     this.lastInteraction = this.time;
     this.lastPet = this.time;
     this.petting += dt;
@@ -498,6 +535,7 @@ class Companion {
   pat() {
     if (!this.isGrounded()) return;
     if (this.showingReminder() && this.acknowledgeReminder()) return;
+    if (this.showingNudge() && this.acknowledgeNudge()) return;
     this.lastInteraction = this.time;
     if (this.state === 'sleep') {
       this.petting = 0;
@@ -584,6 +622,7 @@ class Companion {
     if (cursor) this.lastCursor = { x: cursor.x, y: cursor.y };
     this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context);
     this.grumpiness = Math.max(0, this.grumpiness - brain.NEEDS.grumpyFade * dt);
+    this.nudges.tick(dt, this.context);
     // Petting "charge" fades once the rubbing stops.
     if (this.time - this.lastPet > 0.4) this.petting = Math.max(0, this.petting - dt * 2);
     // Tell the menu once when "Stay put" runs out.
@@ -770,13 +809,23 @@ class Companion {
           }
         }
         break;
+      case 'water':
+      case 'stretch':
+      case 'eyeRest':
+      case 'bedtime':
+      case 'note':
+        // Holding up a nudge until you click it (or he gives up / it's done).
+        this.vx = 0;
+        if (this.stateTime >= this.stateDuration) this.nudgeTimedOut();
+        break;
       default:
         this.vx = 0;
         if (this.stateTime >= this.stateDuration) this.chooseNext();
     }
 
     this.updateReminder();
-    if (this.pendingGreet && this.isFreeForReaction() && !this.showingReminder()) this.react(this.pendingGreet);
+    this.updateNudge();
+    if (this.pendingGreet && this.isFreeForReaction() && !this.showingReminder() && !this.showingNudge()) this.react(this.pendingGreet);
     if (cursor) this.reactToCursor(dt, cursor);
 
     // Look towards the cursor when it's close and he's not busy.
@@ -786,18 +835,31 @@ class Companion {
     }
   }
 
-  /** Is the point over his body? */
+  /** Is the point over his body (or the sign he's holding up)? */
   isOver(point) {
-    const dx = (point.x - this.x) / HIT.rx;
-    const dy = (point.y - (this.y - HIT.cy)) / HIT.ry;
-    if (dx * dx + dy * dy <= 1) return true;
-    // The sign he holds up above his head is clickable too.
-    if (this.state === 'sign') {
-      const sx = Math.abs(point.x - this.x);
-      const sy = this.y - point.y;
-      return sx <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop;
+    return this.hitPart(point) != null;
+  }
+
+  /** Which part of him the point is on: 'join' (the sign's Join tag), 'sign', 'body' or null. */
+  hitPart(point) {
+    const sx = point.x - this.x;
+    const sy = this.y - point.y; // height above his feet
+    if (BOARD_STATES.includes(this.state)) {
+      const j = HIT.join;
+      if (this.state === 'sign' && this.meetingLink() && sx >= j.left && sx <= j.right && sy >= j.bottom && sy <= j.top) return 'join';
+      if (Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'sign';
     }
-    return false;
+    const dx = sx / HIT.rx;
+    const dy = (sy - HIT.cy) / HIT.ry;
+    if (dx * dx + dy * dy <= 1) return 'body';
+    return null;
+  }
+
+  /** The video call link of the meeting he's reminding you about (https only), or null. */
+  meetingLink() {
+    const r = this.reminder;
+    const link = r && !r.acknowledged && r.event && r.event.link;
+    return typeof link === 'string' && /^https:\/\//i.test(link) ? link : null;
   }
 
   /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
@@ -878,6 +940,12 @@ class Companion {
 
   /** Stop whatever he's doing (walks, trips to other screens, props) and sit still. */
   settleForQuiet() {
+    // Wellbeing nudges wait until after the meeting (notes and meeting reminders don't).
+    if (this.nudge && this.nudge.kind !== 'note') {
+      const showing = this.state === NUDGE[this.nudge.kind].state;
+      this.nudge = null;
+      if (showing) this.enter('sit', rand(24, 60, this.rng));
+    }
     if (!this.isGrounded() || this.state === 'grabbed') return;
     if (!BUSY_WHEN_QUIET.includes(this.state)) return;
     if (this.afterMove && this.afterMove.state === 'sign') return; // on his way to show you a reminder
@@ -893,7 +961,16 @@ class Companion {
 
   /** Holding up (or on his way to hold up) an unanswered meeting sign. */
   showingReminder() {
-    return !!this.reminder && !this.reminder.acknowledged && (this.state === 'sign' || (this.afterMove && this.afterMove.state === 'sign'));
+    return !!this.reminder && !this.reminder.acknowledged && this.headingFor('sign');
+  }
+
+  /** In `state`, or on his way (walking, or travelling between screens) to it. */
+  headingFor(state) {
+    return (
+      this.state === state ||
+      (!!this.afterMove && this.afterMove.state === state) ||
+      (!!this.route && !!this.route.then && this.route.then.state === state)
+    );
   }
 
   updateReminder() {
@@ -911,7 +988,7 @@ class Companion {
     // Keep holding the sign up until you click it; come back to it after
     // being picked up, and show it when you return if you were away.
     if (!this.showingReminder() && this.isGrounded() && this.state !== 'grabbed' && !this.context.userAway) {
-      if (['hug', 'happy', 'surprised', 'land', 'confused', 'angry'].includes(this.state) && this.stateTime < this.stateDuration) return;
+      if (REACTING.includes(this.state) && this.stateTime < this.stateDuration) return;
       this.pendingGreet = null;
       this.emit('reminder');
       this.goToCursorThen({ state: 'sign', duration: Infinity }, 'run');
@@ -927,6 +1004,134 @@ class Companion {
     this.vx = 0;
     this.enter('wave', 1.8);
     return true;
+  }
+
+  // ---------------------------------------------------------------- nudges
+
+  /** Holding up (or on his way to hold up) a nudge you haven't answered yet. */
+  showingNudge() {
+    const n = this.nudge;
+    return !!n && !n.acknowledged && this.headingFor(NUDGE[n.kind].state);
+  }
+
+  /** Start a nudge that's due, or go back to one he was interrupted from. */
+  updateNudge() {
+    if (this.showingReminder()) return;
+    // A meeting reminder still waiting for you comes first.
+    if (this.reminder && !this.reminder.acknowledged) return;
+    const free =
+      this.isGrounded() &&
+      !this.context.userAway &&
+      !(REACTING.includes(this.state) && this.stateTime < this.stateDuration);
+    const n = this.nudge;
+    if (n) {
+      if (this.showingNudge() || !free) return;
+      // Interrupted (picked up, a meeting reminder, …): back to it if there's time left.
+      const left = NUDGE[n.kind].hold - (this.time - n.shownAt);
+      if (left <= 1) this.nudgeTimedOut();
+      else this.presentNudge(n, left);
+      return;
+    }
+    if (!free) return;
+    const due = this.nudges.due(this.context);
+    if (!due || (due.kind === 'eyes' && this.state === 'sleep')) return;
+    this.nudge = { ...due, shownAt: this.time, acknowledged: false };
+    this.nudges.shown(due, this.context);
+    this.pendingGreet = null;
+    this.emit('nudge');
+    this.presentNudge(this.nudge, NUDGE[due.kind].hold);
+  }
+
+  presentNudge(n, duration) {
+    const cfg = NUDGE[n.kind];
+    if (cfg.walk) {
+      this.goToCursorThen({ state: cfg.state, duration }, cfg.gait);
+    } else {
+      this.vx = 0;
+      this.enter(cfg.state, duration);
+    }
+  }
+
+  /** You clicked the nudge (or him): done. */
+  acknowledgeNudge() {
+    const n = this.nudge;
+    if (!n || n.acknowledged) return false;
+    n.acknowledged = true;
+    this.nudge = null;
+    this.nudges.done(n);
+    this.applyEffect('nudgeThanks');
+    this.emit(`${n.kind}Done`);
+    this.vx = 0;
+    if (n.kind === 'water') this.enter('drink', 2.4);
+    else this.enter('nod', 1.4);
+    return true;
+  }
+
+  /** Held it up long enough: the eye rest is done; water / stretch / bedtime are put off. */
+  nudgeTimedOut() {
+    const n = this.nudge;
+    this.nudge = null;
+    if (n && n.kind === 'eyes') {
+      this.nudges.done(n);
+      this.emit('eyesDone');
+      this.enter('nod', 1.2);
+      return;
+    }
+    if (n) {
+      this.nudges.ignored(n);
+      this.emit('nudgeLater');
+    }
+    this.enter('idle', 3);
+  }
+
+  /** "Remind me": add a note for `at` (ms epoch). */
+  addNote(text, at) {
+    return this.nudges.addNote(text, at);
+  }
+
+  removeNote(id) {
+    if (this.nudge && this.nudge.kind === 'note' && this.nudge.note.id === id) {
+      this.nudge = null;
+      if (this.state === 'note') this.enter('idle', 2);
+    }
+    this.nudges.removeNote(id);
+  }
+
+  /** What he's holding up over his head (for the renderer), or null. */
+  board() {
+    const band = this.moodBand();
+    const n = this.nudge;
+    if (this.state === 'sign' && this.reminder) {
+      const kind = this.reminder.kind;
+      const key = kind === 'now' ? 'meetingNow' : kind === '30' ? 'meeting30' : 'meeting5';
+      return {
+        style: 'sign',
+        line1: say(key, band),
+        line2: this.reminder.event.title || '',
+        tag: 'OK ✓',
+        join: !!this.meetingLink(),
+        urgent: kind === 'now',
+      };
+    }
+    if (!n || this.state !== NUDGE[n.kind].state) return null;
+    switch (n.kind) {
+      case 'note':
+        return { style: 'note', line1: n.note.text, line2: say('note', band), tag: 'OK ✓' };
+      case 'water': {
+        const g = this.nudges.water;
+        return { style: 'bubble', line1: say('water', band), line2: g ? `${g} glass${g === 1 ? '' : 'es'} today` : 'first one today', tag: 'Drank ✓' };
+      }
+      case 'stretch': {
+        const m = this.nudges.minutesSinceBreak();
+        return { style: 'bubble', line1: say('stretch', band), line2: m ? `${m} min without a break` : '', tag: 'Done ✓' };
+      }
+      case 'bedtime':
+        return { style: 'bubble', line1: say('bedtime', band), line2: `It's ${clockTime(this.context.now)}`, tag: 'OK ✓' };
+      case 'eyes':
+        return { style: 'bubble', line1: say('eyes', band), line2: `${Math.max(0, Math.ceil(this.stateDuration - this.stateTime))} s`, tag: null };
+      default:
+        return null;
+    }
   }
 
   /** Not busy with you / in the air, so he can react to something. */
@@ -1012,6 +1217,7 @@ class Companion {
       band: this.moodBand(),
       grumpiness: this.grumpiness,
       lastGreetDay: this.lastGreetDay,
+      nudges: this.nudges.serialize(),
     };
   }
 
@@ -1024,6 +1230,7 @@ class Companion {
     }
     if (typeof saved.mood === 'number' && Number.isFinite(saved.mood)) this.mood = clamp(saved.mood, -1, 1);
     if (typeof saved.lastGreetDay === 'string') this.lastGreetDay = saved.lastGreetDay;
+    this.nudges.restore(saved.nudges);
     this.catchUp(elapsed);
     return true;
   }
@@ -1036,6 +1243,14 @@ class Companion {
       mood: this.mood,
       context: { ...this.context, screens: this.screens.length, screenIndex: this.screenIndex },
       reminder: this.reminder ? { title: this.reminder.event.title, kind: this.reminder.kind, acknowledged: this.reminder.acknowledged } : null,
+      nudge: this.nudge ? { kind: this.nudge.kind, text: this.nudge.note ? this.nudge.note.text : null } : null,
+      nudges: {
+        water: this.nudges.water,
+        settings: { ...this.nudges.settings },
+        active: { ...this.nudges.active },
+        quietHold: this.nudges.quietHold,
+        notes: this.nudges.notes.map((n) => ({ ...n })),
+      },
       paused: this.paused,
       stayPutLeft: this.stayPutLeft(),
       scores: this.lastScores.map((s) => ({ name: s.name, score: Math.round(s.score * 100) / 100, why: s.why })),
@@ -1172,10 +1387,11 @@ class Companion {
       reminderKind: this.reminder && !this.reminder.acknowledged ? this.reminder.kind : null,
       petting: this.petting,
       quiet: !!this.context.quiet,
+      board: this.board(),
       grumpy: this.time < this.grumpyUntil,
       time: this.time,
     };
   }
 }
 
-module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES, HIT };
+module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES, HIT, NUDGE };

@@ -370,6 +370,15 @@ function armAngle(side, p) {
       return -side * (1.9 + Math.abs(Math.sin(p.t * 8)) * 0.4);
     case 'fists':
       return -side * (0.9 + Math.sin(p.t * 18) * 0.15);
+    case 'stretch':
+      // Both arms reaching up and out over his head (a slow sway as he stretches).
+      return -side * (2.55 + Math.sin(p.t * 1.6) * 0.08);
+    case 'shade':
+      // Leading hand up at his brow, shading his eyes; the other one down.
+      return lead ? side * 2.28 : -side * 0.3;
+    case 'sip':
+      // Both hands bringing the glass up to his mouth.
+      return side * 2.45;
     default:
       return -side * (0.3 + Math.sin(p.walkPhase + (side > 0 ? 0 : Math.PI)) * p.armSwing);
   }
@@ -378,7 +387,10 @@ function armAngle(side, p) {
 function drawArm(ctx, side, p) {
   const inward = p.arms === 'hold' || p.arms === 'hug';
   ctx.save();
-  ctx.translate(side * (inward ? 35 : 43), CY + (inward ? 0 : -9));
+  if (p.arms === 'shade' && side === p.facing) ctx.translate(side * 36, CY - 22);
+  else if (p.arms === 'stretch') ctx.translate(side * 47, CY - 22);
+  else if (p.arms === 'sip') ctx.translate(side * 30, CY - 12);
+  else ctx.translate(side * (inward ? 35 : 43), CY + (inward ? 0 : -9));
   ctx.rotate(armAngle(side, p));
   ellipse(ctx, 0, 6, 6.5, 8.5);
   fillStroke(ctx, PALETTE.limb, 2.1);
@@ -539,6 +551,15 @@ function drawMouth(ctx, x, y, p) {
       ctx.lineTo(2.5, 1);
       ctx.stroke();
       break;
+    case 'yawn': // a big, tall yawn
+      ellipse(ctx, 0, 3, 3.6, 5.6);
+      ctx.fillStyle = PALETTE.mouth;
+      ctx.fill();
+      ctx.stroke();
+      ellipse(ctx, 0, 6, 2.2, 1.6);
+      ctx.fillStyle = PALETTE.tongue;
+      ctx.fill();
+      break;
     default:
       openMouth(3, 4);
   }
@@ -583,6 +604,57 @@ function drawApple(ctx, x, y, progress) {
   ctx.stroke();
   ellipse(ctx, 4.5, -13.5, 3.8, 2, -0.4);
   fillStroke(ctx, '#6cbf5a', 1.4);
+  ctx.restore();
+}
+
+// A glass of water. `level` 0..1 is how full it is; `tilt` tips it (radians).
+function drawGlass(ctx, x, y, level, tilt = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(tilt);
+  const top = -16;
+  const bottom = 11;
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(-10, top);
+    ctx.lineTo(10, top);
+    ctx.lineTo(7.5, bottom);
+    ctx.quadraticCurveTo(0, bottom + 2.5, -7.5, bottom);
+    ctx.closePath();
+  };
+  path();
+  ctx.fillStyle = 'rgba(225, 243, 252, 0.85)';
+  ctx.fill();
+  // Water.
+  if (level > 0.02) {
+    ctx.save();
+    path();
+    ctx.clip();
+    const wy = bottom - (bottom - top) * Math.min(1, level);
+    ctx.beginPath();
+    ctx.rect(-12, wy, 24, bottom - wy + 3);
+    ctx.fillStyle = '#8fcdf0';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-11, wy);
+    ctx.lineTo(11, wy);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#4b9fd0';
+    ctx.stroke();
+    ctx.restore();
+  }
+  path();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  // Shine.
+  ctx.beginPath();
+  ctx.moveTo(-5.5, top + 5);
+  ctx.lineTo(-4.5, bottom - 5);
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -857,6 +929,12 @@ function drawCharacter(ctx, p) {
     drawArm(ctx, 1, p);
     // The apple is held up in front, over his hands.
     if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
+    // The glass: held in front, or raised to his mouth for a sip.
+    if (p.prop === 'glass') {
+      const lift = p.glassLift || 0;
+      const fx = p.facing * p.turn * 3.5;
+      drawGlass(ctx, fx + p.facing * 4 * lift, CY - 4 - (CY - 4 - (FACE_Y + 16)) * lift, p.propProgress, -p.facing * 0.5 * lift);
+    }
   }
 
   ctx.restore();
@@ -1046,14 +1124,15 @@ function defaultPose() {
     armSwing: 0,
     view: 'front', // front | back | lying
     feet: 'stand', // stand | sit | dangle
-    arms: 'down', // down | up | wave | flail | hold | hug | cheer | fists
+    arms: 'down', // down | up | wave | flail | hold | hug | cheer | fists | stretch | shade | sip
     eyes: 'open', // open | wide | small | happy | content | closed | squint | sad | angry | meh | sleepy
-    mouth: 'smile', // smile | smallSmile | open | o | frown | growl | wavy | flat | talk | chew
+    mouth: 'smile', // smile | smallSmile | open | o | frown | growl | wavy | flat | talk | chew | yawn
     blink: 0,
     lookX: 0,
     lookY: 0,
     blush: 0.35,
-    prop: null, // null | apple | flower | ball | backpack
+    prop: null, // null | apple | flower | ball | backpack | glass
+    glassLift: 0, // 0 = held in front, 1 = at his mouth
     propProgress: 0,
     ballX: 0,
     ballRot: 0,
@@ -1204,17 +1283,55 @@ function drawSweat(ctx, x, y, t) {
   ctx.restore();
 }
 
-// A little sign he holds up over his head (e.g. "Meeting in 5!"), with a
-// small green "OK ✓" tag showing it can be clicked away. `urgent` makes it
-// bounce more (the meeting is starting now).
-function drawSign(ctx, line1, line2, t, urgent = false) {
-  const w = 108;
-  const h = line2 ? 38 : 26;
-  const cx = 0;
-  const bob = urgent ? Math.abs(Math.sin(t * 9)) * -4 : Math.sin(t * 5) * 1.5;
-  const top = -167 + (line2 ? 0 : 6) + bob;
-  ctx.save();
-  // Two sticks down to his raised hands.
+// Fit `text` in `maxWidth` by shrinking the font (down to 8px).
+function fitFont(ctx, text, size, weight, maxWidth) {
+  let px = size;
+  do {
+    ctx.font = `${weight}${px}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
+    px -= 0.5;
+  } while (ctx.measureText(text).width > maxWidth && px > 8);
+}
+
+// Split `text` into at most two lines that fit `maxWidth` at `size`px.
+function wrapTwo(ctx, text, size, weight, maxWidth) {
+  ctx.font = `${weight}${size}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
+  if (ctx.measureText(text).width <= maxWidth) return [text];
+  const words = text.split(/\s+/);
+  let first = '';
+  let i = 0;
+  for (; i < words.length; i++) {
+    const next = first ? `${first} ${words[i]}` : words[i];
+    if (ctx.measureText(next).width > maxWidth && first) break;
+    first = next;
+  }
+  let rest = words.slice(i).join(' ');
+  if (!rest) return [first];
+  if (ctx.measureText(rest).width > maxWidth) {
+    while (rest.length > 1 && ctx.measureText(`${rest}…`).width > maxWidth) rest = rest.slice(0, -1);
+    rest = `${rest.trimEnd()}…`;
+  }
+  return [first, rest];
+}
+
+// Little clickable tag hanging off the bottom of a board: green "OK ✓" on the
+// right, blue "Join ▸" on the left.
+function drawTag(ctx, x, y, text, color) {
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  const w = Math.max(30, ctx.measureText(text).width + 12);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, y, w, 15, 7);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y + 7.8);
+}
+
+function drawSticks(ctx, top, h) {
   ctx.lineCap = 'round';
   for (const side of [-1, 1]) {
     ctx.beginPath();
@@ -1227,45 +1344,124 @@ function drawSign(ctx, line1, line2, t, urgent = false) {
     ctx.strokeStyle = '#c99a62';
     ctx.stroke();
   }
-  // Board.
+}
+
+// A board he holds up over his head: the meeting sign ("Meeting in 5!") or a
+// sticky note ("remind me"). `b` = { style: 'sign'|'note', line1, line2, tag,
+// join, urgent } from the main process (see Companion.board()). `urgent`
+// makes it bounce more (the meeting is starting now).
+function drawSign(ctx, b, t) {
+  const note = b.style === 'note';
+  const w = note ? 114 : 108;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = note ? wrapTwo(ctx, b.line1 || '', 12, 'bold ', w - 14) : null;
+  const h = note ? 22 + lines.length * 14 : b.line2 ? 38 : 26;
+  const bob = b.urgent ? Math.abs(Math.sin(t * 9)) * -4 : Math.sin(t * 5) * 1.5;
+  const top = (note ? -129 - h : -167 + (b.line2 ? 0 : 6)) + bob;
+  drawSticks(ctx, top, h);
+  // Board (a sticky note, slightly crooked, with a folded corner).
+  ctx.save();
+  if (note) ctx.rotate(-0.03);
   ctx.beginPath();
-  ctx.roundRect(cx - w / 2, top, w, h, 8);
-  ctx.fillStyle = urgent ? '#ffe9d6' : '#fff7e2';
+  if (note) {
+    ctx.moveTo(-w / 2, top);
+    ctx.lineTo(w / 2, top);
+    ctx.lineTo(w / 2, top + h - 10);
+    ctx.lineTo(w / 2 - 10, top + h);
+    ctx.lineTo(-w / 2, top + h);
+    ctx.closePath();
+  } else {
+    ctx.roundRect(-w / 2, top, w, h, 8);
+  }
+  ctx.fillStyle = note ? '#fff1a0' : b.urgent ? '#ffe9d6' : '#fff7e2';
   ctx.fill();
   ctx.lineWidth = 2.2;
   ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
   ctx.stroke();
+  if (note) {
+    ctx.beginPath();
+    ctx.moveTo(w / 2, top + h - 10);
+    ctx.lineTo(w / 2 - 10, top + h - 10);
+    ctx.lineTo(w / 2 - 10, top + h);
+    ctx.fillStyle = '#e9d67c';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+  ctx.fillStyle = PALETTE.outline;
+  if (note) {
+    // Header ("Reminder"), then your text on up to two lines.
+    fitFont(ctx, b.line2 || '', 10, '', w - 14);
+    ctx.fillStyle = '#8a6d2a';
+    ctx.fillText(b.line2 || '', 0, top + 10);
+    ctx.fillStyle = PALETTE.outline;
+    ctx.font = 'bold 12px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
+    lines.forEach((line, i) => {
+      fitFont(ctx, line, 12, 'bold ', w - 12);
+      ctx.fillText(line, 0, top + 24 + i * 14);
+    });
+  } else {
+    fitFont(ctx, b.line1 || '', 13, 'bold ', w - 12);
+    ctx.fillText(b.line1 || '', 0, top + (b.line2 ? 12 : h / 2 + 0.5));
+    if (b.line2) {
+      fitFont(ctx, b.line2, 11, '', w - 12);
+      ctx.fillStyle = '#7a6656';
+      ctx.fillText(b.line2, 0, top + 27);
+    }
+  }
+  ctx.restore();
+  if (b.tag) drawTag(ctx, w / 2 - 20, top + h - 6, b.tag, '#6cb86a');
+  if (b.join) drawTag(ctx, -w / 2 + 22, top + h - 6, 'Join ▸', PALETTE.blue);
+  ctx.restore();
+}
+
+// A speech bubble over his head for wellbeing nudges ("Water break?").
+// `b` = { line1, line2, tag } (tag: e.g. "Drank ✓", or null when there's
+// nothing to click).
+function drawBubble(ctx, b, t) {
+  const w = 116;
+  const h = b.line2 ? 38 : 26;
+  const bob = Math.sin(t * 2.5) * 1.2;
+  const top = -174 + (b.line2 ? 0 : 8) + bob;
+  ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = PALETTE.outline;
-  // Shrink the text if it doesn't fit on the board.
-  const fit = (text, size, weight) => {
-    let px = size;
-    do {
-      ctx.font = `${weight}${px}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
-      px -= 0.5;
-    } while (ctx.measureText(text).width > w - 12 && px > 8);
-  };
-  fit(line1, 13, 'bold ');
-  ctx.fillText(line1, cx, top + (line2 ? 12 : h / 2 + 0.5));
-  if (line2) {
-    fit(line2, 11, '');
-    ctx.fillStyle = '#7a6656';
-    ctx.fillText(line2, cx, top + 27);
-  }
-  // "OK ✓" tag hanging off the bottom-right corner.
-  const tx = cx + w / 2 - 20;
-  const ty = top + h - 6;
   ctx.beginPath();
-  ctx.roundRect(tx - 15, ty, 30, 15, 7);
-  ctx.fillStyle = '#6cb86a';
-  ctx.fill();
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.stroke();
+  ctx.roundRect(-w / 2, top, w, h, 12);
+  // Tail down towards his head.
+  ctx.moveTo(-6, top + h);
+  ctx.lineTo(4, top + h + 9);
+  ctx.lineTo(8, top + h);
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 10px system-ui, sans-serif';
-  ctx.fillText('OK ✓', tx, ty + 7.8);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-6, top + h);
+  ctx.lineTo(-w / 2 + 12, top + h);
+  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
+  ctx.arcTo(-w / 2, top, w / 2, top, 12);
+  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
+  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
+  ctx.lineTo(8, top + h);
+  ctx.lineTo(4, top + h + 9);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = PALETTE.outline;
+  fitFont(ctx, b.line1 || '', 13, 'bold ', w - 14);
+  ctx.fillText(b.line1 || '', 0, top + (b.line2 ? 12 : h / 2 + 0.5));
+  if (b.line2) {
+    fitFont(ctx, b.line2, 10.5, '', w - 14);
+    ctx.fillStyle = '#7a6656';
+    ctx.fillText(b.line2, 0, top + 27);
+  }
+  if (b.tag) drawTag(ctx, w / 2 - 24, top + h - 6, b.tag, '#6cb86a');
   ctx.restore();
 }
 
@@ -1282,6 +1478,7 @@ window.Character = {
   drawScribble,
   drawSweat,
   drawSign,
+  drawBubble,
   BODY_CY: CY,
   HEAD_TOP: CY - RY - 16,
 };

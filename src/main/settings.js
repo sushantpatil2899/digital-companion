@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { NUDGE_DEFAULTS } = require('./nudges');
 
 const DEFAULTS = {
   // Opt-in: notice which app is in front (macOS). Off by default.
@@ -22,6 +23,8 @@ const DEFAULTS = {
   // Web apps you might also just leave open for chat: these count as a
   // meeting only while a calendar event is on (like a meeting app's window).
   meetingAppUrls: ['teams.microsoft.com', 'teams.live.com', '.webex.com/'],
+  // Wellbeing nudges (water, stretch, eye rest, bedtime); see src/main/nudges.js.
+  nudges: { ...NUDGE_DEFAULTS },
 };
 
 // Lists you can add to in settings.json. Saved lists are added to the
@@ -48,7 +51,12 @@ class Settings {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       for (const k of Object.keys(DEFAULTS)) {
         if (saved[k] === undefined || typeof saved[k] !== typeof DEFAULTS[k]) continue;
-        if (LIST_KEYS.includes(k) && Array.isArray(saved[k])) {
+        if (k === 'nudges' && saved[k] && !Array.isArray(saved[k])) {
+          this.values[k] = { ...DEFAULTS[k] };
+          for (const [nk, nv] of Object.entries(saved[k])) {
+            if (nk in DEFAULTS[k] && typeof nv === typeof DEFAULTS[k][nk]) this.values[k][nk] = nv;
+          }
+        } else if (LIST_KEYS.includes(k) && Array.isArray(saved[k])) {
           const seen = new Set(DEFAULTS[k].map((v) => String(v).toLowerCase()));
           this.values[k] = [...DEFAULTS[k], ...saved[k].filter((v) => typeof v === 'string' && !seen.has(v.toLowerCase()))];
         } else {

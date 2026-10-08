@@ -31,6 +31,13 @@ const STATE_NAMES = {
   curious: 'Curious',
   wave: 'Waving',
   sign: 'Holding up a sign',
+  water: 'Bringing you water',
+  drink: 'Cheers!',
+  stretch: 'Stretching',
+  eyeRest: 'Resting his eyes',
+  bedtime: 'Yawning: bedtime?',
+  note: 'Holding up your note',
+  nod: 'Nodding',
 };
 
 // [key, label, "good" end: 'high' or 'low']
@@ -101,6 +108,17 @@ function render(b) {
   if (c.inEvent) rows.push(['In event', `${c.inEvent.title} (until ${fmtTime(c.inEvent.end)})`]);
   for (const e of c.alsoInEvents || []) rows.push(['Also in', `${e.title} (until ${fmtTime(e.end)})`]);
   if (c.nextEvent) rows.push(['Next event', `${c.nextEvent.title} at ${fmtTime(c.nextEvent.start)}`]);
+  const w = b.nudges;
+  if (w) {
+    const next = (on, every, active) => (on ? `in ${Math.max(0, Math.round(every - active / 60))} min` : 'off');
+    const s = w.settings;
+    rows.push(['Water', `${w.water} today · next ${next(s.water, s.waterEvery, w.active.water)}`]);
+    rows.push(['Stretch', `${Math.round(w.active.stretch / 60)} min since a break · next ${next(s.stretch, s.stretchEvery, w.active.stretch)}`]);
+    rows.push(['Eye rest', `next ${next(s.eyes, s.eyesEvery, w.active.eyes)}`]);
+    if (w.quietHold > 0) rows.push(['Nudges', `paused for ${Math.ceil(w.quietHold / 60)} min after your meeting`]);
+    for (const n of w.notes) rows.push(['Remind me', `${fmtTime(n.at)}: ${n.text}`]);
+  }
+  if (b.nudge) rows.push(['Showing', b.nudge.kind === 'note' ? `note: ${b.nudge.text}` : b.nudge.kind]);
   if (c.error) rows.push(['Note', c.error]);
   $('context').innerHTML = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
 
