@@ -159,7 +159,8 @@ function catchUp(needs, mood, seconds) {
 const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek'];
 // Still, silent things he may do while "Stay put" is on or you're in a meeting.
 const STAY = ['idle', 'sit', 'lookAround', 'eat', 'flower', 'backView', 'sleep', 'sad', 'talk'];
-const QUIET = ['idle', 'sit', 'backView', 'sleep', 'eat', 'flower'];
+// In a meeting he keeps still: no walking, no props, nothing that catches your eye.
+const QUIET = ['idle', 'sit', 'backView', 'sleep'];
 const ENERGETIC = ['run', 'jump', 'play', 'adventure', 'visitScreen'];
 
 /**

@@ -90,11 +90,16 @@ function render(b) {
       c.batteryLevel == null ? 'unknown' : `${Math.round(c.batteryLevel * 100)}% ${c.charging ? '(charging)' : c.onBattery ? '(on battery)' : ''}`,
     ],
   ];
-  if (c.frontApp) rows.push(['Front app', c.frontApp]);
+  if (c.frontApp) {
+    const kind = { meeting: 'meeting app', presenting: 'presenting' }[c.frontKind] || 'not a meeting';
+    rows.push(['Front app', `${c.frontApp}${c.frontBundle ? ` (${c.frontBundle})` : ''} → ${kind}`]);
+  }
+  if (c.meetingCheck) rows.push(['Meeting check', c.meetingCheck]);
   if (c.visibleApps && c.visibleApps.length) rows.push(['On screen', c.visibleApps.slice(0, 8).join(', ')]);
   if (c.screens > 1) rows.push(['Screens', `${c.screens} (he's on #${(c.screenIndex || 0) + 1})`]);
   if (b.reminder) rows.push(['Reminder', `${b.reminder.title} (${b.reminder.kind === 'now' ? 'now' : `in ${b.reminder.kind} min`}${b.reminder.acknowledged ? ', seen' : ', waiting for a click'})`]);
   if (c.inEvent) rows.push(['In event', `${c.inEvent.title} (until ${fmtTime(c.inEvent.end)})`]);
+  for (const e of c.alsoInEvents || []) rows.push(['Also in', `${e.title} (until ${fmtTime(e.end)})`]);
   if (c.nextEvent) rows.push(['Next event', `${c.nextEvent.title} at ${fmtTime(c.nextEvent.start)}`]);
   if (c.error) rows.push(['Note', c.error]);
   $('context').innerHTML = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');

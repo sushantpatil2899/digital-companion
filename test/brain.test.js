@@ -370,3 +370,39 @@ test('pacing: he settles into things instead of switching every few seconds', ()
   const avg = (minutes * 60) / decisions;
   assert.ok(avg >= 10, `a decision every ${avg.toFixed(1)} s`);
 });
+
+function companion() {
+  const c = grounded(new Companion({ bounds: { left: 0, right: 1500, top: 25, floor: 840 }, rng: seeded(3) }));
+  c.enter('idle', 1000);
+  return c;
+}
+
+test('joining a meeting: he stops walking and sits still for the whole call', () => {
+  const c = companion();
+  c.setContext({ hour: 10, now: Date.now() });
+  c.startActivity('walk');
+  c.update(0.5);
+  assert.strictEqual(c.state, 'walk');
+  c.setContext({ hour: 10, now: Date.now(), quiet: true, quietReason: 'meeting (zoom.us)' });
+  assert.strictEqual(c.state, 'sit');
+  const x = c.x;
+  const seen = new Set();
+  for (let i = 0; i < 20 * 60 * 20; i++) {
+    c.update(1 / 20, { x: x + 600, y: 300 });
+    seen.add(c.state);
+  }
+  assert.strictEqual(c.x, x, 'did not move');
+  for (const s of seen) assert.ok(['sit', 'idle', 'backView', 'sleep'].includes(s), `state ${s}`);
+});
+
+test('joining a meeting cancels a trip to another screen', () => {
+  const disp = (x, w) => ({ bounds: { x, y: 0, width: w, height: 900 }, workArea: { x, y: 25, width: w, height: 815 } });
+  const c = companion();
+  c.setScreens([disp(0, 1500), disp(1500, 1500)]);
+  c.enter('idle', 1000);
+  assert.ok(c.travelTo(1, 2200));
+  c.update(0.2);
+  c.setContext({ hour: 10, now: Date.now(), quiet: true });
+  assert.strictEqual(c.route, null);
+  assert.strictEqual(c.state, 'sit');
+});

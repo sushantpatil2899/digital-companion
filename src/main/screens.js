@@ -4,7 +4,10 @@
 //
 // Input: Electron displays as { bounds, workArea }, each {x, y, width, height}.
 // Each screen becomes:
-//   { index, left, right, top, floor }       usable area (workArea): walls, ceiling, floor
+//   { index, left, right, top, floor }       where he lives: walls and floor are the
+//                                            display's real edges (he walks along the very
+//                                            bottom, in front of the Dock), the ceiling is
+//                                            below the menu bar (workArea top)
 //   { b: { left, right, top, bottom } }      whole display (bounds): for adjacency / lookups
 //
 // Links are the places he can cross from one screen to another:
@@ -20,10 +23,10 @@ function toScreen(d, index) {
   const b = d.bounds || d.workArea;
   return {
     index,
-    left: wa.x,
-    right: wa.x + wa.width,
+    left: b.x,
+    right: b.x + b.width,
     top: wa.y,
-    floor: wa.y + wa.height,
+    floor: b.y + b.height,
     b: { left: b.x, right: b.x + b.width, top: b.y, bottom: b.y + b.height },
   };
 }
@@ -128,4 +131,4 @@ function route(screens, from, to, halfWidth) {
   return null;
 }
 
-module.exports = { makeScreens, screenAt, link, linksFrom, route, MAX_SIDE_HOP };
+module.exports = { toScreen, makeScreens, screenAt, link, linksFrom, route, MAX_SIDE_HOP };

@@ -17,10 +17,25 @@ test('settings: opt-in features are off by default and changes are saved', () =>
   s.set('readCalendar', true);
   assert.strictEqual(new Settings(dir).get('readCalendar'), true);
   // A hand-edited file with a wrong type falls back to the default.
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ watchApps: 'yes', quietApps: ['Zoom'] }));
+  // Saved lists add to the built-in ones, so older files get new defaults.
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ watchApps: 'yes', quietApps: ['zoom.us', 'Slack'] }));
   const t = new Settings(dir);
   assert.strictEqual(t.get('watchApps'), false);
-  assert.deepStrictEqual(t.get('quietApps'), ['Zoom']);
+  const quiet = t.get('quietApps');
+  for (const d of DEFAULTS.quietApps) assert.ok(quiet.includes(d), d);
+  assert.ok(quiet.includes('Slack') && quiet.includes('zoom.us'));
+  assert.strictEqual(new Set(quiet.map((q) => q.toLowerCase())).size, quiet.length);
+});
+
+test('apps: Zoom is a meeting app whatever it calls itself, and by bundle ID', () => {
+  for (const name of ['zoom.us', 'Zoom Workplace', 'Zoom']) assert.strictEqual(classifyApp(name, DEFAULTS), 'meeting', name);
+  // An old settings file (just "zoom.us") still matches "Zoom Workplace" by bundle ID.
+  const old = { ...DEFAULTS, quietApps: ['zoom.us'] };
+  assert.strictEqual(classifyApp('Zoom Workplace', old), null);
+  assert.strictEqual(classifyApp('Zoom Workplace', old, 'us.zoom.xos'), 'meeting');
+  assert.strictEqual(classifyApp('Microsoft Teams', old, 'com.microsoft.teams2'), 'meeting');
+  assert.strictEqual(classifyApp('Keynote', old, 'com.apple.iWork.Keynote'), 'presenting');
+  assert.strictEqual(classifyApp('Finder', DEFAULTS, 'com.apple.finder'), null);
 });
 
 test('apps: meeting apps make him quiet, presentation apps hide him', () => {

@@ -11,8 +11,8 @@ const DEFAULTS = {
   // Opt-in: read upcoming events from the Mac Calendar app. Off by default.
   readCalendar: false,
   // Apps where he keeps still and quiet (meetings). Matched case-insensitively
-  // against the app's name, so "teams" also matches "Microsoft Teams".
-  quietApps: ['zoom.us', 'Microsoft Teams', 'FaceTime', 'Webex', 'Cisco Webex Meetings', 'Skype', 'Around', 'Discord'],
+  // anywhere in the app's name, so "zoom" matches "zoom.us" and "Zoom Workplace".
+  quietApps: ['zoom', 'Microsoft Teams', 'FaceTime', 'Webex', 'Cisco Webex Meetings', 'Skype', 'Around', 'Discord'],
   // Apps where he hides completely (presenting).
   presentApps: ['Keynote', 'Microsoft PowerPoint'],
   // Browsers whose open tabs are checked for meetings.
@@ -24,6 +24,22 @@ const DEFAULTS = {
   meetingAppUrls: ['teams.microsoft.com', 'teams.live.com', '.webex.com/'],
 };
 
+// Lists you can add to in settings.json. Saved lists are added to the
+// built-in ones (not replacing them), so new defaults reach older installs.
+const LIST_KEYS = ['quietApps', 'presentApps', 'browsers', 'meetingUrls', 'meetingAppUrls'];
+
+// Meeting apps by bundle ID: still recognised if an app renames itself.
+const MEETING_BUNDLES = [
+  'us.zoom.xos',
+  'com.microsoft.teams',
+  'com.microsoft.teams2',
+  'com.apple.facetime',
+  'com.cisco.webexmeetingsapp',
+  'com.webex.meetingmanager',
+  'cisco-systems.spark',
+];
+const PRESENT_BUNDLES = ['com.apple.iwork.keynote', 'com.microsoft.powerpoint'];
+
 class Settings {
   constructor(dir) {
     this.file = path.join(dir, 'settings.json');
@@ -31,7 +47,13 @@ class Settings {
     try {
       const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       for (const k of Object.keys(DEFAULTS)) {
-        if (saved[k] !== undefined && typeof saved[k] === typeof DEFAULTS[k]) this.values[k] = saved[k];
+        if (saved[k] === undefined || typeof saved[k] !== typeof DEFAULTS[k]) continue;
+        if (LIST_KEYS.includes(k) && Array.isArray(saved[k])) {
+          const seen = new Set(DEFAULTS[k].map((v) => String(v).toLowerCase()));
+          this.values[k] = [...DEFAULTS[k], ...saved[k].filter((v) => typeof v === 'string' && !seen.has(v.toLowerCase()))];
+        } else {
+          this.values[k] = saved[k];
+        }
       }
     } catch {
       // No settings yet: write the defaults so they're easy to find and edit.
@@ -73,11 +95,14 @@ function classifyUrl(url, settings) {
   return null;
 }
 
-/** Which list (if any) an app name is on: 'presenting', 'meeting' or null. */
-function classifyApp(name, settings) {
+/** Which list (if any) an app is on, by name or bundle ID: 'presenting', 'meeting' or null. */
+function classifyApp(name, settings, bundleId) {
+  const b = bundleId ? String(bundleId).toLowerCase() : '';
+  if (b && PRESENT_BUNDLES.includes(b)) return 'presenting';
+  if (b && MEETING_BUNDLES.includes(b)) return 'meeting';
   if (!name) return null;
   const n = name.toLowerCase();
-  const match = (list) => list.some((a) => n === a.toLowerCase() || n.includes(a.toLowerCase()));
+  const match = (list) => list.some((a) => a && n.includes(String(a).toLowerCase()));
   if (match(settings.presentApps || [])) return 'presenting';
   if (match(settings.quietApps || [])) return 'meeting';
   return null;

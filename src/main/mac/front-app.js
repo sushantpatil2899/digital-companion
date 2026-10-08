@@ -16,6 +16,7 @@ const WINDOWS_SCRIPT = path.join(__dirname, 'windows.jxa.js').replace('app.asar'
 // Our own app being in front (e.g. while you use his menu) doesn't count.
 const IGNORE = ['togepi', 'electron'];
 
+// Parses `lsappinfo info -only <key>` output: "LSDisplayName"="zoom.us"
 function parseLsappinfoName(out) {
   const m = String(out).match(/"[^"]*"\s*=\s*"([^"]*)"/);
   return m ? m[1] : null;
@@ -53,7 +54,13 @@ async function frontAppName() {
     const asn = (await run('/usr/bin/lsappinfo', ['front'])).trim();
     if (asn) {
       const name = parseLsappinfoName(await run('/usr/bin/lsappinfo', ['info', '-only', 'name', asn]));
-      if (name) return { name };
+      let bundleId = null;
+      try {
+        bundleId = parseLsappinfoName(await run('/usr/bin/lsappinfo', ['info', '-only', 'bundleid', asn]));
+      } catch {
+        // the name alone will do
+      }
+      if (name) return { name, bundleId };
     }
   } catch {
     // fall through to AppleScript
@@ -94,11 +101,13 @@ async function browserTabs(browser) {
 
 /**
  * Put the raw observations together.
- * @returns {{frontApp, frontKind, meetingAppVisible, meetingTab, visibleApps: string[]}}
+ * @param {string} front name of the app in front
+ * @param {string} [frontBundle] its bundle ID
+ * @returns {{frontApp, frontBundle, frontKind, meetingAppVisible, meetingTab, visibleApps: string[]}}
  */
-function summarize(front, windows, tabsByBrowser, settings) {
+function summarize(front, windows, tabsByBrowser, settings, frontBundle = null) {
   const visibleApps = [...new Set((windows || []).map((w) => w.app))];
-  const frontKind = classifyApp(front, settings);
+  const frontKind = classifyApp(front, settings, frontBundle);
   let meetingTab = false;
   let meetingAppTab = false;
   for (const urls of Object.values(tabsByBrowser)) {
@@ -109,7 +118,7 @@ function summarize(front, windows, tabsByBrowser, settings) {
     }
   }
   const meetingAppVisible = meetingAppTab || visibleApps.some((a) => classifyApp(a, settings) === 'meeting');
-  return { frontApp: front, frontKind, meetingAppVisible, meetingTab, visibleApps };
+  return { frontApp: front, frontBundle, frontKind, meetingAppVisible, meetingTab, visibleApps };
 }
 
 class AppWatcher {
@@ -124,6 +133,7 @@ class AppWatcher {
     this.timer = null;
     this.busy = false;
     this.lastFront = null;
+    this.lastBundle = null;
   }
 
   start() {
@@ -141,7 +151,10 @@ class AppWatcher {
       const f = await frontAppName();
       if (f.error) errors.push(f.error);
       // Ignore our own app in front: keep the previous answer.
-      if (f.name && !IGNORE.includes(f.name.toLowerCase())) this.lastFront = f.name;
+      if (f.name && !IGNORE.includes(f.name.toLowerCase())) {
+        this.lastFront = f.name;
+        this.lastBundle = f.bundleId || null;
+      }
       const windows = await visibleWindows();
       const visible = new Set((windows || []).map((w) => w.app));
       const tabs = {};
@@ -151,7 +164,7 @@ class AppWatcher {
         if (r.urls) tabs[browser] = r.urls;
         if (r.error) errors.push(r.error);
       }
-      const summary = summarize(this.lastFront, windows, tabs, settings);
+      const summary = summarize(this.lastFront, windows, tabs, settings, this.lastBundle);
       if (this.timer) this.onResult({ ...summary, error: errors.join(' ') || null });
     } finally {
       this.busy = false;

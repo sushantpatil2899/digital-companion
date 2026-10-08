@@ -45,6 +45,9 @@ const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', '
 // his feet in screen px (an ellipse centred `cy` above the feet).
 const HIT = { cy: 70, rx: 60, ry: 72, signHalfWidth: 64, signBottom: 140, signTop: 205 };
 
+// What he stops doing when you join a meeting (he sits down where he is).
+const BUSY_WHEN_QUIET = ['walk', 'run', 'play', 'adventure', 'lookAround', 'talk', 'eat', 'flower', 'curious', 'wave'];
+
 // States the cursor reactions (curious / shy / wave) may interrupt.
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
 
@@ -869,6 +872,21 @@ class Companion {
     }
     // Wake up when you come back (or when your meeting is about to start).
     if (this.state === 'sleep' && prev.userAway && !ctx.userAway) this.enter('surprised', 0.9);
+    // You've joined a meeting: stop and sit down quietly where he is.
+    if (ctx.quiet && !prev.quiet) this.settleForQuiet();
+  }
+
+  /** Stop whatever he's doing (walks, trips to other screens, props) and sit still. */
+  settleForQuiet() {
+    if (!this.isGrounded() || this.state === 'grabbed') return;
+    if (!BUSY_WHEN_QUIET.includes(this.state)) return;
+    if (this.afterMove && this.afterMove.state === 'sign') return; // on his way to show you a reminder
+    this.route = null;
+    this.crossing = null;
+    this.afterMove = null;
+    this.vx = 0;
+    this.lastActivity = 'sit';
+    this.enter('sit', rand(24, 60, this.rng));
   }
 
   // ---------------------------------------------------------------- reminders
@@ -1053,10 +1071,10 @@ class Companion {
         this.emit('jump');
         break;
       case 'idle':
-        this.enter('idle', rand(6, 15, rng));
+        this.enter('idle', rand(6, 15, rng) * (this.context.quiet ? 2 : 1));
         break;
       case 'sit':
-        this.enter('sit', rand(12, 30, rng));
+        this.enter('sit', rand(12, 30, rng) * (this.context.quiet ? 2 : 1));
         break;
       case 'lookAround':
         this.enter('lookAround', rand(3, 5, rng));
@@ -1074,7 +1092,7 @@ class Companion {
         this.emit('flower');
         break;
       case 'backView':
-        this.enter('backView', rand(6, 10, rng));
+        this.enter('backView', rand(6, 10, rng) * (this.context.quiet ? 2 : 1));
         break;
       case 'sleep': {
         // Nap until rested: longer when more tired, and much longer at night.
@@ -1153,6 +1171,7 @@ class Companion {
       eventTitle: this.reminder ? this.reminder.event.title : this.context.nextEvent ? this.context.nextEvent.title : null,
       reminderKind: this.reminder && !this.reminder.acknowledged ? this.reminder.kind : null,
       petting: this.petting,
+      quiet: !!this.context.quiet,
       grumpy: this.time < this.grumpyUntil,
       time: this.time,
     };

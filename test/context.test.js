@@ -130,3 +130,30 @@ test('presenting app in front', () => {
   assert.strictEqual(c.presenting, true);
   assert.strictEqual(c.frontApp, 'Keynote');
 });
+
+test('overlapping events: the call inside a long block is the one you are in', () => {
+  const k = clock(new Date('2026-10-08T10:40:00').getTime());
+  const t = new ContextTracker({ now: k.now });
+  const at = (h, m) => new Date(`2026-10-08T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).getTime();
+  t.setEvents([
+    { title: 'Focus block', start: at(9, 0), end: at(13, 0) },
+    { title: 'Design sync', start: at(10, 30), end: at(11, 0) },
+  ]);
+  let c = t.update(0);
+  assert.strictEqual(c.inEvent.title, 'Design sync');
+  assert.deepStrictEqual(c.alsoInEvents.map((e) => e.title), ['Focus block']);
+  // After the call, back in the block.
+  k.add(25 * 60);
+  c = t.update(0);
+  assert.strictEqual(c.inEvent.title, 'Focus block');
+});
+
+test('meeting check explains the quiet decision', () => {
+  const t = new ContextTracker({ now: clock().now });
+  t.setApps({ watching: true, frontApp: 'Finder' });
+  assert.match(t.update(0).meetingCheck, /not quiet: Finder isn't a meeting app/);
+  t.setApps({ watching: true, frontApp: 'Zoom Workplace', frontBundle: 'us.zoom.xos', frontKind: 'meeting' });
+  const c = t.update(0);
+  assert.match(c.meetingCheck, /^quiet: meeting \(Zoom Workplace\)/);
+  assert.strictEqual(c.frontBundle, 'us.zoom.xos');
+});

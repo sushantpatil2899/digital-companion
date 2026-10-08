@@ -30,7 +30,7 @@ class ContextTracker {
     this.onBattery = false;
     // What the app watcher (macOS) sees; see setApps().
     this.apps = { watching: false, frontApp: null, frontKind: null, meetingAppVisible: false, meetingTab: false };
-    this.calendar = { nextEvent: null, inEvent: null };
+    this.calendar = { nextEvent: null, inEvent: null, alsoIn: [], events: [] };
     this.alertedEvents = new Set(); // events we've already said "soon" about
     this.lastInEvent = null;
     this.pending = {}; // one-shot flags until the next snapshot
@@ -75,15 +75,24 @@ class ContextTracker {
    * @param {boolean} [a.meetingTab]      a browser window on any screen shows a meeting tab
    */
   setApps(a) {
-    this.apps = { watching: false, frontApp: null, frontKind: null, meetingAppVisible: false, meetingTab: false, ...a };
+    this.apps = { watching: false, frontApp: null, frontBundle: null, frontKind: null, meetingAppVisible: false, meetingTab: false, ...a };
   }
 
   /** Calendar events (stage 2): [{ title, start, end }] with ms epoch times. */
   setEvents(events) {
     const now = this.now();
-    const list = (events || []).filter((e) => e && e.end > now).sort((a, b) => a.start - b.start);
-    this.calendar.inEvent = list.find((e) => e.start <= now && e.end > now) || null;
-    this.calendar.nextEvent = list.find((e) => e.start > now) || null;
+    this.calendar.events = (events || []).filter((e) => e && e.end > now).sort((a, b) => a.start - b.start);
+    this.refreshEvents(now);
+  }
+
+  /** "In event" is the most recently started one (a call inside a long block); "next" the next to start. */
+  refreshEvents(now) {
+    const cal = this.calendar;
+    cal.events = cal.events.filter((e) => e.end > now);
+    const current = cal.events.filter((e) => e.start <= now).sort((a, b) => b.start - a.start || a.end - b.end);
+    cal.inEvent = current[0] || null;
+    cal.alsoIn = current.slice(1);
+    cal.nextEvent = cal.events.find((e) => e.start > now) || null;
   }
 
   /** Call every couple of seconds with the system idle time. Returns the context. */
@@ -102,11 +111,7 @@ class ContextTracker {
 
     // Calendar: keep "now" and "next" current between calendar reads.
     const cal = this.calendar;
-    if (cal.inEvent && cal.inEvent.end <= now) cal.inEvent = null;
-    if (cal.nextEvent && cal.nextEvent.start <= now) {
-      if (cal.nextEvent.end > now) cal.inEvent = cal.nextEvent;
-      cal.nextEvent = null;
-    }
+    this.refreshEvents(now);
     // Reminders: once at ~30 minutes before an event and once at ~5 minutes.
     if (cal.nextEvent) {
       const left = cal.nextEvent.start - now;
@@ -129,15 +134,24 @@ class ContextTracker {
 
     // Quiet only when you're actually in a meeting (or presenting). With app
     // watching off we can't tell, so a calendar event counts as a meeting.
+    // `meetingCheck` says why (or why not), for the brain view.
     const a = this.apps;
     let quietReason = null;
+    let meetingCheck;
     if (a.watching) {
       if (a.frontKind === 'presenting') quietReason = 'presenting';
       else if (a.frontKind === 'meeting') quietReason = `meeting (${a.frontApp})`;
       else if (a.meetingTab) quietReason = 'meeting (browser tab)';
       else if (a.meetingAppVisible && inEvent) quietReason = 'meeting (on another screen)';
+      if (quietReason) meetingCheck = `quiet: ${quietReason}`;
+      else if (a.meetingAppVisible) meetingCheck = 'not quiet: a meeting app is open, but not in front and no calendar event is on';
+      else if (!a.frontApp) meetingCheck = "not quiet: haven't seen the front app yet";
+      else meetingCheck = `not quiet: ${a.frontApp} isn't a meeting app and no meeting tab is showing`;
     } else if (inEvent) {
       quietReason = 'calendar event';
+      meetingCheck = 'quiet: calendar event (turn on "Notice which app I\'m using" to only be quiet in actual meetings)';
+    } else {
+      meetingCheck = 'not quiet: no calendar event, and app watching is off';
     }
 
     const date = new Date(now);
@@ -155,6 +169,10 @@ class ContextTracker {
       quietReason,
       presenting: quietReason === 'presenting',
       frontApp: a.watching ? a.frontApp : null,
+      frontBundle: a.watching ? a.frontBundle : null,
+      frontKind: a.watching ? a.frontKind : null,
+      meetingCheck,
+      alsoInEvents: cal.alsoIn,
       visibleApps: a.watching && a.visibleApps ? a.visibleApps : [],
       nextEvent: this.calendar.nextEvent,
       inEvent: this.calendar.inEvent,

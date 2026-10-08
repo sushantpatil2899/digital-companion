@@ -581,6 +581,8 @@ function render(now) {
       ctx.translate(-gx, -gy);
     }
     drawCharacter(ctx, pose);
+    // In a meeting: no "?" or chatter marks around him.
+    if (frame.quiet && (overlay === 'question' || overlay === 'sound')) overlay = null;
     if (overlay) drawOverlay(ctx, overlay, pose);
     ctx.restore();
 

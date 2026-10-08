@@ -199,3 +199,14 @@ test('being picked up mid-trip cancels it', () => {
   assert.strictEqual(c.route, null);
   assert.strictEqual(c.crossing, null);
 });
+
+test('he walks along the very bottom of every screen (in front of the Dock), below the menu bar', () => {
+  const lm = screens.makeScreens(LAYOUTS.laptopAndMonitor);
+  assert.strictEqual(lm[0].floor, 982);
+  assert.strictEqual(lm[1].floor, 1440);
+  assert.strictEqual(lm[0].top, 25);
+  assert.strictEqual(lm[0].left, 0);
+  assert.strictEqual(lm[0].right, 1512);
+  const c = companionOn(LAYOUTS.laptopAndMonitor, 0, 700);
+  assert.strictEqual(c.y, 982);
+});

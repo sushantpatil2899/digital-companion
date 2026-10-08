@@ -9,6 +9,7 @@ const { Settings } = require('./settings');
 const { AppWatcher } = require('./mac/front-app');
 const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
+const { toScreen } = require('./screens');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -232,8 +233,8 @@ function allDisplays() {
 
 function boundsForPoint(point) {
   const display = screen.getDisplayNearestPoint({ x: px(point.x), y: px(point.y) });
-  const wa = display.workArea;
-  return { left: wa.x, right: wa.x + wa.width, top: wa.y, floor: wa.y + wa.height };
+  const { left, right, top, floor } = toScreen({ bounds: display.bounds, workArea: display.workArea }, 0);
+  return { left, right, top, floor };
 }
 
 function createWindow() {
