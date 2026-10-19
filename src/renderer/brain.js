@@ -103,7 +103,10 @@ function render(b) {
   }
   if (c.meetingCheck) rows.push(['Meeting check', c.meetingCheck]);
   if (c.visibleApps && c.visibleApps.length) rows.push(['On screen', c.visibleApps.slice(0, 8).join(', ')]);
-  if (c.screens > 1) rows.push(['Screens', `${c.screens} (he's on #${(c.screenIndex || 0) + 1})`]);
+  if (c.screens > 1) {
+    const reach = (c.reachableScreens || []).map((i) => `#${i + 1}`).join(', ') || 'none';
+    rows.push(['Screens', `${c.screens} (he's on #${(c.screenIndex || 0) + 1} for ${Math.floor((c.onThisScreenFor || 0) / 60)} min; can walk to ${reach})`]);
+  }
   if (b.reminder) rows.push(['Reminder', `${b.reminder.title} (${b.reminder.kind === 'now' ? 'now' : `in ${b.reminder.kind} min`}${b.reminder.acknowledged ? ', seen' : ', waiting for a click'})`]);
   if (c.inEvent) rows.push(['In event', `${c.inEvent.title} (until ${fmtTime(c.inEvent.end)})`]);
   for (const e of c.alsoInEvents || []) rows.push(['Also in', `${e.title} (until ${fmtTime(e.end)})`]);
@@ -119,6 +122,7 @@ function render(b) {
     for (const n of w.notes) rows.push(['Remind me', `${fmtTime(n.at)}: ${n.text}`]);
   }
   if (b.nudge) rows.push(['Showing', b.nudge.kind === 'note' ? `note: ${b.nudge.text}` : b.nudge.kind]);
+  if (b.game) rows.push(['Playing', `${b.game.kind === 'ttt' ? 'tic-tac-toe' : 'fetch'} (${b.game.step}, ${b.game.rounds} played)`]);
   if (c.error) rows.push(['Note', c.error]);
   $('context').innerHTML = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
 

@@ -31,12 +31,19 @@ const NEEDS = {
   moodDrift: 1 / 240, // how fast mood follows his needs (changes over minutes)
   grumpyFade: 1 / 180, // grumpiness fades in ~3 min
   grumpyPerThrow: 0.35,
+  // Wanders over to another screen after staying on one for a while: never
+  // before visitAfter seconds, then more and more likely over visitRamp.
+  visitAfter: 300,
+  visitRamp: 600,
+  // Asks you to play when he's getting bored, but before he's properly bored.
+  inviteFrom: 0.5,
+  inviteTo: 0.8,
   // How hard each kind of state works him (multiplies energyDrain).
   effort: { run: 3, play: 3, adventure: 2.5, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },
   // States where he's not doing anything interesting (boredom rises).
   still: ['idle', 'sit', 'lookAround', 'backView', 'sad'],
   // States where he's exploring (boredom falls).
-  busy: ['run', 'play', 'adventure', 'eat', 'flower', 'talk', 'jump'],
+  busy: ['run', 'play', 'adventure', 'eat', 'flower', 'talk', 'jump', 'watchBall', 'pickBall', 'ttt'],
 };
 
 // One-off changes when he starts an activity (or is interacted with).
@@ -55,6 +62,8 @@ const EFFECTS = {
   drop: { mood: -0.02 },
   attention: { affection: 0.03 }, // you asked him to do something / called him
   nudgeThanks: { affection: 0.04, mood: 0.03 }, // you answered one of his nudges
+  fetchRound: { boredom: -0.2, affection: 0.08, mood: 0.06 }, // you threw the ball and he brought it back
+  gameRound: { boredom: -0.35, affection: 0.1, mood: 0.08 }, // a game of tic-tac-toe with you
   pluggedIn: { energy: 0.15, mood: 0.1 },
 };
 
@@ -157,7 +166,7 @@ function catchUp(needs, mood, seconds) {
   return mood + (moodTarget(needs) - mood) * Math.min(1, s / 600);
 }
 
-const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek'];
+const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek', 'invite'];
 // Still, silent things he may do while "Stay put" is on or you're in a meeting.
 const STAY = ['idle', 'sit', 'lookAround', 'eat', 'flower', 'backView', 'sleep', 'sad', 'talk'];
 // In a meeting he keeps still: no walking, no props, nothing that catches your eye.
@@ -169,7 +178,7 @@ const ENERGETIC = ['run', 'jump', 'play', 'adventure', 'visitScreen'];
  * @param {object} needs
  * @param {number} mood
  * @param {object} ctx context (see defaultContext)
- * @param {object} opts { paused, cursorKnown, last, rng }
+ * @param {object} opts { paused, cursorKnown, last, rng, canVisitScreen, screenStay, ... }
  * @returns {{name:string, score:number, why:string}[]} sorted, best first
  */
 function scoreActivities(needs, mood, ctx, opts = {}) {
@@ -180,6 +189,11 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
   const lowBattery = ctx.onBattery && ctx.batteryLevel != null && ctx.batteryLevel < 0.2;
   const criticalBattery = ctx.onBattery && ctx.batteryLevel != null && ctx.batteryLevel < 0.1;
   const rng = opts.rng || Math.random;
+  // The longer he's been on this screen, the more he feels like going to another one.
+  const stay = opts.screenStay || 0;
+  const wanderlust = stay < NEEDS.visitAfter ? 0 : 0.2 + 1.3 * clamp01((stay - NEEDS.visitAfter) / NEEDS.visitRamp);
+  // Getting bored (not yet properly bored): a good time to ask you to play.
+  const gettingBored = boredom >= NEEDS.inviteFrom && boredom < NEEDS.inviteTo;
 
   const s = {
     walk: [0.4 + 0.1 * boredom + 0.1 * energy, 'wander'],
@@ -195,10 +209,11 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     adventure: [energy > 0.5 ? 0.04 + 0.8 * boredom * energy : 0, 'restless'],
     backView: [0.12, 'watch your screen'],
     // Only offered when there's another screen he can walk to.
-    visitScreen: [opts.canVisitScreen && energy > 0.45 ? 0.1 + 0.9 * boredom * energy : 0, 'explore another screen'],
+    visitScreen: [opts.canVisitScreen && energy > 0.25 && wanderlust > 0 ? wanderlust + 0.3 * boredom : 0, `been on this screen ${Math.round(stay / 60)} min`],
     sleep: [energy < 0.55 ? 1.8 * tired * tired : 0, 'tired'],
     sad: [affection < 0.35 && opts.sadReady !== false ? 1.3 * (0.35 - affection) / 0.35 : 0, 'lonely'],
     seek: [affection < 0.45 && opts.cursorKnown && opts.seekReady !== false ? 0.4 + 1.2 * (0.45 - affection) / 0.45 : 0, 'wants attention'],
+    invite: [gettingBored && energy > 0.3 && opts.cursorKnown ? 0.7 + 1.5 * (boredom - NEEDS.inviteFrom) / (NEEDS.inviteTo - NEEDS.inviteFrom) : 0, 'getting bored, wants to play'],
   };
   // Only list the base reason when it actually contributes.
   const why = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v[0] > 0 ? [v[1]] : []]));
@@ -224,6 +239,7 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     // Nothing to do without you around: nap.
     add('sleep', 0.9 + Math.min(1, ctx.awayFor / 600), 'you are away');
     scale('seek', 0, 'you are away');
+    scale('invite', 0, 'you are away');
     scale('sad', 0.3, 'you are away');
     for (const n of ['walk', 'run', 'play', 'adventure', 'visitScreen', 'talk', 'jump']) scale(n, 0.4, 'you are away');
   }
@@ -233,7 +249,8 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
   // His mood colours what he feels like doing.
   const band = moodBand(mood, opts.grumpiness || 0);
   if (band === 'sad') {
-    for (const n of ['run', 'jump', 'adventure', 'visitScreen']) scale(n, 0, 'feeling sad');
+    for (const n of ['run', 'jump', 'adventure', 'invite']) scale(n, 0, 'feeling sad');
+    scale('visitScreen', 0.5, 'feeling sad');
     if (boredom < 0.85) scale('play', 0.3, 'feeling sad');
     scale('talk', 0.3, 'feeling sad');
     scale('flower', 0.5, 'feeling sad');
@@ -252,6 +269,7 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
   } else if (band === 'grumpy') {
     scale('talk', 0.2, 'grumpy');
     scale('seek', 0, 'grumpy');
+    scale('invite', 0, 'grumpy');
     scale('flower', 0.5, 'grumpy');
   }
   // After a long walk, have a rest.

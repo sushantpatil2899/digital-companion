@@ -26,7 +26,7 @@ let turn = 0; // eased 0..1 amount he's turned sideways
 
 // States where he turns to a 3/4 view towards where he's going or looking;
 // otherwise he faces you, like most panels of the reference sheet.
-const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5, eyeRest: 1 };
+const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5, eyeRest: 1, watchBall: 0.6, pickBall: 1, ttt: 0.6 };
 
 // What he says after you answer a nudge (or when he gives up on one), by
 // mood. When he's sad or cross he doesn't gush.
@@ -38,6 +38,11 @@ const SAYS = {
   eyesDone: { cheerful: 'Ahh, better!', content: 'Better', meh: 'ok.', sad: '…better', grumpy: 'There.' },
   bedtimeDone: { cheerful: 'Night night!', content: 'Night!', meh: 'night.', sad: 'night…', grumpy: 'Finally.' },
   nudgeLater: { cheerful: 'Later then!', content: 'Later then…', meh: '…later.', sad: 'later…', grumpy: 'Ugh. Later.' },
+  // Games.
+  gaveUp: { cheerful: "I'll play alone then!", content: 'Never mind…', meh: '…never mind.', sad: 'ok… never mind', grumpy: 'Fine. Whatever.' },
+  thatWasFun: { cheerful: 'That was fun!', content: 'That was fun!', meh: 'that was ok.', sad: 'thanks…', grumpy: 'Hmph. Fun.' },
+  tttYouWin: { cheerful: 'You win! Again?', content: 'You win!', meh: 'you win.', sad: 'you win…', grumpy: 'Lucky.' },
+  tttIWin: { cheerful: 'I win! Yay!', content: 'I win!', meh: 'I win.', sad: 'I won…', grumpy: 'Ha. Mine.' },
 };
 
 function resize() {
@@ -128,6 +133,30 @@ function handleEvent(name) {
     }
     case 'eventEnded':
       spawn('text', 0, HEAD_TOP - 10, { text: 'All done!', vy: -12, max: 1.8, size: 14 });
+      break;
+    case 'gaveUp':
+    case 'thatWasFun':
+    case 'tttYouWin':
+    case 'tttIWin': {
+      const band = (frame && frame.band) || 'content';
+      spawn('text', 0, HEAD_TOP - 10, { text: SAYS[name][band] || SAYS[name].content, vy: -12, max: 1.8, size: 14 });
+      if (name === 'thatWasFun' && band !== 'grumpy') spawn('heart', 30, HEAD_TOP + 10, { vy: -30, max: 1.2, size: 9 });
+      break;
+    }
+    case 'ballThrow':
+      spawn('text', 0, HEAD_TOP - 10, { text: "I'll get it!", vy: -14, max: 1.4, size: 14 });
+      break;
+    case 'gotBall':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Got it!', vy: -14, max: 1.2, size: 14 });
+      break;
+    case 'tttDraw':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'A draw!', vy: -12, max: 1.6, size: 14 });
+      break;
+    case 'tttYouStart':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'You go first!', vy: -12, max: 1.6, size: 14 });
+      break;
+    case 'tttIStart':
+      spawn('text', 0, HEAD_TOP - 10, { text: 'Me first!', vy: -12, max: 1.6, size: 14 });
       break;
     case 'wake':
       spawn('text', 32, HEAD_TOP + 8, { text: '!?', vy: -30, max: 0.8, size: 18 });
@@ -572,7 +601,61 @@ function computePose(f, dt) {
       p.blush = 0.7;
       overlay = 'waveLines';
       break;
+    case 'offerBall':
+      // Holding the Pokeball out to you: "Play fetch?"
+      nudgeFace(p, f);
+      if (happyBand(f)) p.mouth = 'open';
+      p.bob = -Math.abs(Math.sin(t * 4)) * 2;
+      break;
+    case 'watchBall':
+      // Eyes on the ball, bouncing on the spot.
+      p.eyes = 'wide';
+      p.mouth = 'open';
+      p.arms = 'cheer';
+      p.blink = 0;
+      p.blush = 0.7;
+      p.bob = -Math.abs(Math.sin(t * 9)) * 3;
+      if (f.ball) {
+        p.lookX = clamp(f.ball.x / 200, -1, 1);
+        p.lookY = clamp((f.ball.y - BODY_CY * SIZE) / 200, -1, 1);
+      }
+      break;
+    case 'pickBall':
+      // Bending down to pick up the ball.
+      p.arms = 'hold';
+      p.scaleY *= 0.9;
+      p.scaleX *= 1.05;
+      p.lookX = f.facing;
+      p.lookY = 0.9;
+      p.mouth = 'o';
+      break;
+    case 'offerGame':
+      // "Tic-tac-toe?" with a little bounce.
+      nudgeFace(p, f);
+      p.arms = 'cheer';
+      if (happyBand(f)) p.mouth = 'open';
+      p.bob = -Math.abs(Math.sin(t * 5)) * 1.5;
+      break;
+    case 'ttt':
+      // Next to the board: watching your move, or thinking about his.
+      applyMoodFace(p, f, false);
+      p.lookX = f.facing * 0.8;
+      p.lookY = 0.1;
+      if (f.thinking) {
+        p.mouth = 'flat';
+        p.eyes = 'open';
+        p.lookY = -0.4;
+        p.tilt = Math.sin(t * 2) * 0.05;
+        overlay = 'question';
+      }
+      break;
     default:
+  }
+  // Carrying the Pokeball (running back with it, holding it out to you).
+  if (f.holdingBall && !['grabbed', 'fall', 'jump', 'sleep'].includes(f.state)) {
+    p.prop = 'pokeball';
+    p.arms = 'hold';
+    p.armSwing = 0;
   }
 
   // Squash spring (landings).
