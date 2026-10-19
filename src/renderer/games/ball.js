@@ -7,7 +7,7 @@ const canvas = document.getElementById('ball');
 const ctx = canvas.getContext('2d');
 const R = 14; // keep in sync with BALL.r in src/main/games/fetch.js
 
-let ball = { rot: 0, held: false };
+let ball = { rot: 0, held: false, dy: 0 }; // dy: how far below the window's centre the ball is
 
 function draw() {
   const dpr = window.devicePixelRatio || 1;
@@ -17,7 +17,7 @@ function draw() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  ctx.translate(window.innerWidth / 2, window.innerHeight / 2);
+  ctx.translate(window.innerWidth / 2, window.innerHeight / 2 + (ball.dy || 0));
   window.Character.drawBall(ctx, 0, 0, ball.rot, R);
 }
 

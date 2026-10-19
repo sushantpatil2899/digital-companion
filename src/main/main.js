@@ -9,7 +9,7 @@ const { Settings } = require('./settings');
 const { AppWatcher } = require('./mac/front-app');
 const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
-const { toScreen } = require('./screens');
+const { toScreen, screenAt } = require('./screens');
 const { BALL } = require('./games/fetch');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
@@ -70,7 +70,6 @@ let press = null; // { x, y, t } while the mouse button is down on him
 let ballPress = false; // the mouse button is down on the ball (you're holding it)
 let ballWin = null;
 let ballIgnoring = null;
-let lastBallPos = { x: NaN, y: NaN };
 let boardWin = null;
 let boardSide = 1; // which side of him the board is on
 let lastBoardPos = { x: NaN, y: NaN };
@@ -437,14 +436,18 @@ function updateBallWindow(cursor) {
     if (ballWin.isVisible()) ballWin.hide();
     return;
   }
+  // Keep the window inside the screen: on the floor the ball is drawn lower in
+  // it instead (macOS pushes a window hanging off the bottom up out of the
+  // Dock's way, which left the ball floating above the floor).
+  const screens = companion.ballScreens();
+  const floor = screens[screenAt(screens, b.x, b.y)].floor;
   const x = px(b.x - BALL_WIN / 2);
-  const y = px(b.y - BALL_WIN / 2);
-  if (x !== lastBallPos.x || y !== lastBallPos.y) {
-    ballWin.setPosition(x, y);
-    lastBallPos = { x, y };
-  }
+  const y = px(Math.min(b.y - BALL_WIN / 2, floor - BALL_WIN));
   if (!ballWin.isVisible()) ballWin.showInactive();
-  ballWin.webContents.send('ball', { rot: b.rot, held: b.state === 'grabbed' });
+  // Checked every frame, so it's put back if the system moves the window.
+  const [wx, wy] = ballWin.getPosition();
+  if (wx !== x || wy !== y) ballWin.setPosition(x, y);
+  ballWin.webContents.send('ball', { rot: b.rot, held: b.state === 'grabbed', dy: b.y - BALL_WIN / 2 - y });
   if (!CLICK_THROUGH) return;
   const ignore = !ballPress && Math.hypot(cursor.x - b.x, cursor.y - b.y) > BALL.r + 8;
   if (ignore !== ballIgnoring) {
