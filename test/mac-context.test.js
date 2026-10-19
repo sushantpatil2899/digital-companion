@@ -27,6 +27,22 @@ test('settings: opt-in features are off by default and changes are saved', () =>
   assert.strictEqual(new Set(quiet.map((q) => q.toLowerCase())).size, quiet.length);
 });
 
+test('settings: a file with a typo is not overwritten with the defaults', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-'));
+  const file = path.join(dir, 'settings.json');
+  const broken = '{ "watchApps": true, "quietApps": ["Slack"],, }';
+  fs.writeFileSync(file, broken);
+  const error = console.error;
+  console.error = () => {};
+  try {
+    const s = new Settings(dir);
+    assert.strictEqual(s.get('watchApps'), false, 'defaults are used for now');
+  } finally {
+    console.error = error;
+  }
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), broken, 'your file is left as it was');
+});
+
 test('apps: Zoom is a meeting app whatever it calls itself, and by bundle ID', () => {
   for (const name of ['zoom.us', 'Zoom Workplace', 'Zoom']) assert.strictEqual(classifyApp(name, DEFAULTS), 'meeting', name);
   // An old settings file (just "zoom.us") still matches "Zoom Workplace" by bundle ID.

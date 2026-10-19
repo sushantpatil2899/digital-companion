@@ -228,6 +228,27 @@ test('notes due while you are away are shown when you come back', () => {
   assert.strictEqual(c.state, 'note');
 });
 
+test('a note cancelled while he is on his way: he does not hold up an empty board', () => {
+  const { c, sim } = setup();
+  const note = c.addNote('Call Mom back', START);
+  sim.run(0.5, { x: 1400, y: 500 });
+  assert.strictEqual(c.afterMove && c.afterMove.state, 'note', 'running over with it');
+  c.removeNote(note.id);
+  sim.run(30, { x: 1400, y: 500 });
+  assert.notStrictEqual(c.state, 'note');
+});
+
+test('a meeting that ends while he is on his way with the sign: he puts it down', () => {
+  const { c, sim } = setup();
+  const event = { title: 'Standup', start: START - 60e3, end: START + 3e3 };
+  c.setContext({ hour: 10, now: START, reminder: { kind: '5', event } });
+  sim.run(0.5, { x: 1400, y: 500 });
+  assert.strictEqual(c.afterMove && c.afterMove.state, 'sign', 'running over with it');
+  sim.run(30, { x: 1400, y: 500 });
+  assert.strictEqual(c.reminder, null);
+  assert.notStrictEqual(c.state, 'sign');
+});
+
 test('meeting sign: a Join tag when the event has an https link', () => {
   const { c, sim } = setup();
   const event = { title: 'Design sync', start: START + 4 * 60e3, end: START + 34 * 60e3, link: 'https://zoom.us/j/123' };

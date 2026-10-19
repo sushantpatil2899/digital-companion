@@ -816,7 +816,14 @@ class Companion {
       case 'note':
         // Holding up a nudge until you click it (or he gives up / it's done).
         this.vx = 0;
-        if (this.stateTime >= this.stateDuration) this.nudgeTimedOut();
+        // Cancelled while he was on his way: nothing to hold up.
+        if (!this.nudge || NUDGE[this.nudge.kind].state !== this.state) this.chooseNext();
+        else if (this.stateTime >= this.stateDuration) this.nudgeTimedOut();
+        break;
+      case 'sign':
+        this.vx = 0;
+        // The meeting ended (or you clicked) while he was on his way: put it down.
+        if (!this.reminder || this.reminder.acknowledged) this.chooseNext();
         break;
       default:
         this.vx = 0;
