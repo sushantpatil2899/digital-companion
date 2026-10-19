@@ -63,9 +63,15 @@ class Settings {
           this.values[k] = saved[k];
         }
       }
-    } catch {
-      // No settings yet: write the defaults so they're easy to find and edit.
-      this.save();
+    } catch (e) {
+      if (e.code === 'ENOENT') {
+        // No settings yet: write the defaults so they're easy to find and edit.
+        this.save();
+      } else {
+        // Unreadable (e.g. a typo while hand-editing): use the defaults for
+        // now, but don't overwrite the file until something is changed.
+        console.error(`Could not read ${this.file}, using defaults:`, e.message);
+      }
     }
   }
 

@@ -37,8 +37,11 @@ const TICK_MS = 1000 / 60;
 // Pressing on him and moving the cursor more than this (px) picks him up.
 // Holding the button down without moving pets him; a quick click is a pat.
 const DRAG_THRESHOLD = 6;
-const PET_DELAY = 0.2; // s of holding still before it counts as petting
 const CLICK_MAX = 0.25; // s; a shorter press is a click (pat on the head)
+// s of holding still before it counts as petting. Not less than CLICK_MAX, so
+// a press is never both (a slow click on "Join" would pet him first, which
+// dismisses the sign before the click can open the call).
+const PET_DELAY = CLICK_MAX;
 
 // Click-through on the transparent parts of the window relies on polling the
 // cursor position. On Linux/X11 Electron's cursor position goes stale while a
