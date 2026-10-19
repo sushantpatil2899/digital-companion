@@ -1,7 +1,9 @@
 # Graph Report - digital-companion  (2026-10-19)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 40 files · ~46,702 words
+- Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 1 file(s) not represented in the graph (top: (none) 1)
 
 ## Summary
 - 568 nodes · 1151 edges · 29 communities (23 shown, 6 thin omitted)
@@ -9,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9c481d8e`
+- Built from commit: `a64ed163`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -52,9 +54,9 @@
 5. `BALL` - 13 edges
 6. `drawCharacter()` - 13 edges
 7. `clamp()` - 11 edges
-8. `drawLying()` - 11 edges
+8. `createWindow()` - 11 edges
 9. `fillStroke()` - 11 edges
-10. `createWindow()` - 11 edges
+10. `drawLying()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Making him your own` --references--> `zigzag()`  [INFERRED]
@@ -63,9 +65,9 @@
   README.md → src/renderer/renderer.js
 - `Making him your own` --references--> `scoreActivities()`  [INFERRED]
   README.md → src/main/brain.js
-- `inMeetingTracker()` --calls--> `ContextTracker`  [EXTRACTED]
-  test/context.test.js → src/main/context.js
 - `{ Companion }` --calls--> `Companion`  [EXTRACTED]
+  test/brain.test.js → src/main/companion.js
+- `meetingSetup()` --calls--> `Companion`  [EXTRACTED]
   test/brain.test.js → src/main/companion.js
 
 ## Import Cycles

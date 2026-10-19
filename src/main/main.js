@@ -35,7 +35,11 @@ const WIN_H = 240; // tall enough for a sticky note held over his head
 const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
 // Fetch: the thrown ball gets its own little window so it can fly anywhere.
-const BALL_WIN = 56;
+// It's tall, like his, so that on the floor it isn't entirely inside the Dock
+// area (macOS moves a window that is up out of the Dock's way); the ball is
+// drawn at the bottom of it there.
+const BALL_WIN_W = 56;
+const BALL_WIN_H = 160;
 // Tic-tac-toe board, shown next to him while you play.
 const BOARD_W = 210;
 const BOARD_H = 262;
@@ -286,6 +290,9 @@ function createWindow() {
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
+    // macOS: put the window exactly where we say, even partly off screen or
+    // over the Dock (otherwise it may be moved back into the visible area).
+    enableLargerThanScreen: true,
     alwaysOnTop: true,
     // Don't steal keyboard focus from whatever you're working in.
     focusable: process.platform === 'linux',
@@ -331,6 +338,9 @@ function overlayWindow(width, height, preload) {
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
+    // macOS: put the window exactly where we say, even partly off screen or
+    // over the Dock (otherwise it may be moved back into the visible area).
+    enableLargerThanScreen: true,
     alwaysOnTop: true,
     focusable: process.platform === 'linux',
     show: false,
@@ -348,7 +358,7 @@ function overlayWindow(width, height, preload) {
 }
 
 function createBallWindow() {
-  ballWin = overlayWindow(BALL_WIN, BALL_WIN, 'game-preload.js');
+  ballWin = overlayWindow(BALL_WIN_W, BALL_WIN_H, 'game-preload.js');
   ballWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'ball.html'));
   ballWin.on('closed', () => {
     ballWin = null;
@@ -436,18 +446,17 @@ function updateBallWindow(cursor) {
     if (ballWin.isVisible()) ballWin.hide();
     return;
   }
-  // Keep the window inside the screen: on the floor the ball is drawn lower in
-  // it instead (macOS pushes a window hanging off the bottom up out of the
-  // Dock's way, which left the ball floating above the floor).
+  // Keep the window inside the screen: near the floor the ball is drawn lower
+  // in it instead.
   const screens = companion.ballScreens();
   const floor = screens[screenAt(screens, b.x, b.y)].floor;
-  const x = px(b.x - BALL_WIN / 2);
-  const y = px(Math.min(b.y - BALL_WIN / 2, floor - BALL_WIN));
+  const x = px(b.x - BALL_WIN_W / 2);
+  const y = px(Math.min(b.y - BALL_WIN_H / 2, floor - BALL_WIN_H));
   if (!ballWin.isVisible()) ballWin.showInactive();
   // Checked every frame, so it's put back if the system moves the window.
   const [wx, wy] = ballWin.getPosition();
   if (wx !== x || wy !== y) ballWin.setPosition(x, y);
-  ballWin.webContents.send('ball', { rot: b.rot, held: b.state === 'grabbed', dy: b.y - BALL_WIN / 2 - y });
+  ballWin.webContents.send('ball', { rot: b.rot, held: b.state === 'grabbed', dy: b.y - BALL_WIN_H / 2 - y });
   if (!CLICK_THROUGH) return;
   const ignore = !ballPress && Math.hypot(cursor.x - b.x, cursor.y - b.y) > BALL.r + 8;
   if (ignore !== ballIgnoring) {
