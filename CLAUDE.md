@@ -1,3 +1,11 @@
+## Togepi's mind (personality, memory, local AI voice)
+
+Long-running, phased work. Before working on it, read `docs/mind/PLAN.md`
+(phases, status, working agreement) and `docs/mind/DECISIONS.md` (every
+decision so far). Every phase starts with questions to Sushant; record his
+answers in DECISIONS.md and update the phase status in PLAN.md. Do not decide
+product behaviour on your own.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
