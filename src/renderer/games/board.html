@@ -83,9 +83,12 @@
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        /* Fixed thirds: a square with a mark in it must not grow its row. */
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(3, minmax(0, 1fr));
         gap: 5px;
         flex: 1;
+        min-height: 0;
       }
       .cell {
         border: 2px solid var(--line);
@@ -99,6 +102,9 @@
         justify-content: center;
         cursor: default;
         padding: 0;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
         color: var(--ink);
       }
       .cell.free.open {

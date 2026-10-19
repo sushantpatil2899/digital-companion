@@ -352,6 +352,12 @@ function drawFoot(ctx, side, p) {
   }
 }
 
+// The Pokeball held out in front in both hands, for fetch (keep in sync with
+// HELD_BALL in src/main/companion.js: same point, in screen px).
+const HELD = { x: 2.6, y: CY - 3, r: 12 };
+// Where the hands sit on the ball's sides (from its centre), and the arm's angle.
+const GRIP = { reach: HELD.r - 3, shoulder: 13, angle: 1.75 };
+
 function armAngle(side, p) {
   // Local +y of the nub points along the arm. Angle a gives direction (-sin a, cos a).
   const lead = side === p.facing;
@@ -379,6 +385,9 @@ function armAngle(side, p) {
     case 'sip':
       // Both hands bringing the glass up to his mouth.
       return side * 2.45;
+    case 'grip':
+      // Both hands on the sides of the ball.
+      return side * GRIP.angle;
     default:
       return -side * (0.3 + Math.sin(p.walkPhase + (side > 0 ? 0 : Math.PI)) * p.armSwing);
   }
@@ -390,6 +399,7 @@ function drawArm(ctx, side, p) {
   if (p.arms === 'shade' && side === p.facing) ctx.translate(side * 36, CY - 22);
   else if (p.arms === 'stretch') ctx.translate(side * 47, CY - 22);
   else if (p.arms === 'sip') ctx.translate(side * 30, CY - 12);
+  else if (p.arms === 'grip') ctx.translate(p.facing * HELD.x + side * (GRIP.reach + GRIP.shoulder), HELD.y + 4);
   else ctx.translate(side * (inward ? 35 : 43), CY + (inward ? 0 : -9));
   ctx.rotate(armAngle(side, p));
   ellipse(ctx, 0, 6, 6.5, 8.5);
@@ -925,13 +935,12 @@ function drawCharacter(ctx, p) {
     drawFace(ctx, p);
     if (p.prop === 'flower') drawFlower(ctx, p.facing * 3, CY - 6);
     if (p.prop === 'backpack') drawBackpackStraps(ctx, p);
+    // The Pokeball for fetch, held out in front with his hands on its sides.
+    if (p.prop === 'pokeball') drawBall(ctx, p.facing * HELD.x, HELD.y, 0, HELD.r);
     drawArm(ctx, -1, p);
     drawArm(ctx, 1, p);
     // The apple is held up in front, over his hands.
     if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
-    // The Pokeball for fetch, held out in front in both hands (where HELD_BALL
-    // in src/main/companion.js expects it).
-    if (p.prop === 'pokeball') drawBall(ctx, p.facing * 2.6, CY - 9.6, 0, 12);
     // The glass: held in front, or raised to his mouth for a sip.
     if (p.prop === 'glass') {
       const lift = p.glassLift || 0;

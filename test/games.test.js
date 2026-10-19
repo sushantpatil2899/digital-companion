@@ -54,13 +54,25 @@ test('tic-tac-toe: his best move wins when he can, and blocks you otherwise', ()
   assert.deepStrictEqual(bestMoves(['X', 'X', null, null, 'O', null, null, null, null], 'O'), [2]);
 });
 
-test('tic-tac-toe: he sometimes makes a mistake, so he can be beaten', () => {
-  const board = ['X', 'X', null, null, 'O', null, null, null, null];
-  const moves = new Set();
+test('tic-tac-toe: he never misses a win or a block', () => {
   const rng = seeded(11);
-  for (let i = 0; i < 200; i++) moves.add(chooseMove(board, 'O', rng));
-  assert.ok(moves.has(2), 'usually blocks');
-  assert.ok(moves.size > 1, 'but not always');
+  for (let i = 0; i < 200; i++) {
+    // You (X) threaten 0-1-2: he always blocks on 2.
+    assert.strictEqual(chooseMove(['X', 'X', null, null, 'O', null, null, null, null], 'O', rng), 2);
+    // He can win on 5 (and you threaten 6-7-8): winning comes first.
+    assert.strictEqual(chooseMove(['X', null, null, 'O', 'O', null, 'X', 'X', null], 'O', rng), 5);
+  }
+});
+
+test('tic-tac-toe: he can still slip up on a tricky move, so he can be beaten', () => {
+  // You took a corner: the only safe answer is the centre. Mostly he finds it.
+  const board = ['X', null, null, null, null, null, null, null, null];
+  const moves = [];
+  const rng = seeded(11);
+  for (let i = 0; i < 300; i++) moves.push(chooseMove(board, 'O', rng));
+  const centre = moves.filter((m) => m === 4).length;
+  assert.ok(centre > 210, `centre ${centre}/300`);
+  assert.ok(centre < 300, 'but not always');
 });
 
 test('tic-tac-toe: turns alternate and moves on taken squares are refused', () => {

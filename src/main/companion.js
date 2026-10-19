@@ -79,7 +79,7 @@ const GAME = {
 };
 const GAME_STATES = ['offerBall', 'watchBall', 'pickBall', 'offerGame', 'ttt'];
 // Where the ball sits in his hands, relative to his feet (screen px, x towards where he faces).
-const HELD_BALL = { x: 3, y: 72 };
+const HELD_BALL = { x: 3, y: 64 };
 
 // States with something held up over his head that you can click.
 const BOARD_STATES = ['sign', ...NUDGE_STATES, 'offerBall', 'offerGame'];
