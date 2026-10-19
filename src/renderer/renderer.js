@@ -654,7 +654,7 @@ function computePose(f, dt) {
   // Carrying the Pokeball (running back with it, holding it out to you).
   if (f.holdingBall && !['grabbed', 'fall', 'jump', 'sleep'].includes(f.state)) {
     p.prop = 'pokeball';
-    p.arms = 'hold';
+    p.arms = 'grip';
     p.armSwing = 0;
   }
 

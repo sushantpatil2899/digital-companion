@@ -16,9 +16,11 @@ const LINES = [
   [2, 4, 6],
 ];
 
-// How often he plays his best move; otherwise any free square. He's good,
-// but you can beat him.
-const SKILL = 0.75;
+// He always wins when he can and always blocks you. Otherwise he plays his
+// best move this often, else any free square: so he only slips up on the
+// trickier moves (like letting you set up two threats at once), and you can
+// still beat him.
+const SKILL = 0.8;
 
 function other(mark) {
   return mark === 'X' ? 'O' : 'X';
@@ -73,12 +75,24 @@ function bestMoves(board, me) {
   return moves;
 }
 
-/** His move for `me`: usually one of the best, sometimes any free square. */
+/** Would putting `mark` on square `i` make three in a row? */
+function completes(board, i, mark) {
+  const b = board.slice();
+  b[i] = mark;
+  const w = winner(b);
+  return !!w && w.mark === mark;
+}
+
+/** His move for `me`: win, else block, else usually one of the best moves. */
 function chooseMove(board, me, rng = Math.random, skill = SKILL) {
   const free = freeSquares(board);
   if (!free.length) return null;
-  const pool = rng() < skill ? bestMoves(board, me) : free;
-  return pool[Math.floor(rng() * pool.length)];
+  const pick = (list) => list[Math.floor(rng() * list.length)];
+  const wins = free.filter((i) => completes(board, i, me));
+  if (wins.length) return pick(wins);
+  const blocks = free.filter((i) => completes(board, i, other(me)));
+  if (blocks.length) return pick(blocks);
+  return pick(rng() < skill ? bestMoves(board, me) : free);
 }
 
 class TicTacToe {
