@@ -88,21 +88,29 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `questions`
+### Phase 1: his own voice — status: `questions` (personality structure research under review)
 
 Goal: he comments in his own words, in character, on what you're doing.
 
-Planned scope:
-- `personality.md`: trait levels (e.g. kind, sassy, protective, playful) and a
-  short description of who he is.
-- Speaking triggers decided by rules (candidates: switching to a new app/site,
-  coming back after being away, games ending, petting, inviting you to play).
-- Prompt = personality + mood + time of day + what you're doing → one line,
-  ≤ 8 words, validated; fallback to built-in phrases.
+Planned scope (updated 2026-10-19 after Sushant's answers):
+- **Personality file**: layered, numeric + prose (structure under review, see
+  [research/personality.md](research/personality.md) §8). His actual
+  personality is chosen after the structure is agreed.
+- **Decision loop** (research §9): observe → event log → wake-up → think
+  (LLM) → decide → act or stay silent → write the decision and your reaction
+  back so the next think step sees it. Wake-ups only decide *whether he
+  thinks*; whether and what he says is his decision, driven by personality.
+  Your interactions always wake him; conversations continue.
+- Only hard rules: quiet/meeting modes, privacy, a spam ceiling.
+- **Privacy**: automatic blocking of private/incognito windows, password
+  managers and payment pages, plus a user-configurable blocklist (apps,
+  websites, anything). A fast local classifier for this is being evaluated
+  (research §10).
 - Read the active browser tab's **title**, not just its URL.
-- Menu controls: mind on/off, chattiness level, privacy blocklist.
+- Menu controls: mind on/off (on by default), blocklist settings.
 - Block all outgoing network requests in the app.
 - Model bundling (build-time download, `extraResources`), utility process.
+- Fallback to built-in phrases if the model isn't ready.
 - Tests use a fake model.
 
 Open questions: see DECISIONS.md, "Phase 1 questions".
