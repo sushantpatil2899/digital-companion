@@ -279,6 +279,27 @@ const TEXT = {
     meh: '…meeting now',
     sad: 'Meeting now…',
     grumpy: 'Meeting. Now.',
+  },  // Games (src/main/games/).
+  fetch: {
+    cheerful: 'Play fetch?!',
+    content: 'Play fetch?',
+    meh: '…fetch?',
+    sad: 'Play with me…?',
+    grumpy: 'Throw it. Now.',
+  },
+  fetchAgain: {
+    cheerful: 'Again! Again!',
+    content: 'Again?',
+    meh: '…again?',
+    sad: 'One more…?',
+    grumpy: 'Again.',
+  },
+  ttt: {
+    cheerful: 'Tic-tac-toe?!',
+    content: 'Tic-tac-toe?',
+    meh: '…tic-tac-toe?',
+    sad: 'Play with me…?',
+    grumpy: 'Tic-tac-toe. Now.',
   },
 };
 

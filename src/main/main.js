@@ -10,6 +10,7 @@ const { AppWatcher } = require('./mac/front-app');
 const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
 const { toScreen } = require('./screens');
+const { BALL } = require('./games/fetch');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -33,6 +34,11 @@ const WIN_W = 220;
 const WIN_H = 240; // tall enough for a sticky note held over his head
 const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
+// Fetch: the thrown ball gets its own little window so it can fly anywhere.
+const BALL_WIN = 56;
+// Tic-tac-toe board, shown next to him while you play.
+const BOARD_W = 210;
+const BOARD_H = 262;
 
 // Pressing on him and moving the cursor more than this (px) picks him up.
 // Holding the button down without moving pets him; a quick click is a pat.
@@ -61,6 +67,14 @@ let timer = null;
 let lastTick = 0;
 let ignoringMouse = null;
 let press = null; // { x, y, t } while the mouse button is down on him
+let ballPress = false; // the mouse button is down on the ball (you're holding it)
+let ballWin = null;
+let ballIgnoring = null;
+let lastBallPos = { x: NaN, y: NaN };
+let boardWin = null;
+let boardSide = 1; // which side of him the board is on
+let lastBoardPos = { x: NaN, y: NaN };
+let lastBoardView = '';
 let lastWinPos = { x: NaN, y: NaN };
 let tracker = null;
 let contextTimer = null;
@@ -300,6 +314,46 @@ function createWindow() {
     win = null;
     stopLoop();
   });
+  createBallWindow();
+}
+
+// A small transparent window for the ball, always on top like him.
+function overlayWindow(width, height, preload) {
+  const w = new BrowserWindow({
+    width,
+    height,
+    transparent: true,
+    backgroundColor: '#00000000',
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    focusable: process.platform === 'linux',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', preload),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  w.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform === 'darwin') w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  return w;
+}
+
+function createBallWindow() {
+  ballWin = overlayWindow(BALL_WIN, BALL_WIN, 'game-preload.js');
+  ballWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'ball.html'));
+  ballWin.on('closed', () => {
+    ballWin = null;
+  });
 }
 
 // --------------------------------------------------------------- main loop
@@ -330,6 +384,10 @@ function tick() {
     else if (held > PET_DELAY) companion.pet(dt);
   }
   if (companion.state === 'grabbed') companion.drag(cursor);
+  if (ballPress) {
+    if (companion.ball.state === 'grabbed') companion.dragBall(cursor);
+    else ballPress = false; // the game ended while you were holding it
+  }
 
   // (He works out which monitor he's on himself, from the display list.)
   companion.update(dt, cursor);
@@ -342,9 +400,11 @@ function tick() {
   }
 
   updateClickThrough(cursor);
+  updateBallWindow(cursor);
+  updateBoardWindow();
 
   const events = companion.drainEvents();
-  if (events.includes('stayPutEnded')) refreshTrayMenu();
+  if (events.some((e) => ['stayPutEnded', 'gameStart', 'gameInvite', 'gameEnded'].includes(e))) refreshTrayMenu();
   if (events.includes('noteDone')) sendNotes();
 
   win.webContents.send('frame', {
@@ -360,7 +420,7 @@ function tick() {
 function updateClickThrough(cursor) {
   if (!CLICK_THROUGH) return;
   let over = true;
-  if (!press && companion.state !== 'grabbed') over = companion.isOver(cursor);
+  if (!press && !ballPress && companion.state !== 'grabbed') over = companion.isOver(cursor);
   const ignore = !over;
   if (ignore !== ignoringMouse) {
     ignoringMouse = ignore;
@@ -368,15 +428,98 @@ function updateClickThrough(cursor) {
   }
 }
 
+// The ball's window follows the ball while it's out of his hands; only the
+// ball itself catches the mouse.
+function updateBallWindow(cursor) {
+  if (!ballWin || ballWin.isDestroyed()) return;
+  const b = companion.ball;
+  if (!b.loose) {
+    if (ballWin.isVisible()) ballWin.hide();
+    return;
+  }
+  const x = px(b.x - BALL_WIN / 2);
+  const y = px(b.y - BALL_WIN / 2);
+  if (x !== lastBallPos.x || y !== lastBallPos.y) {
+    ballWin.setPosition(x, y);
+    lastBallPos = { x, y };
+  }
+  if (!ballWin.isVisible()) ballWin.showInactive();
+  ballWin.webContents.send('ball', { rot: b.rot, held: b.state === 'grabbed' });
+  if (!CLICK_THROUGH) return;
+  const ignore = !ballPress && Math.hypot(cursor.x - b.x, cursor.y - b.y) > BALL.r + 8;
+  if (ignore !== ballIgnoring) {
+    ballIgnoring = ignore;
+    ballWin.setIgnoreMouseEvents(ignore);
+  }
+}
+
+// The tic-tac-toe board stands next to him while a game is on.
+function updateBoardWindow() {
+  const view = companion.boardView();
+  if (!view) {
+    closeBoard();
+    return;
+  }
+  if (!boardWin) openBoard();
+  if (companion.isGrounded()) {
+    const x = px(boardSide > 0 ? companion.x + companion.halfWidth + 6 : companion.x - companion.halfWidth - 6 - BOARD_W);
+    const y = px(companion.bounds.floor - BOARD_H - 8);
+    if (x !== lastBoardPos.x || y !== lastBoardPos.y) {
+      boardWin.setPosition(x, y);
+      lastBoardPos = { x, y };
+    }
+  }
+  const json = JSON.stringify(view);
+  if (json !== lastBoardView) {
+    lastBoardView = json;
+    boardWin.webContents.send('board', view);
+  }
+}
+
+function openBoard() {
+  // On whichever side of him there's more room (and stay there).
+  const b = companion.bounds;
+  boardSide = b.right - companion.x >= companion.x - b.left ? 1 : -1;
+  if (companion.game) companion.game.side = boardSide;
+  lastBoardPos = { x: NaN, y: NaN };
+  lastBoardView = '';
+  boardWin = overlayWindow(BOARD_W, BOARD_H, 'game-preload.js');
+  boardWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'board.html'));
+  boardWin.webContents.on('did-finish-load', () => {
+    lastBoardView = '';
+  });
+  boardWin.once('ready-to-show', () => boardWin && boardWin.showInactive());
+  boardWin.on('closed', () => {
+    boardWin = null;
+  });
+}
+
+function closeBoard() {
+  if (boardWin && !boardWin.isDestroyed()) boardWin.close();
+  boardWin = null;
+}
+
 // --------------------------------------------------------------- input
 
 ipcMain.on('press', () => {
   const p = screen.getCursorScreenPoint();
+  // Taking the ball he's holding out to you.
+  if (companion.hitPart(p) === 'ball' && companion.grabBall(p)) {
+    ballPress = true;
+    return;
+  }
   press = { x: p.x, y: p.y, t: Date.now() };
 });
 
+function releaseBall() {
+  if (!ballPress) return false;
+  ballPress = false;
+  companion.releaseBall();
+  return true;
+}
+
 ipcMain.on('release', () => {
-  if (!press) return;
+  if (releaseBall() || !press) return;
   const held = (Date.now() - press.t) / 1000;
   const at = press;
   press = null;
@@ -393,6 +536,25 @@ ipcMain.on('release', () => {
     }
   }
   // Otherwise it was a long pet; he stays happy for a moment on his own.
+});
+
+// The ball (in its own window) picked up and let go.
+ipcMain.on('ball-press', () => {
+  if (companion && companion.grabBall(screen.getCursorScreenPoint())) ballPress = true;
+});
+ipcMain.on('ball-release', () => {
+  if (companion) releaseBall();
+});
+
+// Tic-tac-toe board.
+ipcMain.on('ttt-play', (_e, i) => {
+  if (companion && Number.isInteger(i)) companion.playSquare(i);
+});
+ipcMain.on('ttt-again', () => {
+  if (companion) companion.playAgain();
+});
+ipcMain.on('ttt-close', () => {
+  if (companion) companion.endGame('done');
 });
 
 // Battery level from the renderer (navigator.getBattery()).
@@ -477,6 +639,7 @@ function buildMenu() {
         },
       })),
     },
+    { label: 'Play', submenu: playMenu() },
     {
       label: sleeping ? 'Wake up' : 'Take a nap',
       click: () => {
@@ -537,6 +700,28 @@ function buildMenu() {
   }
   items.push({ type: 'separator' }, { label: 'Quit', click: () => app.quit() });
   return Menu.buildFromTemplate(items);
+}
+
+function playMenu() {
+  const can = !!companion && companion.isGrounded() && !companion.context.quiet;
+  const start = (kind) => () => {
+    companion.startGame(kind, true);
+    refreshTrayMenu();
+  };
+  const items = [
+    { label: 'Fetch', enabled: can, click: start('fetch') },
+    { label: 'Tic-tac-toe', enabled: can, click: start('ttt') },
+  ];
+  if (companion && companion.game) {
+    items.push({ type: 'separator' }, {
+      label: 'Stop playing',
+      click: () => {
+        companion.endGame('done');
+        refreshTrayMenu();
+      },
+    });
+  }
+  return items;
 }
 
 function setNudge(key, value) {

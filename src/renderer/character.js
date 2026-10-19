@@ -689,8 +689,8 @@ function drawFlower(ctx, x, y) {
   ctx.restore();
 }
 
-function drawBall(ctx, x, y, rot) {
-  const r = 11;
+// His ball, a Pokeball (also the one you throw for fetch).
+function drawBall(ctx, x, y, rot, r = 11) {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rot);
@@ -713,7 +713,7 @@ function drawBall(ctx, x, y, rot) {
   ellipse(ctx, 0, 0, r, r);
   ctx.lineWidth = 2.2;
   ctx.stroke();
-  ellipse(ctx, 0, 0, 3, 3);
+  ellipse(ctx, 0, 0, r * 0.27, r * 0.27);
   fillStroke(ctx, '#ffffff', 1.8);
   ctx.restore();
 }
@@ -929,6 +929,9 @@ function drawCharacter(ctx, p) {
     drawArm(ctx, 1, p);
     // The apple is held up in front, over his hands.
     if (p.prop === 'apple') drawApple(ctx, p.facing * 2, CY - 8, p.propProgress);
+    // The Pokeball for fetch, held out in front in both hands (where HELD_BALL
+    // in src/main/companion.js expects it).
+    if (p.prop === 'pokeball') drawBall(ctx, p.facing * 2.6, CY - 9.6, 0, 12);
     // The glass: held in front, or raised to his mouth for a sip.
     if (p.prop === 'glass') {
       const lift = p.glassLift || 0;
@@ -1131,7 +1134,7 @@ function defaultPose() {
     lookX: 0,
     lookY: 0,
     blush: 0.35,
-    prop: null, // null | apple | flower | ball | backpack | glass
+    prop: null, // null | apple | flower | ball | pokeball | backpack | glass
     glassLift: 0, // 0 = held in front, 1 = at his mouth
     propProgress: 0,
     ballX: 0,
@@ -1473,6 +1476,7 @@ window.Character = {
   drawText,
   drawPuff,
   drawDaisy,
+  drawBall,
   drawSoundLines,
   drawAngerMark,
   drawScribble,

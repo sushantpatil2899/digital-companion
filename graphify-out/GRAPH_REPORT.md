@@ -4,25 +4,25 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 472 nodes · 914 edges · 20 communities (17 shown, 3 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 79 edges (avg confidence: 0.85)
+- 568 nodes · 1146 edges · 29 communities (23 shown, 6 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 96 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2695adcb`
+- Built from commit: `8acfa382`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - Companion state machine and physics
 - Togepi drawing code
-- Nudges and remind-me notes
+- Companion constants and game config
 - Context tracking and brain tests
 - Electron main process and menus
 - Packaging and preload bridges
-- Needs, mood and activity scoring
+- README sections
 - Renderer poses and particles
-- Multi-monitor screen links
+- Companion and screen tests
 - Front app and browser tab watcher
 - Meeting app and URL classification
 - Calendar reader and Join links
@@ -34,18 +34,27 @@
 - Remind-me window
 - graphify usage rules
 - graphify skill registration
+- Tic-tac-toe rules and game tests
+- Ball physics and screen links
+- Nudge tests
+- NudgeTracker
+- Nudge timing and phrases
+- .board
+- Fetch ball window
+- Tic-tac-toe board window
+- session-start.sh
 
 ## God Nodes (most connected - your core abstractions)
-1. `Companion` - 76 edges
+1. `Companion` - 100 edges
 2. `ContextTracker` - 16 edges
 3. `NudgeTracker` - 16 edges
 4. `ellipse()` - 16 edges
-5. `drawCharacter()` - 13 edges
-6. `drawLying()` - 11 edges
-7. `fillStroke()` - 11 edges
-8. `clamp()` - 10 edges
-9. `createWindow()` - 10 edges
-10. `drawBodyAndShell()` - 9 edges
+5. `BALL` - 13 edges
+6. `drawCharacter()` - 13 edges
+7. `clamp()` - 11 edges
+8. `drawLying()` - 11 edges
+9. `fillStroke()` - 11 edges
+10. `createWindow()` - 11 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Making him your own` --references--> `zigzag()`  [INFERRED]
@@ -54,51 +63,51 @@
   README.md → src/renderer/renderer.js
 - `Making him your own` --references--> `scoreActivities()`  [INFERRED]
   README.md → src/main/brain.js
-- `render()` --indirect_call--> `clock()`  [INFERRED]
-  src/renderer/renderer.js → test/context.test.js
+- `inMeetingTracker()` --calls--> `ContextTracker`  [EXTRACTED]
+  test/context.test.js → src/main/context.js
 - `{ Companion }` --calls--> `Companion`  [EXTRACTED]
   test/brain.test.js → src/main/companion.js
 
 ## Import Cycles
 - None detected.
 
-## Communities (20 total, 3 thin omitted)
+## Communities (29 total, 6 thin omitted)
 
 ### Community 0 - "Companion state machine and physics"
-Cohesion: 0.10
+Cohesion: 0.08
 Nodes (4): clamp(), Companion, rand(), hardThrow()
 
 ### Community 1 - "Togepi drawing code"
 Cohesion: 0.09
 Nodes (49): armAngle(), bagSide(), bellyShadow(), bodyPath(), drawApple(), drawArm(), drawBackpackBag(), drawBackpackStraps() (+41 more)
 
-### Community 2 - "Nudges and remind-me notes"
-Cohesion: 0.06
-Nodes (30): BOARD_STATES, brain, BUSY_WHEN_QUIET, HIT, INTERRUPTIBLE, MOVING_ACTIVITIES, NUDGE, NUDGE_STATES (+22 more)
+### Community 2 - "Companion constants and game config"
+Cohesion: 0.12
+Nodes (16): { Ball, BALL }, BOARD_STATES, brain, BUSY_WHEN_QUIET, GAME_STATES, GAMES, HELD_BALL, INTERRUPTIBLE (+8 more)
 
 ### Community 3 - "Context tracking and brain tests"
-Cohesion: 0.06
-Nodes (27): defaultContext(), MENU_ACTIVITIES, TUNING, ContextTracker, dayString(), { defaultContext }, drawOverlay(), assert (+19 more)
+Cohesion: 0.07
+Nodes (27): Making him your own, ALL, apply(), catchUp(), clamp01(), defaultContext(), drift(), EFFECTS (+19 more)
 
 ### Community 4 - "Electron main process and menus"
 Cohesion: 0.08
-Nodes (41): ACTIVITY_MENU, allDisplays(), { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell }, applyReadCalendar(), applyWatchApps(), { AppWatcher }, BEDTIMES, boundsForPoint() (+33 more)
+Nodes (49): ACTIVITY_MENU, allDisplays(), { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell }, applyReadCalendar(), applyWatchApps(), { AppWatcher }, { BALL }, BEDTIMES (+41 more)
 
 ### Community 5 - "Packaging and preload bridges"
 Cohesion: 0.05
-Nodes (37): author, build, appId, asarUnpack, directories, files, mac, productName (+29 more)
+Nodes (38): author, build, appId, asarUnpack, directories, files, mac, productName (+30 more)
 
-### Community 6 - "Needs, mood and activity scoring"
-Cohesion: 0.10
-Nodes (22): Desktop Companion, His brain, How it works, Looking after you, Making him your own, Making Togepi.app (macOS), Platform notes, Playing with him (+14 more)
+### Community 6 - "README sections"
+Cohesion: 0.20
+Nodes (9): Desktop Companion, Games, His brain, How it works, Looking after you, Making Togepi.app (macOS), Platform notes, Playing with him (+1 more)
 
 ### Community 7 - "Renderer poses and particles"
-Cohesion: 0.15
-Nodes (19): applyMoodFace(), canvas, clamp(), computePose(), ctx, drawParticles(), handleEvent(), happyBand() (+11 more)
+Cohesion: 0.10
+Nodes (26): applyMoodFace(), canvas, clamp(), computePose(), ctx, drawOverlay(), drawParticles(), handleEvent() (+18 more)
 
-### Community 8 - "Multi-monitor screen links"
-Cohesion: 0.13
-Nodes (13): link(), linksFrom(), makeScreens(), overlap(), route(), toScreen(), assert, { Companion } (+5 more)
+### Community 8 - "Companion and screen tests"
+Cohesion: 0.08
+Nodes (17): MENU_ACTIVITIES, TUNING, assert, bounds, { Companion, MENU_ACTIVITIES, TUNING }, run(), test, assert (+9 more)
 
 ### Community 9 - "Front app and browser tab watcher"
 Cohesion: 0.18
@@ -132,25 +141,49 @@ Nodes (7): DEFAULTS, fs, LIST_KEYS, MEETING_BUNDLES, { NUDGE_DEFAULTS }, path, P
 Cohesion: 0.60
 Nodes (4): add(), fmt(), setButtons(), text
 
+### Community 20 - "Tic-tac-toe rules and game tests"
+Cohesion: 0.12
+Nodes (21): GAME, bestMoves(), chooseMove(), freeSquares(), LINES, minimax(), other(), TicTacToe (+13 more)
+
+### Community 21 - "Ball physics and screen links"
+Cohesion: 0.11
+Nodes (9): BALL, inAnyDisplay(), screensLib, link(), linksFrom(), makeScreens(), overlap(), route() (+1 more)
+
+### Community 22 - "Nudge tests"
+Cohesion: 0.20
+Nodes (9): HIT, assert, { Companion, HIT }, { NudgeTracker, pastBedtime, say, TIMING }, seeded(), setup(), sim, START (+1 more)
+
+### Community 24 - "Nudge timing and phrases"
+Cohesion: 0.24
+Nodes (7): dayString(), minutesOf(), NUDGE_DEFAULTS, pastBedtime(), PRIORITY, TEXT, TIMING
+
+### Community 26 - "Fetch ball window"
+Cohesion: 0.33
+Nodes (3): ball, canvas, ctx
+
+### Community 27 - "Tic-tac-toe board window"
+Cohesion: 0.33
+Nodes (4): again, cells, grid, status
+
 ## Knowledge Gaps
 - **1 isolated node(s):** `electron-builder`
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 180 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **3 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 218 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Companion` connect `Companion state machine and physics` to `Multi-monitor screen links`, `Nudges and remind-me notes`, `Context tracking and brain tests`, `Electron main process and menus`?**
-  _High betweenness centrality (0.265) - this node is a cross-community bridge._
+- **Why does `Companion` connect `Companion state machine and physics` to `Companion constants and game config`, `Context tracking and brain tests`, `Electron main process and menus`, `Companion and screen tests`, `Tic-tac-toe rules and game tests`, `Ball physics and screen links`, `Nudge tests`, `NudgeTracker`, `.board`?**
+  _High betweenness centrality (0.280) - this node is a cross-community bridge._
 - **What connects `electron-builder` to the rest of the system?**
   _1 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Companion state machine and physics` be split into smaller, more focused modules?**
-  _Cohesion score 0.10069444444444445 - nodes in this community are weakly interconnected._
-- **Why does `Making him your own` connect `Needs, mood and activity scoring` to `Togepi drawing code`, `Renderer poses and particles`?**
-  _High betweenness centrality (0.245) - this node is a cross-community bridge._
+  _Cohesion score 0.08403361344537816 - nodes in this community are weakly interconnected._
+- **Why does `Making him your own` connect `Context tracking and brain tests` to `Togepi drawing code`, `README sections`, `Renderer poses and particles`?**
+  _High betweenness centrality (0.210) - this node is a cross-community bridge._
 - **Should `Togepi drawing code` be split into smaller, more focused modules?**
   _Cohesion score 0.08709273182957393 - nodes in this community are weakly interconnected._
-- **Should `Nudges and remind-me notes` be split into smaller, more focused modules?**
-  _Cohesion score 0.05580693815987934 - nodes in this community are weakly interconnected._
+- **Should `Companion constants and game config` be split into smaller, more focused modules?**
+  _Cohesion score 0.11764705882352941 - nodes in this community are weakly interconnected._
 - **Should `Context tracking and brain tests` be split into smaller, more focused modules?**
-  _Cohesion score 0.056429232192414434 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06659619450317125 - nodes in this community are weakly interconnected._

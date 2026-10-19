@@ -16,7 +16,8 @@
 // Each link says how to cross: walk across, drop down, hop up or spring up.
 
 const TOUCH = 3; // px: displays closer than this count as touching
-const MAX_SIDE_HOP = 700; // px: highest step up he'll hop at a side edge
+const MAX_SIDE_HOP = 700; // px: highest step up he'll hop at a side edge ...
+const HOP_HEADROOM = 200; // ... or higher, as long as the target floor is this far below the ceiling
 
 function toScreen(d, index) {
   const wa = d.workArea || d.bounds;
@@ -77,7 +78,7 @@ function link(a, b, halfWidth = 40) {
     const reachesFloor = b.b.top <= a.floor - 30 && b.b.bottom >= a.floor - 30;
     if (Math.abs(rise) <= 8 && reachesFloor) return { from: a.index, to: b.index, dir, kind: 'walk', edgeX };
     if (rise < -8 && reachesFloor) return { from: a.index, to: b.index, dir, kind: 'drop', edgeX };
-    if (rise > 8 && rise <= MAX_SIDE_HOP) return { from: a.index, to: b.index, dir, kind: 'hop', edgeX, rise };
+    if (rise > 8 && rise <= Math.max(MAX_SIDE_HOP, a.floor - a.top - HOP_HEADROOM)) return { from: a.index, to: b.index, dir, kind: 'hop', edgeX, rise };
     return null;
   }
   // Stacked: through a shared horizontal edge, wide enough for him.

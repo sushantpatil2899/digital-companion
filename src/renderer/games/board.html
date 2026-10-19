@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Tic-tac-toe</title>
+    <style>
+      :root {
+        --bg: #fdfaf2;
+        --ink: #3a2d25;
+        --muted: #8a7a6c;
+        --line: #eadfcf;
+        --cell: #ffffff;
+        --cell-hover: #fff6e0;
+        --x: #4f8fc9;
+        --o: #e05a62;
+        --win: #ffe9a8;
+        --good: #6cb86a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #2d2925;
+          --ink: #f4ece0;
+          --muted: #b3a593;
+          --line: #4a433b;
+          --cell: #3a352f;
+          --cell-hover: #463f37;
+          --win: #6a5a2a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        user-select: none;
+        -webkit-user-select: none;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: var(--ink);
+      }
+      .card {
+        position: absolute;
+        inset: 6px;
+        background: var(--bg);
+        border: 2px solid var(--ink);
+        border-radius: 16px;
+        padding: 8px 10px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      #status {
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+      }
+      #close {
+        border: none;
+        background: none;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 2px 4px;
+        align-self: flex-start;
+      }
+      #close:hover {
+        color: var(--ink);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+        flex: 1;
+      }
+      .cell {
+        border: 2px solid var(--line);
+        border-radius: 10px;
+        background: var(--cell);
+        font-size: 34px;
+        font-weight: 800;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: default;
+        padding: 0;
+        color: var(--ink);
+      }
+      .cell.free.open {
+        cursor: pointer;
+      }
+      .cell.free.open:hover {
+        background: var(--cell-hover);
+      }
+      .cell.X {
+        color: var(--x);
+      }
+      .cell.O {
+        color: var(--o);
+      }
+      .cell.win {
+        background: var(--win);
+        border-color: var(--win);
+      }
+      #again {
+        border: 2px solid var(--ink);
+        border-radius: 999px;
+        background: var(--good);
+        color: #fff;
+        font-weight: 700;
+        font-size: 13px;
+        padding: 5px 0;
+        cursor: pointer;
+        visibility: hidden;
+      }
+      #again.show {
+        visibility: visible;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <header>
+        <div id="status">…</div>
+        <button id="close" title="Stop playing" aria-label="Stop playing">×</button>
+      </header>
+      <div class="grid" id="grid"></div>
+      <button id="again">Play again</button>
+    </div>
+    <script src="board.js"></script>
+  </body>
+</html>

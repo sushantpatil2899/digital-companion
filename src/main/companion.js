@@ -12,6 +12,8 @@
 const brain = require('./brain');
 const screensLib = require('./screens');
 const { NudgeTracker, TIMING: NUDGE_TIMING, say, clockTime } = require('./nudges');
+const { Ball, BALL } = require('./games/fetch');
+const { TicTacToe, chooseMove } = require('./games/tictactoe');
 
 const TUNING = {
   gravity: 2600, // px/s^2
@@ -65,8 +67,22 @@ const NUDGE = {
   note: { state: 'note', walk: true, gait: 'run', hold: Infinity },
 };
 const NUDGE_STATES = Object.values(NUDGE).map((n) => n.state);
+
+// Games he plays with you (src/main/games/).
+const GAMES = ['fetch', 'ttt'];
+const GAME = {
+  waitFor: 120, // s he waits for you (to accept, throw the ball, make your move) before giving up
+  thinkMin: 0.8, // s he "thinks" before his tic-tac-toe move
+  thinkMax: 1.8,
+  pickUp: 0.5, // s bending down to pick up the ball
+  reach: 45, // px: close enough to the ball to pick it up
+};
+const GAME_STATES = ['offerBall', 'watchBall', 'pickBall', 'offerGame', 'ttt'];
+// Where the ball sits in his hands, relative to his feet (screen px, x towards where he faces).
+const HELD_BALL = { x: 3, y: 72 };
+
 // States with something held up over his head that you can click.
-const BOARD_STATES = ['sign', ...NUDGE_STATES];
+const BOARD_STATES = ['sign', ...NUDGE_STATES, 'offerBall', 'offerGame'];
 // Busy with you, or just landed: a reminder waits until he's done.
 const REACTING = ['hug', 'happy', 'surprised', 'land', 'confused', 'angry', 'drink', 'nod'];
 
@@ -110,6 +126,11 @@ const STATES = [
   'bedtime',
   'note',
   'nod',
+  'offerBall',
+  'watchBall',
+  'pickBall',
+  'offerGame',
+  'ttt',
 ];
 
 function rand(min, max, rng) {
@@ -155,6 +176,7 @@ class Companion {
     // Multiple monitors (see src/main/screens.js). Empty = just `bounds`.
     this.screens = [];
     this.screenIndex = 0;
+    this.screenSince = 0; // when he got to the screen he's on (he wanders off after a while)
     this.crossing = null; // the screen link he's deliberately crossing right now
     this.route = null; // { target, links, x, then, gait } while travelling between screens
     this.softLanding = false; // a deliberate drop: land gently, no bounce
@@ -171,6 +193,12 @@ class Companion {
     // he's showing you right now ({ kind, note?, shownAt, acknowledged }).
     this.nudges = new NudgeTracker();
     this.nudge = null;
+    // A game with you: { kind: 'fetch' | 'ttt', step, asked, rounds, deadline, ttt?, thinkUntil? }.
+    //   fetch steps: 'offer' (holding the ball out to you), 'held' (you've got it), 'thrown'
+    //   ttt steps:   'invite' (asking you), 'playing', 'over' (showing who won)
+    this.game = null;
+    this.ball = new Ball();
+    this.youStartNext = null; // tic-tac-toe: who goes first next game (it alternates)
     this.lastGreetDay = null;
     this.lastSeekAt = -Infinity;
     this.lastSadAt = -Infinity;
@@ -216,7 +244,9 @@ class Companion {
     if (!this.screens.length) return;
     if (this.route && this.route.target >= this.screens.length) this.route = null;
     this.crossing = null;
-    this.screenIndex = screensLib.screenAt(this.screens, this.x, this.y - 10);
+    const idx = screensLib.screenAt(this.screens, this.x, this.y - 10);
+    if (idx !== this.screenIndex) this.screenSince = this.time;
+    this.screenIndex = idx;
     this.setBounds(this.screens[this.screenIndex]);
   }
 
@@ -226,6 +256,7 @@ class Companion {
     const idx = screensLib.screenAt(this.screens, this.x, this.y - 10);
     if (idx === this.screenIndex) return;
     this.screenIndex = idx;
+    this.screenSince = this.time;
     // Just came through an edge: don't yank him fully inside the new screen,
     // he walks (or flies) the rest of the way in.
     const cameThrough = !!this.crossing;
@@ -289,13 +320,19 @@ class Companion {
       this.walkTo(link.edgeX + sign * (this.halfWidth + 60), gait, null);
     } else if (link.kind === 'hop') {
       // Take a run-up so he's at the top of the hop as he crosses the edge.
-      const { vy } = this.hopVelocity(link.rise + 70);
+      const { vy } = this.hopVelocity(this.hopHeight(link));
       const runUp = Math.max(this.halfWidth + 5, 200 * (vy / TUNING.gravity));
       this.walkTo(inside(link.edgeX - sign * runUp), gait, { cross: link });
     } else {
       // Stacked: get under / over the shared part of the edge first.
       this.walkTo(clamp(this.x, link.rangeLeft, link.rangeRight), gait, { cross: link });
     }
+  }
+
+  /** How high to hop up a side edge: a bit above the next floor, but under this screen's ceiling. */
+  hopHeight(link) {
+    const sc = this.screens[link.from];
+    return Math.min(link.rise + 70, sc.floor - sc.top - this.height - 2);
   }
 
   hopVelocity(height) {
@@ -308,7 +345,7 @@ class Companion {
     this.vx = 0;
     switch (link.kind) {
       case 'hop': {
-        this.vy = -this.hopVelocity(link.rise + 70).vy;
+        this.vy = -this.hopVelocity(this.hopHeight(link)).vy;
         this.vx = (link.dir === 'right' ? 1 : -1) * 200;
         this.facing = Math.sign(this.vx);
         this.enter('jump');
@@ -509,6 +546,7 @@ class Companion {
     if (['grabbed', 'fall', 'jump'].includes(this.state)) return;
     if (this.showingReminder() && this.acknowledgeReminder()) return;
     if (this.showingNudge() && this.acknowledgeNudge()) return;
+    if (this.showingGameInvite() && this.acceptGame()) return;
     this.lastInteraction = this.time;
     this.lastPet = this.time;
     this.petting += dt;
@@ -536,6 +574,7 @@ class Companion {
     if (!this.isGrounded()) return;
     if (this.showingReminder() && this.acknowledgeReminder()) return;
     if (this.showingNudge() && this.acknowledgeNudge()) return;
+    if (this.showingGameInvite() && this.acceptGame()) return;
     this.lastInteraction = this.time;
     if (this.state === 'sleep') {
       this.petting = 0;
@@ -633,6 +672,7 @@ class Companion {
     }
 
     this.updateScreen();
+    this.updateBall(dt);
     switch (this.state) {
       case 'grabbed':
         this.updateGrabbed(dt);
@@ -825,6 +865,19 @@ class Companion {
         // The meeting ended (or you clicked) while he was on his way: put it down.
         if (!this.reminder || this.reminder.acknowledged) this.chooseNext();
         break;
+      case 'offerBall':
+      case 'watchBall':
+      case 'offerGame':
+      case 'ttt':
+        // Playing with you until the game says otherwise (see updateGame).
+        this.vx = 0;
+        if (!this.game) this.chooseNext();
+        break;
+      case 'pickBall':
+        this.vx = 0;
+        if (!this.game || this.game.kind !== 'fetch') this.chooseNext();
+        else if (this.stateTime >= this.stateDuration) this.pickUpBall();
+        break;
       default:
         this.vx = 0;
         if (this.stateTime >= this.stateDuration) this.chooseNext();
@@ -832,6 +885,7 @@ class Companion {
 
     this.updateReminder();
     this.updateNudge();
+    this.updateGame();
     if (this.pendingGreet && this.isFreeForReaction() && !this.showingReminder() && !this.showingNudge()) this.react(this.pendingGreet);
     if (cursor) this.reactToCursor(dt, cursor);
 
@@ -847,10 +901,11 @@ class Companion {
     return this.hitPart(point) != null;
   }
 
-  /** Which part of him the point is on: 'join' (the sign's Join tag), 'sign', 'body' or null. */
+  /** Which part of him the point is on: 'ball', 'join' (the sign's Join tag), 'sign', 'body' or null. */
   hitPart(point) {
     const sx = point.x - this.x;
     const sy = this.y - point.y; // height above his feet
+    if (this.ball.state === 'held' && this.canGrabBall(point)) return 'ball';
     if (BOARD_STATES.includes(this.state)) {
       const j = HIT.join;
       if (this.state === 'sign' && this.meetingLink() && sx >= j.left && sx <= j.right && sy >= j.bottom && sy <= j.top) return 'join';
@@ -905,6 +960,7 @@ class Companion {
   chooseNext() {
     if (this.route && this.continueRoute()) return;
     this.crossing = null;
+    if (this.game && this.resumeGame()) return;
     const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
       paused: this.paused,
       cursorKnown: !!this.lastCursor,
@@ -912,6 +968,7 @@ class Companion {
       grumpiness: this.grumpiness,
       afterLongWalk: this.lastActivity === 'walk' && this.lastMoveDistance > 350,
       canVisitScreen: this.reachableScreens().length > 0,
+      screenStay: this.time - this.screenSince,
       seekReady:
         this.time - this.lastSeekAt >= brain.NEEDS.seekCooldown * this.backoff() &&
         this.time - this.lastAttentionAt >= brain.NEEDS.attentionGrace,
@@ -947,6 +1004,7 @@ class Companion {
 
   /** Stop whatever he's doing (walks, trips to other screens, props) and sit still. */
   settleForQuiet() {
+    this.endGame('cancel');
     // Wellbeing nudges wait until after the meeting (notes and meeting reminders don't).
     if (this.nudge && this.nudge.kind !== 'note') {
       const showing = this.state === NUDGE[this.nudge.kind].state;
@@ -997,6 +1055,7 @@ class Companion {
     if (!this.showingReminder() && this.isGrounded() && this.state !== 'grabbed' && !this.context.userAway) {
       if (REACTING.includes(this.state) && this.stateTime < this.stateDuration) return;
       this.pendingGreet = null;
+      this.endGame('cancel');
       this.emit('reminder');
       this.goToCursorThen({ state: 'sign', duration: Infinity }, 'run');
     }
@@ -1028,6 +1087,7 @@ class Companion {
     if (this.reminder && !this.reminder.acknowledged) return;
     const free =
       this.isGrounded() &&
+      !this.game &&
       !this.context.userAway &&
       !(REACTING.includes(this.state) && this.stateTime < this.stateDuration);
     const n = this.nudge;
@@ -1120,6 +1180,11 @@ class Companion {
         urgent: kind === 'now',
       };
     }
+    const g = this.game;
+    if (this.state === 'offerBall' && g) {
+      return { style: 'bubble', line1: say(g.rounds ? 'fetchAgain' : 'fetch', band), line2: 'Grab the ball and throw it!', tag: null };
+    }
+    if (this.state === 'offerGame' && g) return { style: 'bubble', line1: say('ttt', band), line2: 'Click me to play', tag: 'Play ✓' };
     if (!n || this.state !== NUDGE[n.kind].state) return null;
     switch (n.kind) {
       case 'note':
@@ -1213,6 +1278,316 @@ class Companion {
     this.mood = brain.catchUp(this.needs, this.mood, seconds);
   }
 
+  // ---------------------------------------------------------------- games
+
+  /**
+   * Start fetch or tic-tac-toe. `asked`: you picked it from the menu; otherwise
+   * he's asking you to play (and gives up if you don't).
+   * @returns {boolean} false if he can't right now
+   */
+  startGame(kind, asked = false) {
+    if (!GAMES.includes(kind) || !this.isGrounded() || this.context.quiet) return false;
+    if (this.reminder && !this.reminder.acknowledged) return false;
+    this.endGame('cancel');
+    this.lastInteraction = this.time;
+    if (asked) {
+      this.endStayPut(); // fetch means running around
+      this.applyEffect('attention');
+    }
+    this.game = { kind, step: 'offer', asked, rounds: 0, deadline: this.time + GAME.waitFor };
+    if (kind === 'fetch') {
+      this.holdBall();
+    } else if (asked) {
+      this.newRound();
+    } else {
+      this.game.step = 'invite';
+    }
+    this.lastActivity = 'invite';
+    this.emit(asked ? 'gameStart' : 'gameInvite');
+    this.route = null;
+    this.afterMove = null;
+    this.resumeGame();
+    return true;
+  }
+
+  /** Put him in whatever the game needs right now (after an interruption, too). */
+  resumeGame() {
+    const g = this.game;
+    if (!g || !this.isGrounded()) return false;
+    if (g.kind === 'fetch') {
+      if (g.step === 'offer') {
+        if (!this.headingFor('offerBall')) this.goToCursorThen({ state: 'offerBall', duration: Infinity }, g.rounds ? 'run' : 'walk');
+      } else if (g.step === 'held' || this.ball.state === 'flying') {
+        this.vx = 0;
+        this.enter('watchBall', Infinity);
+      } else if (!this.headingFor('pickBall')) {
+        this.fetchBall();
+      }
+      return true;
+    }
+    if (g.step === 'invite') {
+      if (!this.headingFor('offerGame')) this.goToCursorThen({ state: 'offerGame', duration: Infinity });
+    } else {
+      this.vx = 0;
+      this.enter('ttt', Infinity);
+    }
+    return true;
+  }
+
+  /** Timers and moves of the game in progress (called while he's on the ground). */
+  updateGame() {
+    const g = this.game;
+    if (!g) return;
+    // You've gone away (screen locked, Mac asleep, …): nobody to play with.
+    if (this.context.userAway) {
+      this.endGame(g.rounds ? 'done' : 'gaveUp');
+      return;
+    }
+    const waiting =
+      (g.kind === 'fetch' && g.step === 'offer') || g.step === 'invite' || g.step === 'over' || (g.step === 'playing' && g.ttt.yourTurn);
+    if (waiting && this.time >= g.deadline) {
+      this.endGame(g.rounds ? 'done' : 'gaveUp');
+      return;
+    }
+    if (REACTING.includes(this.state) && this.stateTime < this.stateDuration) return;
+    if (g.kind === 'fetch') {
+      const watching = g.step === 'held' || this.ball.state === 'flying';
+      if (watching && this.state !== 'watchBall' && !this.crossing) {
+        this.route = null;
+        this.vx = 0;
+        this.enter('watchBall', Infinity);
+      } else if (g.step === 'thrown' && this.ball.state === 'resting' && this.state === 'watchBall') {
+        this.fetchBall();
+      }
+      if (this.state === 'watchBall' && Math.abs(this.ball.x - this.x) > 10) this.facing = Math.sign(this.ball.x - this.x);
+    } else {
+      // Face the board (main.js puts it on one side of him and says which).
+      if (this.state === 'ttt' && g.side) this.facing = g.side;
+      if (g.step === 'playing' && this.state === 'ttt' && g.ttt.myTurn && this.time >= g.thinkUntil) this.playMyMove();
+    }
+  }
+
+  /** Game over. reason: 'done' (played, then stopped), 'gaveUp' (you never played), 'cancel'. */
+  endGame(reason = 'done') {
+    const g = this.game;
+    if (!g) return;
+    this.game = null;
+    this.ball.putAway();
+    this.emit('gameEnded');
+    const playing = GAME_STATES.includes(this.state) || GAME_STATES.some((st) => this.headingFor(st));
+    if (!playing || !this.isGrounded()) return;
+    this.route = null;
+    this.afterMove = null;
+    this.vx = 0;
+    if (reason === 'gaveUp') {
+      // Nobody to play with: fine, he'll play with his own ball.
+      this.emit('gaveUp');
+      this.startActivity('play');
+    } else if (reason === 'done' && g.rounds) {
+      this.emit('thatWasFun');
+      this.enter('happy', 1.5);
+    } else {
+      this.enter('idle', 2);
+    }
+  }
+
+  // Fetch
+
+  holdBall() {
+    this.ball.hold(this.x + this.facing * HELD_BALL.x, this.y - HELD_BALL.y);
+  }
+
+  /** The screens the ball bounces around (just his area when there's no screen list). */
+  ballScreens() {
+    if (this.screens.length) return this.screens;
+    const b = this.bounds;
+    return [{ index: 0, ...b, b: { left: b.left, right: b.right, top: b.top, bottom: b.floor } }];
+  }
+
+  updateBall(dt) {
+    if (this.ball.state === 'held') this.holdBall();
+    else this.ball.update(dt, this.ballScreens());
+    for (const e of this.ball.drainEvents()) this.emit(e);
+  }
+
+  /** Can you pick up the ball at `point`? (Out of his hands only while he holds it out to you.) */
+  canGrabBall(point) {
+    const g = this.game;
+    if (!g || g.kind !== 'fetch') return false;
+    const b = this.ball;
+    if (b.state === 'held' ? this.state !== 'offerBall' : !b.loose) return false;
+    return Math.hypot(point.x - b.x, point.y - b.y) <= BALL.r + 12;
+  }
+
+  /** You picked up the ball (from his hands or wherever it is). */
+  grabBall(point) {
+    if (!this.canGrabBall(point)) return false;
+    this.ball.grab(point, this.time);
+    this.game.step = 'held';
+    this.lastInteraction = this.time;
+    this.applyEffect('attention');
+    this.emit('ballGrab');
+    if (this.isGrounded() && !this.crossing) {
+      this.route = null;
+      this.afterMove = null;
+      this.vx = 0;
+      this.enter('watchBall', Infinity);
+    }
+    return true;
+  }
+
+  dragBall(point) {
+    this.ball.drag(point, this.time);
+  }
+
+  /** You let go of the ball: thrown (or dropped). */
+  releaseBall() {
+    if (this.ball.state !== 'grabbed' || !this.game) return;
+    this.ball.release();
+    this.game.step = 'thrown';
+    this.lastInteraction = this.time;
+    this.emit('ballThrow');
+  }
+
+  /** Run to where the ball stopped (through the screen edges if need be) and pick it up. */
+  fetchBall() {
+    const b = this.ball;
+    const then = { state: 'pickBall', duration: GAME.pickUp };
+    if (this.screens.length > 1) {
+      const target = screensLib.screenAt(this.screens, b.x, b.y);
+      if (target !== this.screenIndex) {
+        if (this.travelTo(target, b.x, then, 'run')) return;
+        // Somewhere he can't walk to: it rolls back to his screen.
+        b.x = clamp(b.x, this.bounds.left + BALL.r, this.bounds.right - BALL.r);
+        b.y = this.bounds.floor - BALL.r;
+      }
+    }
+    this.emit('fetch');
+    this.walkTo(clamp(b.x, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth), 'run', then);
+  }
+
+  /** Bent down by the ball: pick it up and bring it back to you. */
+  pickUpBall() {
+    const g = this.game;
+    const b = this.ball;
+    if (b.state !== 'resting') {
+      this.resumeGame(); // you grabbed it first, or it's still rolling
+      return;
+    }
+    if (Math.abs(b.x - this.x) > GAME.reach || Math.abs(b.y + BALL.r - this.y) > 40) {
+      this.fetchBall(); // it's not here (any more)
+      return;
+    }
+    this.holdBall();
+    g.rounds += 1;
+    g.step = 'offer';
+    g.deadline = this.time + GAME.waitFor;
+    this.applyEffect('fetchRound');
+    this.emit('gotBall');
+    this.goToCursorThen({ state: 'offerBall', duration: Infinity }, 'run');
+  }
+
+  // Tic-tac-toe
+
+  /** Asking you to play tic-tac-toe (or on his way to ask). */
+  showingGameInvite() {
+    const g = this.game;
+    return !!g && g.kind === 'ttt' && g.step === 'invite' && this.headingFor('offerGame');
+  }
+
+  /** You clicked him (or his "Tic-tac-toe?" bubble): let's play. */
+  acceptGame() {
+    if (!this.showingGameInvite()) return false;
+    this.lastInteraction = this.time;
+    this.applyEffect('attention');
+    this.newRound();
+    this.route = null;
+    this.vx = 0;
+    this.enter('ttt', Infinity);
+    this.emit('gameStart');
+    return true;
+  }
+
+  /** A fresh board. Whoever didn't start last time starts (and plays X). */
+  newRound() {
+    const g = this.game;
+    const youStart = this.youStartNext != null ? this.youStartNext : this.rng() < 0.5;
+    this.youStartNext = !youStart;
+    g.ttt = new TicTacToe(youStart);
+    g.step = 'playing';
+    g.deadline = this.time + GAME.waitFor;
+    g.thinkUntil = this.time + rand(GAME.thinkMin, GAME.thinkMax, this.rng);
+    this.emit(youStart ? 'tttYouStart' : 'tttIStart');
+  }
+
+  /** You put your mark on square `i` (0..8). */
+  playSquare(i) {
+    const g = this.game;
+    if (!g || g.kind !== 'ttt' || g.step !== 'playing' || !g.ttt.play(i, g.ttt.you)) return false;
+    this.lastInteraction = this.time;
+    g.deadline = this.time + GAME.waitFor;
+    g.thinkUntil = this.time + rand(GAME.thinkMin, GAME.thinkMax, this.rng);
+    this.emit('tttMove');
+    this.checkGameOver();
+    return true;
+  }
+
+  playMyMove() {
+    const g = this.game;
+    g.ttt.play(chooseMove(g.ttt.board, g.ttt.me, this.rng), g.ttt.me);
+    g.deadline = this.time + GAME.waitFor;
+    this.emit('tttMove');
+    this.checkGameOver();
+  }
+
+  checkGameOver() {
+    const g = this.game;
+    const outcome = g.ttt.outcome();
+    if (!outcome) return;
+    g.step = 'over';
+    g.rounds += 1;
+    g.deadline = this.time + GAME.waitFor;
+    this.applyEffect('gameRound');
+    if (!this.isGrounded()) return;
+    this.vx = 0;
+    if (outcome === 'me') {
+      this.emit('tttIWin');
+      this.enter('happy', 2);
+    } else if (outcome === 'you') {
+      this.emit('tttYouWin');
+      this.enter('nod', 1.6);
+    } else {
+      this.emit('tttDraw');
+      this.enter('nod', 1.4);
+    }
+  }
+
+  /** "Play again" on the board. */
+  playAgain() {
+    const g = this.game;
+    if (!g || g.kind !== 'ttt' || g.step !== 'over') return false;
+    this.lastInteraction = this.time;
+    this.newRound();
+    if (this.isGrounded()) this.enter('ttt', Infinity);
+    return true;
+  }
+
+  /** What the tic-tac-toe board window shows, or null. */
+  boardView() {
+    const g = this.game;
+    if (!g || g.kind !== 'ttt' || !g.ttt) return null;
+    const t = g.ttt;
+    return {
+      board: t.board.slice(),
+      you: t.you,
+      me: t.me,
+      yourTurn: t.yourTurn,
+      outcome: t.outcome(),
+      line: t.result && t.result.line ? t.result.line.slice() : null,
+      over: g.step === 'over',
+    };
+  }
+
   // ---------------------------------------------------------------- memory
 
   serialize() {
@@ -1248,9 +1623,16 @@ class Companion {
       state: this.state,
       needs: { ...this.needs },
       mood: this.mood,
-      context: { ...this.context, screens: this.screens.length, screenIndex: this.screenIndex },
+      context: {
+        ...this.context,
+        screens: this.screens.length,
+        screenIndex: this.screenIndex,
+        reachableScreens: this.reachableScreens(),
+        onThisScreenFor: Math.round(this.time - this.screenSince),
+      },
       reminder: this.reminder ? { title: this.reminder.event.title, kind: this.reminder.kind, acknowledged: this.reminder.acknowledged } : null,
       nudge: this.nudge ? { kind: this.nudge.kind, text: this.nudge.note ? this.nudge.note.text : null } : null,
+      game: this.game ? { kind: this.game.kind, step: this.game.step, rounds: this.game.rounds } : null,
       nudges: {
         water: this.nudges.water,
         settings: { ...this.nudges.settings },
@@ -1341,6 +1723,10 @@ class Companion {
         }
         break;
       }
+      case 'invite':
+        // Getting bored: ask you to play one of his games.
+        if (!this.startGame(GAMES[Math.floor(rng() * GAMES.length)])) this.startActivity('play');
+        break;
       case 'seek':
         // Lonely: go and stand under your cursor hoping for attention.
         this.lastSeekAt = this.time;
@@ -1396,9 +1782,13 @@ class Companion {
       quiet: !!this.context.quiet,
       board: this.board(),
       grumpy: this.time < this.grumpyUntil,
+      holdingBall: this.ball.state === 'held',
+      // Where the ball is, relative to his feet, while it's loose (he watches it).
+      ball: this.ball.loose ? { x: this.ball.x - this.x, y: this.ball.y - this.y } : null,
+      thinking: this.state === 'ttt' && !!this.game && !!this.game.ttt && this.game.ttt.myTurn,
       time: this.time,
     };
   }
 }
 
-module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES, HIT, NUDGE };
+module.exports = { Companion, TUNING, STATES, MENU_ACTIVITIES, HIT, NUDGE, GAME, GAMES };

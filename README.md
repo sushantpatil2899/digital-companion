@@ -17,13 +17,22 @@ A little desktop pet that lives on your screen: **Togepi**, drawn in code from a
 | **Leave the cursor resting on him** | He gets **shy**: blushes, with a sweat drop |
 | **Leave the cursor near him** | He gets **curious**: "?" |
 | **Come back after being away** | He **waves** at you (he also waves when he starts up and wakes up) |
-| **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Do something…*, *Take a nap / Wake up*, *Stay put*, *Remind me…*, *Wellbeing*, *Brain*, *Start at login*, *Quit* |
+| **Right-click him** or click the **menu bar / tray icon** | Menu: *Come here*, *Do something…*, *Play*, *Take a nap / Wake up*, *Stay put*, *Remind me…*, *Wellbeing*, *Brain*, *Start at login*, *Quit* |
 
 *Stay put* keeps him in one spot for 10 minutes (the menu shows how long is left), then he goes back to wandering and the tick clears itself. Sending him somewhere yourself (*Come here*, or a walking activity from *Do something…*) ends it early.
 
 On his own he walks, runs, **visits your other screens**, **sits**, **blinks** and smiles, **jumps**, **talks**, **eats an apple**, **holds a flower**, **plays with his ball**, **goes on an adventure** with his backpack, turns around to watch your screen (**back view**), **sleeps** and gets **sad**. *Do something…* in the menu lets you ask him for any of these.
 
 He walks along the very bottom of each screen (on the laptop, in front of the Dock).
+
+## Games
+
+Two games live in `src/main/games/`. Start one from *Play* in the menu, or wait for him to ask: when he's **getting bored** (but not yet properly bored) he comes over and asks you to play one of them. If you don't take him up on it within **2 minutes** (or you're away), he gives up ("Never mind…") and plays with his own ball instead. Mid-game, 2 minutes without a throw or a move ends the game too. A meeting reminder or a meeting starting puts the game away. *Play → Stop playing* ends it any time.
+
+- **Fetch**: he holds out his Pokeball ("Play fetch?"). Grab it out of his hands and throw it. It flies, bounces off the screen edges (or on into the next screen) and rolls to a stop. Then he runs over, picks it up and brings it back to you: "Again?" You can also grab the ball again while it's rolling or lying on the floor.
+- **Tic-tac-toe**: he asks "Tic-tac-toe?"; click him to play. A board appears next to him. Whoever starts plays X, and that alternates every game: sometimes you go first, sometimes he does. He thinks for a moment before each move. He plays well, but not perfectly, so you can beat him. *Play again* starts the next game, × stops.
+
+Playing with him keeps him from getting bored and cheers him up.
 
 ## Looking after you
 
@@ -107,7 +116,7 @@ Then, from his menu: turn on *Start at login*, and under *Brain* turn on the fea
 
 - **Windows / macOS**: clicks pass straight through the empty space around him, so only his body catches the mouse.
 - **Linux**: transparency needs a compositing window manager, which most modern desktops have. On X11 Electron can't reliably track the cursor while a window lets clicks through, so his small window (220×240) stays clickable.
-- **Multiple monitors**: he knows how your screens are arranged and, when he's bored and rested, wanders over to another one, always through the edge where they touch, never popping up in the middle. Side by side he walks across, drops down to a lower screen or hops up to a higher one; between stacked screens he drops through the shared edge or springs up through it. *Come here* on another screen makes him walk over the same way. Screens that don't touch can't be walked between (*Come here* then drops him in from above). You can also carry him anywhere. When thrown, he bounces off the edges of the monitor he's on.
+- **Multiple monitors**: he knows how your screens are arranged. He stays on the screen he's on for a while (at least 5 minutes), then sometimes wanders over to another one on his own, always walking through the edge where they touch, never popping up in the middle. When you plug in a screen he stays where he is, and when you come back after a break he comes over to the screen you're on. The brain view (*Brain → Show his brain…*) shows which screens he can walk to. Side by side he walks across, drops down to a lower screen or hops up to a higher one; between stacked screens he drops through the shared edge or springs up through it. *Come here* on another screen makes him walk over the same way. Screens that don't touch can't be walked between (*Come here* then drops him in from above). You can also carry him anywhere. When thrown, he bounces off the edges of the monitor he's on.
 
 ## Making him your own
 
@@ -126,12 +135,14 @@ src/
   main/settings.js     opt-in settings (settings.json)
   main/screens.js      screen layout: which screens touch and how to cross between them
   main/nudges.js       water / stretch / eye rest / bedtime timers, "remind me" notes, what he says
+  main/games/          fetch (the ball's physics) and tic-tac-toe (rules and his moves)
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
                        browser tabs (AppleScript) and calendar (EventKit)
   main/main.js         Electron main: transparent always-on-top window that follows him,
                        60 Hz loop, cursor polling for dragging, tray + menus, saving his brain
-  preload.js           small IPC bridge
+  preload.js           small IPC bridge (game-preload.js: the same for the ball and the board)
   renderer/            canvas drawing, animation, particles, mouse input, brain view
+  renderer/games/      the thrown ball's window and the tic-tac-toe board
 test/                  node:test tests for the simulation
 ```
 
