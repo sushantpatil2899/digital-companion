@@ -195,7 +195,7 @@ an Amazon job).
 Remaining before `done`: Sushant tries it (it needs a day of use before the
 first diary appears).
 
-### Phase 3: reading the screen — status: `in progress` (built; screen capture and OCR need testing on Sushant's Mac)
+### Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)
 
 Goal: he understands what's on screen (e.g. the job description you're
 reading), not just app and tab names.
@@ -289,6 +289,13 @@ Built (2026-10-20):
   with Sushant's notes. Brain view: Attention and Read rows.
 - "Let him read my screen" switch (turns on app watching, triggers the
   macOS permission prompt once); permission status shown in the brain view.
+Tested: unit tests (attention across two screens, settling, scrubbing,
+what he may read, one window per look and taking turns, picture when little
+text, nothing saved); the app starts and quits cleanly; Gemma 12B looked at
+a job-posting screenshot and linked it to Sushant's notes ("He knows Python
+and Java!"). Not testable here: screencapture, Vision OCR and the Screen
+Recording permission (macOS only).
+Remaining before `done`: Sushant tries it on his Mac.
 
 Honest limits: Screen Recording, Vision OCR and window capture only exist on
 the Mac, so that part can't be run in the dev container (it will be tested

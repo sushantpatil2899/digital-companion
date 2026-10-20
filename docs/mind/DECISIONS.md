@@ -166,4 +166,5 @@ Answers:
 | 2026-10-20 | When he looks at the picture | When the text is under 200 characters, and every 4th look at the same window. | "Now and then, e.g. when there's little text." |
 | 2026-10-20 | Email and chat | Not read unless listed in `screenAllow` (apps/sites) in settings.json. | Recommendation. |
 | 2026-10-20 | Scrubbing | Email addresses, card/account numbers, SSNs, phone numbers, API keys and long tokens, and any line mentioning passwords, secrets, tokens, PINs or CVVs. | Built-in privacy. |
+| 2026-10-20 | Vision test | Gemma 4 12B + its vision add-on, through llama-server, looking at a screenshot of an Amazon "Software Engineer II, Backend" posting with Sushant's notes ("I know Python, Java, React and AWS"): thought "Sushant looks at big Amazon job! He knows Python and Java! Toge!", lines "Big Amazon!", "Toge! Is it a fun job?". ~90 s on the dev container's CPU (a few seconds expected on the Mac's GPU). Found and fixed two bugs on the way: the chat template dropped the picture marker, and newer llama-servers use a random marker per run (now read from GET /props). | Verified. |
 
