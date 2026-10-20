@@ -126,3 +126,20 @@ Answers:
 | 2026-10-20 | Limits | Up to 80 facts and 40 opinions; beyond that the least important, oldest go. Your notes are never trimmed in the file (the first 1,200 characters go into prompts). | Keeps prompts small and fast. |
 | 2026-10-20 | Stray servers | Engine saves its process ids (`mind/engine.pids`) and stops leftovers from a crashed run on the next start. | A crash would otherwise leave ~11 GB in use. |
 
+## Phase 3 questions
+
+Asked 2026-10-20. Phase 2 marked done (Sushant: "improved a lot"). Proposal in PLAN.md, Phase 3.
+
+1. How he sees: A text only (OCR), B vision model, C both (recommended).
+2. When he looks: on window change + at most every 30 s while you stay (recommended).
+3. Email and chat apps: not read by default, titles only (recommended)?
+4. Nothing from the screen saved (recommended)?
+5. Opt-in switch, off by default (recommended)?
+6. Compare what he reads with Sushant's notes for smarter comments (recommended)?
+7. Window titles for all apps with the same permission (recommended)?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+
