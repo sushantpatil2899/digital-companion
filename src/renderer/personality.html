@@ -90,7 +90,7 @@
       }
       .row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 36px;
+        grid-template-columns: minmax(0, 1fr) 36px 26px;
         gap: 2px 8px;
         align-items: center;
         padding: 6px 0;
@@ -122,18 +122,53 @@
       .readonly input[type='range'] {
         opacity: 0.6;
       }
+      .lock {
+        border: none;
+        background: none;
+        padding: 0;
+        font-size: 13px;
+        opacity: 0.35;
+      }
+      .lock.on,
+      .lock:hover {
+        opacity: 1;
+      }
+      .week h3 {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 8px 0 4px;
+        font-size: 13px;
+      }
+      .week h3 button {
+        font-size: 11px;
+        padding: 2px 8px;
+      }
+      .week ul {
+        margin: 0 0 6px;
+        padding-left: 18px;
+      }
+      .week.undone {
+        opacity: 0.5;
+      }
     </style>
   </head>
   <body>
     <header>
       <h1>Togepi's personality</h1>
-      <p>Every score is 0 to 100; 50 is average. Changes take effect right away, and he'll notice. His relationship with you isn't set by hand: it starts at &ldquo;just met&rdquo; and grows with time together.</p>
+      <p>Every score is 0 to 100; 50 is average. Changes take effect right away, and he'll notice. He also grows on his own: his relationship with you a little every day, and once a week he looks back and may change a little (🔒 keeps a slider where it is).</p>
       <div class="actions">
         <button id="reset">Reset to Togepi</button>
         <button id="file">Show the file</button>
       </div>
     </header>
-    <main id="groups"></main>
+    <main>
+      <section>
+        <h2>How I've grown <small>with the reason for each change</small></h2>
+        <div id="history"></div>
+      </section>
+      <div id="groups"></div>
+    </main>
     <script src="personality.js"></script>
   </body>
 </html>

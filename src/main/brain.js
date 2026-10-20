@@ -121,13 +121,13 @@ function apply(needs, mood, effect, scale = 1) {
 //   well loved and needs fine   ~ +0.7      cheerful
 //   one need clearly unmet      ~  0        meh
 //   two unmet / very lonely     <  -0.3     sad
-function moodTarget(needs) {
+function moodTarget(needs, offset = 0) {
   const hungry = clamp01((needs.hunger - 0.5) / 0.4);
   const tired = clamp01((0.35 - needs.energy) / 0.3);
   const bored = clamp01((needs.boredom - 0.6) / 0.35);
   const lonely = clamp01((0.4 - needs.affection) / 0.35);
   const loved = clamp01((needs.affection - 0.6) / 0.4);
-  const t = 0.3 + 0.45 * loved - 0.4 * hungry - 0.35 * tired - 0.3 * bored - 0.65 * lonely;
+  const t = 0.3 + offset + 0.45 * loved - 0.4 * hungry - 0.35 * tired - 0.3 * bored - 0.65 * lonely;
   return Math.max(-1, Math.min(1, t));
 }
 
@@ -141,7 +141,8 @@ function moodBand(mood, grumpiness = 0) {
 }
 
 /** Advance needs and mood by `dt` seconds while in `state`. Returns the new mood. */
-function drift(needs, mood, state, dt, ctx = defaultContext()) {
+/** `temperament`: { offset, speed } from his personality (personality.temperament). */
+function drift(needs, mood, state, dt, ctx = defaultContext(), temperament = { offset: 0, speed: 1 }) {
   if (state === 'sleep') {
     needs.energy = clamp01(needs.energy + NEEDS.energySleep * dt);
   } else {
@@ -157,22 +158,22 @@ function drift(needs, mood, state, dt, ctx = defaultContext()) {
   // He misses you less while asleep or while you're away from the computer.
   const missing = state === 'sleep' || ctx.userAway ? 0.3 : 1;
   needs.affection = clamp01(needs.affection - NEEDS.affectionDecay * missing * dt);
-  const target = moodTarget(needs);
-  return mood + (target - mood) * Math.min(1, NEEDS.moodDrift * dt);
+  const target = moodTarget(needs, temperament.offset);
+  return mood + (target - mood) * Math.min(1, NEEDS.moodDrift * temperament.speed * dt);
 }
 
 /**
  * Catch up on time that passed while the app wasn't running (or the Mac was
  * asleep). He's assumed to have mostly slept: rested, a bit hungry, missing you.
  */
-function catchUp(needs, mood, seconds) {
+function catchUp(needs, mood, seconds, temperament = { offset: 0, speed: 1 }) {
   const s = Math.max(0, Math.min(seconds, 12 * 3600));
   if (s < 1) return mood;
   needs.energy = clamp01(needs.energy + s / 1200);
   needs.hunger = clamp01(needs.hunger + (s / 4500) * 0.5);
   needs.boredom = clamp01(needs.boredom + (0.45 - needs.boredom) * Math.min(1, s / 3600));
   needs.affection = Math.max(Math.min(needs.affection, 0.2), clamp01(needs.affection - (s / 5400) * 0.6));
-  return mood + (moodTarget(needs) - mood) * Math.min(1, s / 600);
+  return mood + (moodTarget(needs, temperament.offset) - mood) * Math.min(1, s / 600);
 }
 
 const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek', 'invite'];
