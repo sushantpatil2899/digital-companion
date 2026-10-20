@@ -244,6 +244,13 @@ function startContext() {
 
 // --------------------------------------------------------------- brain view
 
+// His small windows (brain view, personality, notes) stay with you when you
+// switch apps, desktops (Spaces) or go full screen, like he does.
+function followYou(w) {
+  w.setAlwaysOnTop(true, 'floating');
+  if (process.platform === 'darwin') w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
 function showBrain() {
   if (brainWin && !brainWin.isDestroyed()) {
     brainWin.show();
@@ -263,6 +270,7 @@ function showBrain() {
       sandbox: true,
     },
   });
+  followYou(brainWin);
   brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
   const send = () => {
     if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? mind.status() : null });
@@ -862,6 +870,7 @@ function showNotes() {
       sandbox: true,
     },
   });
+  followYou(noteWin);
   noteWin.loadFile(path.join(__dirname, '..', 'renderer', 'note.html'));
   noteWin.webContents.on('did-finish-load', sendNotes);
   noteWin.on('closed', () => {
@@ -973,6 +982,7 @@ function showPersonality() {
       sandbox: true,
     },
   });
+  followYou(personalityWin);
   personalityWin.loadFile(path.join(__dirname, '..', 'renderer', 'personality.html'));
   personalityWin.webContents.on('did-finish-load', sendPersonality);
   personalityWin.on('closed', () => {

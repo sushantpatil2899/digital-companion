@@ -74,3 +74,15 @@ Technical choices made while building Phase 1, for Sushant to confirm.
 | 2026-10-20 | Asleep | He **never speaks while asleep**, whatever woke him up (in testing a slow thought finished after he'd dozed off). | Looked wrong. |
 | 2026-10-20 | End-to-end test | In the real app with llama-server, d3-nano and Gemma 4 E4B (12B is too slow on this CPU for the test's timeout): petting him led to the thought "Sushant is so warm! More happy!", the line "Yay! Soft and warm!" and a jump, logged in events.jsonl. | Verified. |
 
+## Phase 1 feedback (Sushant tried it on his Mac, 2026-10-20)
+
+| Date | Feedback | Change | Why |
+|---|---|---|---|
+| 2026-10-20 | After being thrown his face looked cross but the brain view said "cheerful". | Brain view shows the face he actually makes (grumpy) and a Grumpy bar that fades over ~3 min. | Display bug; his face was right. |
+| 2026-10-20 | He noticed Chrome late, and his thoughts were vague ("so many words"). | App check every 3 s (was 5); the prompt states what's on screen right now and asks him to name the actual thing (company, email subject, video). Retest on the Gmail tab: "Stony Brook sounds like a big adventure!" / "Toge! Big school trip?". Email addresses are removed from titles. | He had the title but no explicit "right now" and no push to be specific. |
+| 2026-10-20 | His line arrives after you've already moved on. | A line about a screen you've left is dropped ("you already moved on"); answers are shorter (3 candidates, shorter thought) so they come quicker. | Better silent than late. |
+| 2026-10-20 | He has never asked to play on his own. | He starts asking when boredom reaches 0.3 (was 0.5). Simulated: with petting every 10 min, 0 asks in 4 h before, about one every 2-3 h now; alone, about 2 an hour. A due wellbeing nudge replaces an invite you haven't taken up. | Attention kept his boredom below the old threshold, so he never asked. Not a fixed frequency: still driven by boredom. |
+| 2026-10-20 | The brain window stays behind when switching apps. | Brain, personality and reminder windows float above other apps and follow you across desktops and full screen. | Requested. |
+| 2026-10-20 | He knows Chrome is open but not what the tab shows. | Explained: he gets the front tab's title and site (now shown as "He sees" in the brain view); reading the page itself is Phase 3 (screen text). | Phase boundary. |
+| 2026-10-20 | Copilot review emails on PRs. | PRs never request Copilot; it's requested automatically by a GitHub setting (repository ruleset or personal Copilot settings), which Sushant can turn off. | Not set by the PRs. |
+

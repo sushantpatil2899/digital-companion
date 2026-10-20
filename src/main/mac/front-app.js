@@ -155,7 +155,7 @@ class AppWatcher {
    * @param {() => object} getSettings current settings values
    * @param {(result: object) => void} onResult summary (see summarize) plus `error`
    */
-  constructor(getSettings, onResult, intervalMs = 5000) {
+  constructor(getSettings, onResult, intervalMs = 3000) {
     this.getSettings = getSettings;
     this.onResult = onResult;
     this.intervalMs = intervalMs;

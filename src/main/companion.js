@@ -1156,9 +1156,13 @@ class Companion {
     if (this.showingReminder()) return;
     // A meeting reminder still waiting for you comes first.
     if (this.reminder && !this.reminder.acknowledged) return;
+    // His own invitation to play that you haven't taken up yet gives way to a
+    // nudge (you asked for those); a game you're playing doesn't.
+    const g = this.game;
+    const unansweredInvite = !!g && !g.asked && !g.rounds && (g.step === 'offer' || g.step === 'invite');
     const free =
       this.isGrounded() &&
-      !this.game &&
+      (!g || unansweredInvite) &&
       !this.context.userAway &&
       !(REACTING.includes(this.state) && this.stateTime < this.stateDuration);
     const n = this.nudge;
@@ -1173,6 +1177,7 @@ class Companion {
     if (!free) return;
     const due = this.nudges.due(this.context);
     if (!due || (due.kind === 'eyes' && this.state === 'sleep')) return;
+    if (unansweredInvite) this.endGame('cancel');
     this.nudge = { ...due, shownAt: this.time, acknowledged: false };
     this.nudges.shown(due, this.context);
     this.pendingGreet = null;
@@ -1694,6 +1699,8 @@ class Companion {
       state: this.state,
       needs: { ...this.needs },
       mood: this.mood,
+      band: this.moodBand(),
+      grumpiness: this.grumpiness,
       context: {
         ...this.context,
         screens: this.screens.length,

@@ -72,7 +72,7 @@ He takes his time: he sits for 12–30 s and hangs out for 6–15 s, and usually
 - **Battery:** below 20% he gets tired and slow, below 10% he lies down. Plugging in perks him up: "Yum, power!"
 
 **Opt-in (macOS, off by default)**, under *Brain* in his menu:
-- **Notice which app I'm using:** he keeps still only while you're actually in a meeting: as soon as you join one he stops where he is and sits quietly (sitting, resting, watching your screen or napping) until it's over. He hides while you present (Keynote, PowerPoint). Every 5 seconds it checks:
+- **Notice which app I'm using:** he keeps still only while you're actually in a meeting: as soon as you join one he stops where he is and sits quietly (sitting, resting, watching your screen or napping) until it's over. He hides while you present (Keynote, PowerPoint). Every 3 seconds it checks:
   - the app in front, by name and bundle ID (Zoom, including "Zoom Workplace", Teams, FaceTime, Webex, … is a meeting);
   - which apps have a window showing on **any** of your screens (owner names and positions only, never window contents or titles). A meeting app showing on another screen counts as a meeting **while a calendar event is on**, so a Zoom window left open all day doesn't mute him;
   - the web address of the tab showing in each visible browser window (Chrome, Arc, Brave, Edge, Safari). Google Meet, Zoom web, Whereby and Around tabs count as a meeting; Teams and Webex web count only while a calendar event is on.
