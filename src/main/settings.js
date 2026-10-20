@@ -25,7 +25,18 @@ const DEFAULTS = {
   meetingAppUrls: ['teams.microsoft.com', 'teams.live.com', '.webex.com/'],
   // Wellbeing nudges (water, stretch, eye rest, bedtime); see src/main/nudges.js.
   nudges: { ...NUDGE_DEFAULTS },
+  // His own mind: he thinks and talks for himself with local models (src/main/mind).
+  mind: true,
+  // He chirps when he talks.
+  sounds: true,
+  // Your own privacy blocklist on top of the built-in one (private windows,
+  // password managers, payments, banking, sign-in pages): anything matching is
+  // never shown to his mind. Matched case-insensitively anywhere in the app
+  // name, the page address, or (for words) the window title and address.
+  privacyBlock: { apps: [], sites: [], words: [] },
 };
+
+const BLOCK_KEYS = ['apps', 'sites', 'words'];
 
 // Lists you can add to in settings.json. Saved lists are added to the
 // built-in ones (not replacing them), so new defaults reach older installs.
@@ -55,6 +66,12 @@ class Settings {
           this.values[k] = { ...DEFAULTS[k] };
           for (const [nk, nv] of Object.entries(saved[k])) {
             if (nk in DEFAULTS[k] && typeof nv === typeof DEFAULTS[k][nk]) this.values[k][nk] = nv;
+          }
+        } else if (k === 'privacyBlock' && saved[k] && !Array.isArray(saved[k])) {
+          this.values[k] = {};
+          for (const bk of BLOCK_KEYS) {
+            const list = saved[k][bk];
+            this.values[k][bk] = Array.isArray(list) ? list.filter((v) => typeof v === 'string' && v.trim()) : [];
           }
         } else if (LIST_KEYS.includes(k) && Array.isArray(saved[k])) {
           const seen = new Set(DEFAULTS[k].map((v) => String(v).toLowerCase()));

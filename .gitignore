@@ -3,6 +3,10 @@ dist/
 out/
 .DS_Store
 
+# His mind's engine and models: downloaded by scripts/fetch-models.js (too big for git)
+engine/
+models/
+
 # graphify: share the graph, report and curated group names; keep caches,
 # backups and scratch files local
 graphify-out/*

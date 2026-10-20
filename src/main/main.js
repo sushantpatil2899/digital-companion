@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
 const { Settings } = require('./settings');
@@ -11,6 +11,11 @@ const { CalendarWatcher } = require('./mac/calendar');
 const { px } = require('./px');
 const { toScreen, screenAt } = require('./screens');
 const { BALL } = require('./games/fetch');
+const P = require('./mind/personality');
+const { Mind } = require('./mind/mind');
+const { Engine } = require('./mind/engine');
+const { EventLog } = require('./mind/events');
+const { SoundLibrary } = require('./mind/sounds');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -63,6 +68,18 @@ if (process.platform === 'linux') {
   // Needed for transparent windows on many X11 setups.
   app.commandLine.appendSwitch('enable-transparent-visuals');
 }
+// His chirps play without you having clicked anything first.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// Events where he says something out loud (floating text, a bubble or his own
+// words): he chirps along. See src/renderer/renderer.js for the texts.
+const VOICE_EVENTS = {
+  speak: 0, // his own words: one syllable per word
+  throw: 2, goodMorning: 3, hello: 3, welcomeBack: 3, charging: 3, reminderAck: 2, noteDone: 2, waterDone: 2,
+  stretchDone: 2, eyesDone: 2, bedtimeDone: 2, nudgeLater: 2, eventEnded: 2, gaveUp: 3, thatWasFun: 3,
+  tttYouWin: 3, tttIWin: 3, tttDraw: 2, tttYouStart: 3, tttIStart: 2, ballThrow: 3, gotBall: 2,
+  gameInvite: 3, nudge: 3, reminder: 3,
+};
 
 let win = null;
 let tray = null;
@@ -90,6 +107,13 @@ let settings = null;
 let frontApp = null;
 let calendar = null;
 let hiddenForPresenting = false;
+let mind = null;
+let engine = null;
+let mindTimer = null;
+let personality = null;
+let personalityWin = null;
+let noticeTimer = null;
+let sounds = null;
 const IS_MAC = process.platform === 'darwin';
 
 // --------------------------------------------------------------- opt-in context (macOS)
@@ -107,6 +131,10 @@ function applyWatchApps(on) {
     (r) => {
       tracker.setNote('apps', r.error);
       tracker.setApps({ watching: true, ...r });
+      if (mind && r.frontApp) {
+        const t = r.frontTab;
+        mind.observe({ app: r.frontApp, bundle: r.frontBundle, title: t && t.title, url: t && t.url, private: !!(t && t.private) });
+      }
       if (r.frontKind === 'presenting') hideForPresenting();
       else showAfterPresenting();
     },
@@ -237,7 +265,7 @@ function showBrain() {
   });
   brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
   const send = () => {
-    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', companion.brainSnapshot());
+    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? mind.status() : null });
   };
   brainWin.webContents.on('did-finish-load', send);
   brainTimer = setInterval(send, 1000);
@@ -315,6 +343,7 @@ function createWindow() {
     win.showInactive();
     startLoop();
     startContext();
+    startMind();
   });
   win.on('closed', () => {
     win = null;
@@ -415,6 +444,9 @@ function tick() {
   const events = companion.drainEvents();
   if (events.some((e) => ['stayPutEnded', 'gameStart', 'gameInvite', 'gameEnded'].includes(e))) refreshTrayMenu();
   if (events.includes('noteDone')) sendNotes();
+  if (mind) mind.companionEvents(events);
+  const voiced = events.find((e) => e in VOICE_EVENTS);
+  if (voiced) chirp(voiced === 'speak' && companion.speech ? companion.speech.text.split(/\s+/).length : VOICE_EVENTS[voiced]);
 
   win.webContents.send('frame', {
     ...companion.snapshot(),
@@ -538,9 +570,14 @@ ipcMain.on('release', () => {
   if (companion.state === 'grabbed') {
     companion.release();
   } else if (held < CLICK_MAX) {
-    // The meeting sign's "Join" tag opens the call; anywhere else is a pat.
-    const link = companion.hitPart(at) === 'join' ? companion.meetingLink() : null;
-    if (link) {
+    // The meeting sign's "Join" tag opens the call; his speech bubble goes
+    // away when clicked; anywhere else is a pat.
+    const part = companion.hitPart(at);
+    const link = part === 'join' ? companion.meetingLink() : null;
+    if (part === 'speech') {
+      companion.dismissSpeech();
+      if (mind) mind.reacted('clicked');
+    } else if (link) {
       companion.acknowledgeReminder();
       shell.openExternal(link).catch(() => {});
     } else {
@@ -673,6 +710,7 @@ function buildMenu() {
   ];
   items.push({ label: 'Remind me…', click: showNotes });
   items.push({ label: 'Wellbeing', submenu: wellbeingMenu() });
+  items.push({ label: 'Mind', submenu: mindMenu() });
   items.push({
     label: 'Brain',
     submenu: [
@@ -712,6 +750,38 @@ function buildMenu() {
   }
   items.push({ type: 'separator' }, { label: 'Quit', click: () => app.quit() });
   return Menu.buildFromTemplate(items);
+}
+
+function mindMenu() {
+  const on = !!(settings && settings.get('mind'));
+  return [
+    { label: engine ? `Mind: ${engine.status().split(' — ')[0]}` : 'Mind: off', enabled: false },
+    { type: 'separator' },
+    {
+      label: 'Think and talk for himself',
+      type: 'checkbox',
+      checked: on,
+      click: (item) => {
+        settings.set('mind', item.checked);
+        applyMind(item.checked);
+        refreshTrayMenu();
+      },
+    },
+    {
+      label: 'Chirp when he talks',
+      type: 'checkbox',
+      checked: !!(settings && settings.get('sounds')),
+      click: (item) => {
+        settings.set('sounds', item.checked);
+        refreshTrayMenu();
+      },
+    },
+    { type: 'separator' },
+    { label: 'Personality…', click: showPersonality },
+    { label: 'Open sounds folder…', click: () => sounds && shell.openPath(sounds.dir) },
+    { label: 'Privacy blocklist… (settings.json)', click: () => settings && shell.openPath(settings.file) },
+    { label: 'Show his memory folder…', click: () => shell.openPath(mindDir()) },
+  ];
 }
 
 function playMenu() {
@@ -818,6 +888,132 @@ ipcMain.on('note-close', () => {
   if (noteWin && !noteWin.isDestroyed()) noteWin.close();
 });
 
+// --------------------------------------------------------------- mind (src/main/mind)
+
+function mindDir() {
+  return path.join(app.getPath('userData'), 'mind');
+}
+
+function personalityFile() {
+  return path.join(mindDir(), 'personality.md');
+}
+
+function startMind() {
+  personality = P.load(personalityFile());
+  sounds = new SoundLibrary(path.join(app.getPath('userData'), 'sounds'));
+  mind = new Mind({
+    personality,
+    log: new EventLog({ file: path.join(mindDir(), 'events.jsonl') }),
+    getSelf: () => ({
+      band: companion.moodBand(),
+      needs: companion.needs,
+      state: companion.state,
+      hour: companion.context.hour,
+      quiet: !!companion.context.quiet,
+      away: !!companion.context.userAway,
+      asleep: companion.state === 'sleep',
+      busy: !!companion.board(),
+    }),
+    onSpeak: ({ text, action }) => companion.say(text, action),
+    getBlocklist: () => settings.get('privacyBlock'),
+  });
+  mindTimer = setInterval(() => mind.tick(), 1000);
+  applyMind(settings.get('mind'));
+}
+
+/** Turn his mind (and the local models) on or off. */
+function applyMind(on) {
+  if (!mind) return;
+  mind.setEnabled(on);
+  if (on && !engine) {
+    engine = new Engine();
+    mind.engine = engine;
+    engine
+      .start()
+      .catch((e) => console.error('Mind engine:', e.message))
+      .finally(refreshTrayMenu);
+  } else if (!on && engine) {
+    engine.stop();
+    engine = null;
+    mind.engine = null;
+  }
+}
+
+/** He chirps: one of your clips if there are any for his mood, otherwise a generated one. */
+function chirp(syllables) {
+  if (!win || win.isDestroyed() || !settings.get('sounds') || companion.context.quiet) return;
+  const band = companion.moodBand();
+  const clip = sounds ? sounds.clipFor(band) : null;
+  win.webContents.send('voice', { band, syllables, clip: clip ? clip.data : null });
+}
+
+function sendPersonality() {
+  if (!personalityWin || personalityWin.isDestroyed() || !personality) return;
+  const values = {};
+  for (const [p] of P.sliders()) values[p] = P.getPath(personality, p);
+  personalityWin.webContents.send('personality', { sliders: P.sliders(), values });
+}
+
+function showPersonality() {
+  if (personalityWin && !personalityWin.isDestroyed()) {
+    personalityWin.show();
+    personalityWin.focus();
+    return;
+  }
+  personalityWin = new BrowserWindow({
+    width: 420,
+    height: 640,
+    title: "Togepi's personality",
+    resizable: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'personality-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  personalityWin.loadFile(path.join(__dirname, '..', 'renderer', 'personality.html'));
+  personalityWin.webContents.on('did-finish-load', sendPersonality);
+  personalityWin.on('closed', () => {
+    personalityWin = null;
+  });
+}
+
+/** Save a changed personality; he notices a few seconds after you stop moving sliders. */
+function updatePersonality(next) {
+  personality = next;
+  P.save(personalityFile(), personality);
+  sendPersonality();
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => mind && mind.setPersonality(P.normalize(personality)), 3000);
+}
+
+ipcMain.on('personality-set', (_e, p, value) => {
+  if (!personality || typeof p !== 'string' || !Number.isFinite(value) || p.startsWith('relationship.')) return;
+  const next = P.normalize(personality);
+  if (P.setScore(next, p, value)) updatePersonality(next);
+});
+
+ipcMain.on('personality-reset', () => {
+  if (!personality) return;
+  // Back to Togepi's traits and values; the relationship stays as it has grown.
+  const next = P.defaultPersonality();
+  next.relationship = { ...personality.relationship };
+  updatePersonality(next);
+});
+
+ipcMain.on('personality-open-file', () => shell.showItemInFolder(personalityFile()));
+
+// Fully local: nothing in his windows may reach the internet. (The models run
+// in llama-server on 127.0.0.1; see src/main/mind/engine.js.)
+function blockNetwork() {
+  const local = /^(https?|wss?):\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i;
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (d, cb) => {
+    cb({ cancel: !local.test(d.url) });
+  });
+}
+
 // --------------------------------------------------------------- app
 
 if (!app.requestSingleInstanceLock()) {
@@ -826,6 +1022,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => callHere());
   app.whenReady().then(() => {
     if (process.platform === 'darwin' && app.dock) app.dock.hide();
+    blockNetwork();
     createWindow();
     // Monitors plugged in / unplugged / rearranged.
     const updateScreens = () => {
@@ -837,6 +1034,9 @@ if (!app.requestSingleInstanceLock()) {
       updateScreens();
     });
   });
-  app.on('before-quit', saveBrain);
+  app.on('before-quit', () => {
+    saveBrain();
+    if (engine) engine.stop();
+  });
   app.on('window-all-closed', () => app.quit());
 }

@@ -501,6 +501,15 @@ Extra sources:
 - Jev pricing: https://openrouter.ai/typesafe/jev-1.13
 - Jev funding (Tech Times): https://www.techtimes.com/articles/328875/20261013/typesafe-ai-raises-870m-jev-decision-model-that-never-generates-text.htm
 
+## 13. Test results (2026-10-20)
+
+Laya and vLLM d3-nano were both run through llama-server's `/v1/systemone`
+on Togepi's own questions (DECISIONS.md has the numbers). d3-nano was clearly
+more reliable on the privacy check (12/12 vs. 9/12) and is now his decision
+model; Laya remains the lighter option. Other decision models llama.cpp
+supports: OpenJev (27B, non-commercial), Clef / Clef-Flash (Cloudflare, 9B+),
+pplx-decider, granite-switch, lfm2-d1.
+
 ## Sources
 
 - ALMA, a layered model of affect (Gebhard, AAMAS 2005): https://alma.dfki.de/papers/aamas05.pdf

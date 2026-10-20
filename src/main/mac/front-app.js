@@ -5,7 +5,8 @@
 // - which apps have a window showing on any screen (windows.jxa.js, no
 //   permission needed: only app names and positions are read)
 // - the open tab of each visible window of your browsers (AppleScript; macOS
-//   asks once per browser under Privacy & Security → Automation)
+//   asks once per browser under Privacy & Security → Automation), with the
+//   title of the one you're looking at for his mind (src/main/mind)
 
 const path = require('path');
 const { run } = require('./run');
@@ -31,22 +32,50 @@ function parseWindowsOutput(out) {
   }
 }
 
-/** AppleScript that prints the active tab URL of each non-minimized window, one per line. */
+/**
+ * AppleScript that prints the active tab of each non-minimized window, front
+ * window first, one per line: URL, title and window mode ("incognito" for a
+ * private Chrome-family window), separated by tabs.
+ */
 function browserTabsScript(browser) {
   const safari = /safari/i.test(browser);
   const tab = safari ? 'current tab' : 'active tab';
   const minimized = safari ? 'miniaturized' : 'minimized';
+  const title = safari ? 'name' : 'title';
   return [
+    'set sep to character id 9',
     `tell application "${browser.replace(/"/g, '')}"`,
     '  set out to ""',
     `  repeat with w in (every window whose ${minimized} is false)`,
     '    try',
-    `      set out to out & (URL of ${tab} of w) & linefeed`,
+    `      set t to ${tab} of w`,
+    '      set m to ""',
+    '      try',
+    '        set m to (mode of w) as text',
+    '      end try',
+    '      set ttl to ""',
+    '      try',
+    `        set ttl to (${title} of t) as text`,
+    '      end try',
+    '      set out to out & (URL of t) & sep & ttl & sep & m & linefeed',
     '    end try',
     '  end repeat',
     '  return out',
     'end tell',
   ].join('\n');
+}
+
+/** Lines from browserTabsScript -> [{ url, title, private }], front window first. */
+function parseTabs(out) {
+  return String(out)
+    .split('\n')
+    .map((l) => l.replace(/\r$/, ''))
+    .filter((l) => l.trim())
+    .map((l) => {
+      const [url, title, mode] = l.split('\t');
+      return { url: (url || '').trim(), title: (title || '').trim() || null, private: /incognito|private/i.test(mode || '') };
+    })
+    .filter((t) => t.url);
 }
 
 async function frontAppName() {
@@ -91,8 +120,8 @@ async function visibleWindows() {
 
 async function browserTabs(browser) {
   try {
-    const out = await run('/usr/bin/osascript', ['-e', browserTabsScript(browser)]);
-    return { urls: out.split('\n').map((l) => l.trim()).filter(Boolean) };
+    const tabs = parseTabs(await run('/usr/bin/osascript', ['-e', browserTabsScript(browser)]));
+    return { tabs, urls: tabs.map((t) => t.url) };
   } catch (e) {
     const denied = /-1743|not allowed|not authori[sz]ed/i.test(e.message);
     return { error: denied ? `Allow Togepi to control ${browser} (Privacy & Security → Automation) so he can spot meetings in its tabs.` : null };
@@ -158,14 +187,17 @@ class AppWatcher {
       const windows = await visibleWindows();
       const visible = new Set((windows || []).map((w) => w.app));
       const tabs = {};
+      let frontTab = null;
       for (const browser of settings.browsers || []) {
         if (!visible.has(browser) && this.lastFront !== browser) continue; // only running, visible browsers
         const r = await browserTabs(browser);
         if (r.urls) tabs[browser] = r.urls;
+        // The tab you're looking at: the front window of the browser in front.
+        if (r.tabs && r.tabs.length && browser === this.lastFront) frontTab = r.tabs[0];
         if (r.error) errors.push(r.error);
       }
       const summary = summarize(this.lastFront, windows, tabs, settings, this.lastBundle);
-      if (this.timer) this.onResult({ ...summary, error: errors.join(' ') || null });
+      if (this.timer) this.onResult({ ...summary, frontTab, error: errors.join(' ') || null });
     } finally {
       this.busy = false;
     }
@@ -177,4 +209,4 @@ class AppWatcher {
   }
 }
 
-module.exports = { AppWatcher, parseLsappinfoName, parseWindowsOutput, browserTabsScript, summarize };
+module.exports = { AppWatcher, parseLsappinfoName, parseWindowsOutput, browserTabsScript, parseTabs, summarize };

@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --mac --dir && node scripts/adhoc-sign.js"
+    "dist": "node scripts/fetch-models.js && electron-builder --mac --dir && node scripts/adhoc-sign.js",
+    "fetch-models": "node scripts/fetch-models.js"
   },
   "keywords": [
     "desktop-pet",
@@ -46,6 +47,20 @@
         "NSCalendarsFullAccessUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
         "NSAppleEventsUsageDescription": "Togepi checks which app is in front so he can keep quiet during meetings. Nothing leaves your Mac."
       }
-    }
+    },
+    "extraResources": [
+      {
+        "from": "engine",
+        "to": "engine"
+      },
+      {
+        "from": "models",
+        "to": "models",
+        "filter": [
+          "*.gguf",
+          "models.json"
+        ]
+      }
+    ]
   }
 }

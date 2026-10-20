@@ -88,6 +88,27 @@ Nothing leaves your Mac: no internet, no accounts. His needs, mood, today's wate
 
 **Show his brain…** (under *Brain*) opens a small window with his needs, mood, what he's noticing and why he chose what he's doing. It also shows how the front app was classified and a *Meeting check* line saying why he is (or isn't) keeping quiet, when your next water / stretch / eye-rest nudges are due, and your pending notes. Problems (for example a declined permission) are shown there too. If you're in an event inside a longer one (a call during a focus block), he shows the call and lists the block under *Also in*.
 
+## His mind
+
+On top of his rule-based brain, Togepi **thinks and talks for himself**, using two AI models that run on your Mac (no internet, no accounts):
+
+- a **language model** (his "voice", Gemma 4 12B) that thinks about what's going on and writes what he might say;
+- a **decision model** ([vLLM d3-nano](https://huggingface.co/vllm-sr/d3-nano)) that quickly picks which of those lines fits him best, and double-checks that nothing private slips through.
+
+Both run in llama.cpp's `llama-server`, in background processes listening on `127.0.0.1` only, so his animation never stutters while he thinks. His windows can't reach the internet at all.
+
+**He decides when to talk.** Things wake him up to *think*: you petting, throwing or playing with him (always), something new on your screen, or just every few minutes. He then decides whether he really wants to say something. A chatty personality speaks up more easily; having just spoken, or being ignored the last few times, makes him hold back. What he said, what he chose not to say, and how you reacted (clicked his bubble, petted him, ignored it) all feed into his next decision. His lines are one short sentence of at most 8 words, in a speech bubble; click the bubble to dismiss it. The only hard rules: he's silent in meetings and while you're away, never speaks about private things, and never more than once a minute on his own.
+
+**His voice is chirps, not words.** He chirps a little "toge-priii" when he talks, with pitch and speed following his mood. To use your own clips instead, put short sound files in `~/Library/Application Support/Togepi/sounds/` named `<mood>-<anything>.<ext>` (mood: `cheerful`, `content`, `meh`, `sad` or `grumpy`; `.wav`, `.mp3`, `.m4a`, `.aac` or `.ogg`), e.g. `cheerful-1.wav`. Files without a mood prefix play for any mood. *Mind → Open sounds folder…* opens it.
+
+**His personality** is 34 traits (the 30 Big Five facets plus 4 Honesty-Humility facets) and 19 values, each 0–100, starting from who Togepi is in the games and anime: very joyful and warm, curious and mischievous, willful, a fearless baby. *Mind → Personality…* opens sliders for all of them; change one and after a few seconds he notices ("Huh? I feel… different!"). His relationship with you (affection, trust, familiarity) starts at "just met". It's all in `personality.md` (numbers at the top, his self-description below), which you can also edit by hand. The research behind it is in [`docs/mind/`](docs/mind/).
+
+**What he sees** of your screen comes from *Notice which app I'm using* (under *Brain*): the app in front and, in a browser, the title and site of the tab you're looking at. Without it he only knows what you do with him. **Privacy is built in:** private / incognito windows (Chrome, Arc, Brave, Edge), password managers, payment, checkout and banking pages, money apps, sign-in pages and medical portals are never shown to him; he only notes that "something private" is open. Add your own apps, sites or words to `privacyBlock` in `settings.json` (*Mind → Privacy blocklist…*). Safari doesn't say which of its windows are private, so a private Safari window is only caught by these rules.
+
+**His memory** so far is `events.jsonl` in `~/Library/Application Support/Togepi/mind/` (*Mind → Show his memory folder…*): what you were doing, what he said and how you reacted. **Show his brain…** shows his last thought and why he spoke or stayed quiet.
+
+*Mind → Think and talk for himself* turns it all off (and stops the models); *Chirp when he talks* mutes him. Without the models (or before they've loaded) he behaves exactly as before.
+
 ## Running
 
 You need [Node.js](https://nodejs.org/) 18 or newer.
@@ -108,7 +129,7 @@ npm install
 npm run dist
 ```
 
-This builds `dist/mac-arm64/Togepi.app` (or `dist/mac/` on Intel). Drag it into **Applications** and open it. It's a personal build that isn't notarized, so the first time macOS may say it can't verify it: **right-click Togepi.app → Open → Open**. After that it opens normally.
+The first time, this downloads his mind's engine and models (about 10 GB, into `engine/` and `models/` in the repo; later builds reuse them, and `npm run fetch-models` does just this step). Then it builds `dist/mac-arm64/Togepi.app` (or `dist/mac/` on Intel), with the models inside, so the app itself never needs the internet. His mind uses about 11 GB of memory while the app runs; a Mac with 16 GB or more is best. Drag it into **Applications** and open it. It's a personal build that isn't notarized, so the first time macOS may say it can't verify it: **right-click Togepi.app → Open → Open**. After that it opens normally.
 
 Then, from his menu: turn on *Start at login*, and under *Brain* turn on the features you want. Rebuilding the app may make macOS ask for the permissions again.
 
@@ -136,6 +157,8 @@ src/
   main/screens.js      screen layout: which screens touch and how to cross between them
   main/nudges.js       water / stretch / eye rest / bedtime timers, "remind me" notes, what he says
   main/games/          fetch (the ball's physics) and tic-tac-toe (rules and his moves)
+  main/mind/           his own mind: personality, event log, privacy gate, the think/decide
+                       loop, llama-server engine, your sound clips
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
                        browser tabs (AppleScript) and calendar (EventKit)
   main/main.js         Electron main: transparent always-on-top window that follows him,
@@ -143,6 +166,10 @@ src/
   preload.js           small IPC bridge (game-preload.js: the same for the ball and the board)
   renderer/            canvas drawing, animation, particles, mouse input, brain view
   renderer/games/      the thrown ball's window and the tic-tac-toe board
+  renderer/chirp.js    his chirps (Web Audio)
+  renderer/personality.*  the personality sliders
+scripts/fetch-models.js  downloads llama-server and the models for `npm run dist`
+docs/mind/             the plan, decisions and research for his mind
 test/                  node:test tests for the simulation
 ```
 

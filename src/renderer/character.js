@@ -1477,7 +1477,42 @@ function drawBubble(ctx, b, t) {
   ctx.restore();
 }
 
+// A speech bubble with his own words (one short sentence, up to two lines).
+function drawSpeech(ctx, text, t) {
+  const w = 136;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = wrapTwo(ctx, text, 12.5, 'bold ', w - 16);
+  const h = 12 + lines.length * 15;
+  const bob = Math.sin(t * 2.5) * 1.2;
+  const top = -138 - h + bob;
+  ctx.beginPath();
+  ctx.moveTo(-6, top + h);
+  ctx.lineTo(-w / 2 + 12, top + h);
+  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
+  ctx.arcTo(-w / 2, top, w / 2, top, 12);
+  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
+  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
+  ctx.lineTo(8, top + h);
+  ctx.lineTo(4, top + h + 9);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.fillStyle = PALETTE.outline;
+  lines.forEach((line, i) => {
+    fitFont(ctx, line, 12.5, 'bold ', w - 14);
+    ctx.fillText(line, 0, top + 13.5 + i * 15);
+  });
+  ctx.restore();
+}
+
 window.Character = {
+  drawSpeech,
   drawCharacter,
   defaultPose,
   drawHeart,

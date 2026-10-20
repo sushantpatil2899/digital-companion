@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Togepi's personality</title>
+    <style>
+      :root {
+        --bg: #fdfaf2;
+        --card: #ffffff;
+        --ink: #3a2d25;
+        --muted: #8a7a6c;
+        --line: #eadfcf;
+        --accent: #e05a62;
+        --track: #efe6d6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #2d2925;
+          --card: #3a352f;
+          --ink: #f4ece0;
+          --muted: #b3a593;
+          --line: #4a433b;
+          --track: #4a433b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--bg);
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      button {
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+      main {
+        padding: 6px 16px 24px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px 4px;
+        margin-top: 12px;
+      }
+      h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      h2 small {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 36px;
+        gap: 2px 8px;
+        align-items: center;
+        padding: 6px 0;
+        border-top: 1px solid var(--line);
+      }
+      .row:first-of-type {
+        border-top: none;
+      }
+      .name {
+        font-weight: 600;
+      }
+      .help {
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: -2px;
+      }
+      .value {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      input[type='range'] {
+        grid-column: 1 / -1;
+        width: 100%;
+        accent-color: var(--accent);
+        margin: 2px 0 0;
+      }
+      .readonly input[type='range'] {
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Togepi's personality</h1>
+      <p>Every score is 0 to 100; 50 is average. Changes take effect right away, and he'll notice. His relationship with you isn't set by hand: it starts at &ldquo;just met&rdquo; and grows with time together.</p>
+      <div class="actions">
+        <button id="reset">Reset to Togepi</button>
+        <button id="file">Show the file</button>
+      </div>
+    </header>
+    <main id="groups"></main>
+    <script src="personality.js"></script>
+  </body>
+</html>
