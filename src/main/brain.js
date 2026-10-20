@@ -35,8 +35,10 @@ const NEEDS = {
   // before visitAfter seconds, then more and more likely over visitRamp.
   visitAfter: 300,
   visitRamp: 600,
-  // Asks you to play when he's getting bored, but before he's properly bored.
-  inviteFrom: 0.5,
+  // Asks you to play when he's getting bored, but before he's properly bored
+  // (early enough that he still asks when you keep him company: about one ask
+  // every 2-3 hours then, about two an hour when he's left alone).
+  inviteFrom: 0.3,
   inviteTo: 0.8,
   // How hard each kind of state works him (multiplies energyDrain).
   effort: { run: 3, play: 3, adventure: 2.5, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },

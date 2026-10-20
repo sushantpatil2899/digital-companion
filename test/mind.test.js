@@ -287,6 +287,31 @@ test('what you do on screen is noted, private things without details', async () 
   assert.equal(engine.calls.length, 1, 'no thinking about private things');
 });
 
+test('a line about something you already left is not said', async () => {
+  let release;
+  const slow = fakeEngine({ thought: 'ooh a job', urge: 1, lines: ['Amazon! Go go!'], action: 'none' });
+  const think = slow.think;
+  slow.think = (req) => new Promise((r) => { release = () => r(think(req)); });
+  const m = makeMind(slow);
+  await m.mind.observe({ app: 'Google Chrome', title: 'SWE II - Amazon', url: 'https://jobright.ai/jobs/1' });
+  await m.mind.observe({ app: 'Code', title: 'companion.js' }); // you moved on while he thought
+  release();
+  await flush();
+  await flush();
+  assert.equal(m.spoken.length, 0);
+  assert.equal(m.mind.log.last(['silent']).why, 'you already moved on');
+});
+
+test('he is told what is on your screen right now, without email addresses', async () => {
+  const engine = fakeEngine({ thought: 'x', urge: 0, lines: ['x'], action: 'none' });
+  const m = makeMind(engine);
+  await m.mind.observe({ app: 'Google Chrome', title: 'In-person event in 4 hours - sushant.patil@stonybrook.edu - Mail', url: 'https://mail.google.com/mail/u/0' });
+  await flush();
+  assert.match(engine.calls[0].user, /On Sushant's screen right now: Google Chrome, "In-person event in 4 hours - \(email address\) - Mail" \(mail\.google\.com\)/);
+  assert.ok(!JSON.stringify(m.mind.log.items).includes('stonybrook.edu'));
+  assert.equal(m.mind.status().sees.site, 'mail.google.com');
+});
+
 test('the decision model can block what the rules let through', async () => {
   const engine = fakeEngine({ thought: 'x', urge: 0, lines: ['x'], action: 'none' }, { decide: () => ({ sensitive: { probabilities: { A: 0.9, B: 0.1 } } }) });
   const m = makeMind(engine);
@@ -337,6 +362,33 @@ test('he shows his words in a bubble you can click, unless he is holding somethi
   for (let i = 0; i < 10; i++) c.update(1 / 60);
   assert.equal(c.state, 'offerBall');
   assert.equal(c.say('Hi!'), false);
+});
+
+test('the brain view shows the face he actually makes (grumpy after throws)', () => {
+  const c = new Companion({ bounds: { left: 0, right: 1920, top: 0, floor: 1040 }, x: 500, y: 1040 });
+  c.mood = 0.8;
+  c.grumpiness = 0.7;
+  const b = c.brainSnapshot();
+  assert.equal(b.band, 'grumpy');
+  assert.equal(b.grumpiness, 0.7);
+});
+
+test('he asks you to play now and then even when you keep him company', () => {
+  let seed = 7;
+  const rng = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const c = new Companion({ bounds: { left: 0, right: 1920, top: 0, floor: 1040 }, rng, halfWidth: 56, height: 142 });
+  let invites = 0;
+  let nextPet = 600;
+  for (let t = 0; t < 4 * 3600; t += 0.05) {
+    c.setContext({ hour: 14, day: '2026-01-01', now: 1e12 + t * 1000 });
+    c.update(0.05, { x: 600, y: 900 });
+    for (const e of c.drainEvents()) if (e === 'gameInvite') invites++;
+    if (t >= nextPet) {
+      c.pat(); // you pet him every 10 minutes
+      nextPet += 600;
+    }
+  }
+  assert.ok(invites >= 1 && invites <= 6, `asked ${invites} times in 4 hours`);
 });
 
 test('your own clips: by mood, or for any mood', () => {

@@ -11,7 +11,7 @@ const P = require('./personality');
 const { describeEvent } = require('./events');
 
 const MAX_WORDS = 8;
-const MAX_LINES = 4;
+const MAX_LINES = 3; // fewer candidates = a quicker answer
 
 // Things he can do along with (or instead of) speaking.
 const ACTIONS = ['none', 'wave', 'happy', 'jump', 'curious', 'shy', 'sad', 'lookAround', 'askToPlay'];
@@ -20,9 +20,9 @@ const ACTIONS = ['none', 'wave', 'happy', 'jump', 'curious', 'shy', 'sad', 'look
 const SCHEMA = {
   type: 'object',
   properties: {
-    thought: { type: 'string', maxLength: 140 },
+    thought: { type: 'string', maxLength: 90 },
     urge: { type: 'integer', minimum: 0, maximum: 10 },
-    lines: { type: 'array', items: { type: 'string', maxLength: 60 }, minItems: 1, maxItems: MAX_LINES },
+    lines: { type: 'array', items: { type: 'string', maxLength: 50 }, minItems: 1, maxItems: MAX_LINES },
     action: { type: 'string', enum: ACTIONS },
   },
   required: ['thought', 'urge', 'lines', 'action'],
@@ -75,6 +75,7 @@ function systemPrompt(personality) {
     "You are the inner voice of Togepi, a baby Pokémon who lives on Sushant's computer screen as his companion.",
     personality.self,
     'You talk like a baby, but you understand what Sushant does on his computer (job hunting, coding, emails, videos, games) and you have feelings and opinions about it.',
+    'When you think or talk about what he is doing, name the actual thing (the company, the email subject, the video, the code), in your own baby words.',
     '',
     'Your personality (only what stands out):',
     traits,
@@ -105,6 +106,14 @@ function situationPrompt(s) {
   const feel = [BAND_WORDS[self.band] || 'content', needsWords(self.needs)].filter(Boolean).join(', ');
   const doing = STATE_WORDS[self.state];
   lines.push(`It's ${partOfDay(self.hour != null ? self.hour : 12)}. You feel ${feel}.${doing ? ` You are ${doing}.` : ''}`);
+  const sc = s.screen;
+  if (sc) {
+    lines.push(
+      sc.private
+        ? "On Sushant's screen right now: something private. You can't see it and don't ask about it."
+        : `On Sushant's screen right now: ${sc.app}${sc.title ? `, "${sc.title}"` : ''}${sc.site ? ` (${sc.site})` : ''}.`,
+    );
+  }
   const happened = (s.events || []).filter((e) => ['observe', 'interact', 'changed'].includes(e.kind));
   const decided = (s.events || []).filter((e) => ['said', 'silent'].includes(e.kind));
   if (happened.length) {

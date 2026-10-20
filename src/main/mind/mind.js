@@ -67,6 +67,15 @@ const INTERACTIONS = {
 // Interactions that are also a reaction to what he just said.
 const REACTIONS = { heart: 'petted', throw: 'threw' };
 
+/** A window title for his log and prompt: no email addresses, not too long. */
+function cleanTitle(title) {
+  const t = String(title || '')
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '(email address)')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return t.slice(0, 120) || null;
+}
+
 class Mind {
   /**
    * @param {object} opts
@@ -127,15 +136,15 @@ class Mind {
     const prev = this.log.last(['observe']);
     const entry = blocked
       ? { kind: 'observe', private: true }
-      : { kind: 'observe', app: o.app, title: (o.title || '').slice(0, 120) || null, site: privacy.domainOf(o.url) };
+      : { kind: 'observe', app: o.app, title: cleanTitle(o.title), site: privacy.domainOf(o.url) };
     if (prev && prev.private && entry.private) return; // still private: nothing new to note
-    this.log.add(entry);
+    const added = this.log.add(entry);
     if (blocked) return;
     // Something new on your screen: a chance to think (not necessarily speak).
     const t = this.now();
     if (t - this.lastObserveThink >= MIND.observeThinkGap * 1000) {
       this.lastObserveThink = t;
-      this.wake({ kind: 'observe', text: `Sushant switched to ${entry.app}${entry.title ? `: "${entry.title}"` : ''}.`, interactive: false });
+      this.wake({ kind: 'observe', text: `Sushant switched to ${entry.app}${entry.title ? `: "${entry.title}"` : ''}.`, interactive: false, seen: added });
     }
   }
 
@@ -245,7 +254,7 @@ class Mind {
       const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed']);
       const decisions = this.log.recent(MIND.recentDecisions, ['said', 'silent']);
       const self = this.getSelf();
-      const user = T.situationPrompt({ trigger, self, events: [...events, ...decisions], now: t });
+      const user = T.situationPrompt({ trigger, self, screen: this.log.last(['observe']), events: [...events, ...decisions], now: t });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const raw = await this.engine.think({ system: T.systemPrompt(this.personality), user, schema: T.SCHEMA });
       const thought = T.parseThought(raw, recentLines);
@@ -272,6 +281,11 @@ class Mind {
     return Math.max(0.05, Math.min(0.95, th));
   }
 
+  /** A thought about something on your screen that you've already left: too late to say it. */
+  stale(trigger) {
+    return trigger.seen && this.log.last(['observe']) !== trigger.seen ? 'you already moved on' : null;
+  }
+
   /** The rails: reasons he must not speak right now, or null. */
   blockedBy(trigger) {
     const self = this.getSelf();
@@ -287,7 +301,7 @@ class Mind {
 
   async decide(thought, trigger) {
     const th = this.threshold(trigger);
-    const rail = this.blockedBy(trigger);
+    const rail = this.blockedBy(trigger) || this.stale(trigger);
     const wants = thought.urge >= th && thought.lines.length > 0;
     this.lastDecision = { urge: thought.urge, threshold: th, rail, at: this.now() };
     if (!wants || rail) {
@@ -295,8 +309,8 @@ class Mind {
       return;
     }
     const text = await this.pickLine(thought, trigger);
-    // The world may have changed while choosing (you joined a meeting…).
-    if (this.blockedBy(trigger)) return;
+    // The world may have changed while choosing (you joined a meeting, moved on…).
+    if (this.blockedBy(trigger) || this.stale(trigger)) return;
     this.speak({ text, action: thought.action }, trigger, thought);
   }
 
@@ -331,9 +345,12 @@ class Mind {
 
   /** For the brain view. */
   status() {
+    const said = this.log.last(['said']);
     return {
       enabled: this.enabled,
       engine: this.engine ? this.engine.status() : 'no engine',
+      sees: this.log.last(['observe']),
+      lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
       thinking: this.thinking,
       lastThought: this.lastThought,
       lastDecision: this.lastDecision,

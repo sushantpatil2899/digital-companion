@@ -59,7 +59,8 @@ function bar(label, value, goodness, text) {
 }
 
 function moodBar(mood, band) {
-  // Centred bar: left = sad, right = cheerful.
+  // Centred bar: left = sad, right = cheerful. The label is the face he shows
+  // (grumpy after being thrown, whatever the bar says).
   const w = Math.abs(mood) * 50;
   const left = mood >= 0 ? 50 : 50 - w;
   const face = band || (mood > 0.45 ? 'cheerful' : mood > 0.1 ? 'content' : mood > -0.25 ? 'meh' : 'sad');
@@ -86,7 +87,10 @@ function render(b) {
       const v = b.needs[k];
       const goodness = good === 'high' ? v : 1 - v;
       return bar(label, v, goodness, `${Math.round(v * 100)}%`);
-    }).join('') + moodBar(b.mood, b.band);
+    }).join('') +
+    moodBar(b.mood, b.band) +
+    // Being thrown makes him grumpy for a few minutes; above 30% it shows on his face.
+    (b.grumpiness > 0.01 ? bar('Grumpy', b.grumpiness, 1 - b.grumpiness, `${Math.round(b.grumpiness * 100)}%`) : '');
 
   const c = b.context;
   const rows = [
@@ -126,6 +130,10 @@ function render(b) {
   const m = b.mind;
   if (m) {
     rows.push(['Mind', m.enabled ? `${m.engine}${m.thinking ? ' · thinking…' : ''}` : 'off']);
+    const seen = m.sees;
+    if (seen) rows.push(['He sees', seen.private ? 'something private (no details)' : `${seen.app}${seen.title ? `: "${seen.title}"` : ''}${seen.site ? ` (${seen.site})` : ''}`]);
+    else rows.push(['He sees', 'nothing yet (turn on "Notice which app I\'m using" under Brain)']);
+    if (m.lastSaid) rows.push(['Last said', `"${m.lastSaid.text}"${m.lastSaid.reaction ? ` → ${m.lastSaid.reaction}` : ''}`]);
     const t = m.lastThought;
     if (t && t.error) rows.push(['Last thought', `(failed: ${t.error})`]);
     else if (t) rows.push(['Last thought', `"${t.thought}" (woke up for: ${t.trigger})`]);
