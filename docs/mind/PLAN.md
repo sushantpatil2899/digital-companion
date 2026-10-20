@@ -66,29 +66,37 @@ The goal is for him to also have:
 MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 **bundled inside the app** (decided 2026-10-19).
 
-## Architecture (planned)
+## Architecture (as built in Phase 1)
 
-- **Engine:** `node-llama-cpp` (llama.cpp with Metal GPU) inside the app, no
-  Ollama/server. Runs in an Electron utility process so animation never
-  stalls.
-- **Model:** ~8B instruct model (current Qwen or Llama class), GGUF Q4
-  (~5 GB file, ~6 GB RAM). Swappable file; a 12-14B model can be tried later.
-- **Bundling:** model is not committed to git (too big). A build script
-  downloads it once into git-ignored `models/`; electron-builder copies it into
-  `Togepi.app` (app ≈ 5 GB).
-- **Code location:** new `src/main/mind/` directory.
-- **Memory location:** `~/Library/Application Support/Togepi/memory/`.
-- **Existing inputs to reuse:** `src/main/mac/front-app.js` (front app,
-  visible windows, browser tab URLs), `src/main/mac/calendar.js`,
-  `src/main/context.js`, `src/main/brain.js` (mood, needs), `src/main/nudges.js`
-  (built-in phrases, used as fallback).
+- **Engine:** llama.cpp's `llama-server` (Metal GPU on the Mac), bundled in
+  the app, started as two background processes on 127.0.0.1 (one per model),
+  so animation never stalls. Chosen over `node-llama-cpp` because llama-server
+  natively serves decision models (`/v1/systemone`: Laya, OpenJev, Clef, …) as
+  well as language models. Code: `src/main/mind/engine.js`.
+- **Voice model:** Gemma 4 12B instruct, GGUF Q4_0 (~7 GB file), Apache-2.0.
+  Proposed default, to be confirmed by testing (DECISIONS.md). Swappable in
+  `scripts/fetch-models.js`.
+- **Decision model:** Laya, GGUF Q8_0 (`ggml-org/Laya-GGUF`), Apache-2.0.
+- **Bundling:** `scripts/fetch-models.js` downloads llama-server
+  (llama.cpp release `b11748`) into `engine/` and the models into `models/`
+  (both git-ignored); `npm run dist` runs it, electron-builder copies both into
+  `Togepi.app` (`extraResources`), and `scripts/adhoc-sign.js` signs the
+  engine binaries.
+- **Code location:** `src/main/mind/` (personality, events, privacy,
+  thinker, mind, engine, sounds), `src/renderer/chirp.js`,
+  `src/renderer/personality.*`.
+- **Data location:** `~/Library/Application Support/Togepi/mind/`
+  (`personality.md`, `events.jsonl`) and `…/Togepi/sounds/` (your clips).
+- **Existing inputs reused:** `src/main/mac/front-app.js` (front app, browser
+  tabs, now with the front tab's title and private mode),
+  `src/main/brain.js` (mood, needs), companion events (petting, games, …).
 
 ## Phases
 
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `questions` answered; waiting for Hugging Face access to start the Laya spike
+### Phase 1: his own voice — status: `in progress` (built and tested without the real models; model testing waits for model downloads in the dev container)
 
 Goal: he comments in his own words, in character, on what you're doing.
 
@@ -127,6 +135,16 @@ Planned scope (updated 2026-10-19 after Sushant's answers):
 - Tests use a fake model.
 
 Open questions: see DECISIONS.md, "Phase 1 questions".
+
+Built (2026-10-20): everything above. Tested: unit tests for all of it with a
+fake model; the real app in Electron (speech bubble, clicking it, he notices
+personality changes, editor, network blocked); llama-server end to end with a
+tiny throwaway model (start, JSON-constrained think, the decision loop).
+Remaining before `done`:
+1. Download the real models in the dev container (needs `*.hf.co` allowed in
+   its network settings), check Laya's answers on Togepi's questions and the
+   voice model's lines, and confirm or change the model choice.
+2. Sushant builds the app and tries it on his Mac (speed, chirps, feel).
 
 Known limit: the GPU can't be tested in the dev container; reply quality is
 checked there on CPU, speed is confirmed by Sushant on his Mac.

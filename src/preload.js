@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld('companion', {
   contextMenu: () => ipcRenderer.send('context-menu'),
   setTrayIcon: (dataUrl) => ipcRenderer.send('tray-icon', dataUrl),
   setBattery: (b) => ipcRenderer.send('battery', b),
+  // His chirps: { band, syllables, clip } (clip: your own sound file's bytes, or null).
+  onVoice: (cb) => ipcRenderer.on('voice', (_e, v) => cb(v)),
 });

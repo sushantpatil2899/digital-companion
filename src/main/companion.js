@@ -81,6 +81,9 @@ const GAME_STATES = ['offerBall', 'watchBall', 'pickBall', 'offerGame', 'ttt'];
 // Where the ball sits in his hands, relative to his feet (screen px, x towards where he faces).
 const HELD_BALL = { x: 3, y: 64 };
 
+// How long a speech bubble with his own words stays up (s).
+const SPEECH = { base: 2.5, perWord: 0.35, max: 6 };
+
 // States with something held up over his head that you can click.
 const BOARD_STATES = ['sign', ...NUDGE_STATES, 'offerBall', 'offerGame'];
 // Busy with you, or just landed: a reminder waits until he's done.
@@ -222,6 +225,9 @@ class Companion {
     this.swingVel = 0;
     this.grabOffset = { x: 0, y: 0 };
     this.cursorHistory = [];
+
+    // Something he's saying in his own words (src/main/mind): { text, until }.
+    this.speech = null;
 
     this.events = []; // one-shot events for the renderer (sounds/particles)
   }
@@ -911,10 +917,75 @@ class Companion {
       if (this.state === 'sign' && this.meetingLink() && sx >= j.left && sx <= j.right && sy >= j.bottom && sy <= j.top) return 'join';
       if (Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'sign';
     }
+    if (this.speaking() && Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'speech';
     const dx = sx / HIT.rx;
     const dy = (sy - HIT.cy) / HIT.ry;
     if (dx * dx + dy * dy <= 1) return 'body';
     return null;
+  }
+
+  // ---------------------------------------------------------------- his own words
+
+  /**
+   * Say `text` in a speech bubble (his own words, from src/main/mind) and do
+   * `action` along with it if he's free. Returns false if he can't show it
+   * right now (he's holding up a sign, a nudge or a game invite).
+   */
+  say(text, action = 'none') {
+    if (!text || this.board()) return false;
+    const words = String(text).split(/\s+/).length;
+    this.speech = { text: String(text), until: this.time + Math.min(SPEECH.max, SPEECH.base + SPEECH.perWord * words) };
+    this.emit('speak');
+    this.mindAction(action);
+    return true;
+  }
+
+  /** Showing a speech bubble right now. */
+  speaking() {
+    return !!this.speech && this.time < this.speech.until && !BOARD_STATES.includes(this.state);
+  }
+
+  /** You clicked his speech bubble: it goes away. */
+  dismissSpeech() {
+    this.speech = null;
+  }
+
+  /** Something his mind decided to do while talking (see ACTIONS in src/main/mind/thinker.js). */
+  mindAction(action) {
+    if (!action || action === 'none' || !this.isGrounded() || this.game || this.nudge) return;
+    if (this.reminder && !this.reminder.acknowledged) return;
+    if (!INTERRUPTIBLE.includes(this.state) && !['happy', 'curious', 'shy'].includes(this.state)) return;
+    this.vx = 0;
+    switch (action) {
+      case 'wave':
+        this.enter('wave', 2.2);
+        this.emit('wave');
+        break;
+      case 'happy':
+        // (No 'heart' event: that means you petted him.)
+        this.enter('happy', 1.4);
+        break;
+      case 'jump':
+        if (!this.paused) this.startActivity('jump');
+        break;
+      case 'curious':
+        this.enter('curious', 2.5);
+        break;
+      case 'shy':
+        this.enter('shy', 3);
+        break;
+      case 'sad':
+        this.lastSadAt = this.time;
+        this.enter('sad', 4);
+        break;
+      case 'lookAround':
+        this.enter('lookAround', 3);
+        break;
+      case 'askToPlay':
+        if (!this.context.quiet) this.startGame(GAMES[Math.floor(this.rng() * GAMES.length)]);
+        break;
+      default:
+    }
   }
 
   /** The video call link of the meeting he's reminding you about (https only), or null. */
@@ -1786,6 +1857,7 @@ class Companion {
       // Where the ball is, relative to his feet, while it's loose (he watches it).
       ball: this.ball.loose ? { x: this.ball.x - this.x, y: this.ball.y - this.y } : null,
       thinking: this.state === 'ttt' && !!this.game && !!this.game.ttt && this.game.ttt.myTurn,
+      speech: this.speaking() ? this.speech.text : null,
       time: this.time,
     };
   }

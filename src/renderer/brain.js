@@ -123,6 +123,18 @@ function render(b) {
   }
   if (b.nudge) rows.push(['Showing', b.nudge.kind === 'note' ? `note: ${b.nudge.text}` : b.nudge.kind]);
   if (b.game) rows.push(['Playing', `${b.game.kind === 'ttt' ? 'tic-tac-toe' : 'fetch'} (${b.game.step}, ${b.game.rounds} played)`]);
+  const m = b.mind;
+  if (m) {
+    rows.push(['Mind', m.enabled ? `${m.engine}${m.thinking ? ' · thinking…' : ''}` : 'off']);
+    const t = m.lastThought;
+    if (t && t.error) rows.push(['Last thought', `(failed: ${t.error})`]);
+    else if (t) rows.push(['Last thought', `"${t.thought}" (woke up for: ${t.trigger})`]);
+    const d = m.lastDecision;
+    if (d) {
+      const said = d.rail ? `stayed quiet: ${d.rail}` : d.urge >= d.threshold ? 'spoke' : 'stayed quiet: not worth saying';
+      rows.push(['Decision', `urge ${d.urge.toFixed(2)} vs bar ${d.threshold.toFixed(2)} → ${said}`]);
+    }
+  }
   if (c.error) rows.push(['Note', c.error]);
   $('context').innerHTML = rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
 

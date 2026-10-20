@@ -760,6 +760,8 @@ function render(now) {
     if (frame.board) {
       if (frame.board.style === 'bubble') C.drawBubble(ctx, frame.board, clock);
       else C.drawSign(ctx, frame.board, clock);
+    } else if (frame.speech) {
+      C.drawSpeech(ctx, frame.speech, clock);
     }
     ctx.restore();
 
@@ -773,6 +775,13 @@ function render(now) {
 window.companion.onFrame((f) => {
   frame = f;
   for (const e of f.events) handleEvent(e);
+});
+
+// He chirps when he talks: your own clip if you've added some, otherwise a
+// generated "toge-priii" (src/renderer/chirp.js).
+window.companion.onVoice((v) => {
+  if (v.clip) window.Chirp.playClip(v.clip.buffer ? v.clip.buffer.slice(v.clip.byteOffset, v.clip.byteOffset + v.clip.byteLength) : v.clip);
+  else window.Chirp.play({ band: v.band, syllables: v.syllables });
 });
 requestAnimationFrame(render);
 

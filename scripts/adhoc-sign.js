@@ -21,6 +21,17 @@ const apps = fs
   .filter((p) => fs.existsSync(p));
 
 for (const app of apps) {
+  // llama-server and its libraries (his mind's engine) sit in Resources, where
+  // --deep doesn't look: sign them first.
+  const engine = path.join(app, 'Contents', 'Resources', 'engine');
+  if (fs.existsSync(engine)) {
+    for (const f of fs.readdirSync(engine)) {
+      const file = path.join(engine, f);
+      if (fs.lstatSync(file).isFile() && (f === 'llama-server' || f.endsWith('.dylib'))) {
+        execFileSync('codesign', ['--force', '--sign', '-', file], { stdio: 'inherit' });
+      }
+    }
+  }
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' });
   console.log(`Signed (ad-hoc): ${app}`);
 }
