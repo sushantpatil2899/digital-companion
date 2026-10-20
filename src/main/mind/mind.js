@@ -17,6 +17,8 @@ const P = require('./personality');
 const T = require('./thinker');
 const privacy = require('./privacy');
 const { EventLog } = require('./events');
+const { readEvents, journalDue, MEMORY } = require('./memory');
+const { writeDay } = require('./journal');
 
 const MIND = {
   gapUnprompted: 60, // s: rail, at most one line a minute on his own
@@ -35,6 +37,9 @@ const MIND = {
   recencyPenalty: 0.3,
   recencyTau: 90, // s
   ignoredPenalty: 0.08, // per line in a row you ignored (max 3)
+  journalCheckEvery: 600, // s between checks whether his diary is due
+  endOfDayHour: 18, // from this hour, being away for a while ends his day
+  endOfDayAway: 600, // s away
   privacyThreshold: 0.5, // decision model's "this is sensitive" probability that blocks (tested: normal pages ≈ 0.01, sensitive ≥ 0.69)
 };
 
@@ -87,6 +92,8 @@ class Mind {
    * @param {() => object} [opts.getBlocklist] { apps, sites, words }
    * @param {() => number} [opts.now] ms epoch
    * @param {() => number} [opts.rng]
+   * @param {object} [opts.memory]      long-term memory (memory.js), Phase 2
+   * @param {string} [opts.eventsFile]  events.jsonl, read when his diary is due
    */
   constructor(opts) {
     this.engine = opts.engine || null;
@@ -109,6 +116,12 @@ class Mind {
     this.privacyCache = new Map();
     this.lastThought = null; // for the brain view
     this.lastDecision = null;
+    this.memory = opts.memory || null;
+    this.eventsFile = opts.eventsFile || null;
+    this.lastRecalled = [];
+    this.writingJournal = false;
+    this.lastJournal = null; // { day, at } or { error }
+    this.nextJournalCheck = this.now() + 60 * 1000; // a minute after starting (models loading)
   }
 
   heartbeatDelay() {
@@ -221,6 +234,10 @@ class Mind {
   /** Call about once a second. */
   tick() {
     const t = this.now();
+    if (t >= this.nextJournalCheck) {
+      this.nextJournalCheck = t + MIND.journalCheckEvery * 1000;
+      this.maybeWriteJournal();
+    }
     if (this.awaiting && t >= this.awaiting.until) {
       this.awaiting.entry.reaction = 'ignored it';
       this.log.add({ kind: 'reaction', to: this.awaiting.entry.text, reaction: 'ignored it' });
@@ -234,12 +251,36 @@ class Mind {
     }
   }
 
+  /**
+   * Write his diary if a day is due: past days he hasn't written about yet, or
+   * today once you've been away for a while in the evening.
+   */
+  async maybeWriteJournal() {
+    if (!this.memory || !this.enabled || !this.engine || !this.engine.ready || this.writingJournal || this.thinking) return null;
+    const self = this.getSelf();
+    const endOfDay = !!self.away && (self.awayFor || 0) >= MIND.endOfDayAway && (self.hour == null || self.hour >= MIND.endOfDayHour);
+    const events = this.eventsFile ? readEvents(this.eventsFile) : this.log.items;
+    const due = journalDue(events, this.memory, { now: this.now(), endOfDay });
+    if (!due) return null;
+    this.writingJournal = true;
+    try {
+      const done = await writeDay(this.engine, this.memory, this.personality, due);
+      this.lastJournal = done ? { day: due.day, at: this.now(), facts: done.facts.length, opinions: done.opinions.length } : { day: due.day, error: 'nothing usable' };
+      return done;
+    } catch (e) {
+      this.lastJournal = { day: due.day, error: e.message };
+      return null;
+    } finally {
+      this.writingJournal = false;
+    }
+  }
+
   /** Something worth thinking about. Only one think runs at a time; the newest waits. */
   wake(trigger) {
     if (!this.enabled || !this.engine || !this.engine.ready) return;
     const self = this.getSelf();
     if (self.away || self.quiet) return;
-    if (this.thinking) {
+    if (this.thinking || this.writingJournal) {
       // Keep an interactive trigger over a passive one.
       if (!this.pending || trigger.interactive || !this.pending.interactive) this.pending = trigger;
       return;
@@ -254,9 +295,12 @@ class Mind {
       const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed']);
       const decisions = this.log.recent(MIND.recentDecisions, ['said', 'silent']);
       const self = this.getSelf();
-      const user = T.situationPrompt({ trigger, self, screen: this.log.last(['observe']), events: [...events, ...decisions], now: t });
+      const screen = this.log.last(['observe']);
+      const memories = this.recall(trigger, screen);
+      const user = T.situationPrompt({ trigger, self, screen, memories, events: [...events, ...decisions], now: t });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality), user, schema: T.SCHEMA });
+      const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: T.SCHEMA });
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
       this.lastThought = { ...thought, trigger: trigger.kind, at: this.now() };
@@ -269,6 +313,14 @@ class Mind {
       this.pending = null;
       if (next) this.wake(next);
     }
+  }
+
+  /** Long-term memories that fit what's going on (Phase 2). */
+  recall(trigger, screen) {
+    if (!this.memory) return [];
+    const query = [trigger.text, screen && !screen.private ? `${screen.app} ${screen.title || ''} ${screen.site || ''}` : ''].join(' ');
+    this.lastRecalled = this.memory.recall(query);
+    return this.lastRecalled;
   }
 
   /** The bar his urge has to clear to speak right now. */
@@ -350,6 +402,8 @@ class Mind {
       enabled: this.enabled,
       engine: this.engine ? this.engine.status() : 'no engine',
       sees: this.log.last(['observe']),
+      recalled: this.lastRecalled.map((m) => m.text),
+      journal: this.writingJournal ? 'writing…' : this.lastJournal,
       lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
       thinking: this.thinking,
       lastThought: this.lastThought,

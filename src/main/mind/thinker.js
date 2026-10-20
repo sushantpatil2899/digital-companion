@@ -47,6 +47,15 @@ const STATE_WORDS = {
   offerGame: 'asking Sushant to play tic-tac-toe', ttt: 'playing tic-tac-toe with Sushant',
 };
 
+/** "today", "yesterday", "3 days ago" for a 'YYYY-MM-DD' day. */
+function daysAgo(day, now) {
+  const [y, m, d] = day.split('-').map(Number);
+  const n = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(y, m - 1, d).getTime()) / 86400000);
+  if (n <= 0) return 'today';
+  if (n === 1) return 'yesterday';
+  return `${n} days ago`;
+}
+
 function partOfDay(hour) {
   if (hour < 5) return 'the middle of the night';
   if (hour < 12) return 'morning';
@@ -67,7 +76,8 @@ function needsWords(n) {
   return out.join(', ');
 }
 
-function systemPrompt(personality) {
+/** `notes`: what Sushant wrote about himself in about-sushant.md (Phase 2). */
+function systemPrompt(personality, notes = '') {
   const traits = P.describe(personality)
     .map((t) => `- ${t}`)
     .join('\n');
@@ -81,6 +91,7 @@ function systemPrompt(personality) {
     traits,
     '',
     `You and Sushant: you ${P.describeRelationship(personality)}.`,
+    ...(notes ? ['', 'What Sushant told you about himself:', notes] : []),
     '',
     'How you talk:',
     `- At most ${MAX_WORDS} words, one short sentence. Simple, cute baby words.`,
@@ -123,6 +134,10 @@ function situationPrompt(s) {
   if (decided.length) {
     lines.push('', 'Your recent decisions:');
     for (const e of decided) lines.push(`- ${describeEvent(e, s.now)}`);
+  }
+  if (s.memories && s.memories.length) {
+    lines.push('', 'Things you remember (bring one up only if it really fits):');
+    for (const m of s.memories) lines.push(`- ${m.date ? `(${daysAgo(m.date, s.now)}) ` : ''}${m.text}`);
   }
   lines.push('', `Just now: ${s.trigger.text}`);
   lines.push(

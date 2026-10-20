@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Togepi's memories</title>
+    <style>
+      :root {
+        --bg: #fdfaf2;
+        --card: #ffffff;
+        --ink: #3a2d25;
+        --muted: #8a7a6c;
+        --line: #eadfcf;
+        --bad: #df6166;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #2d2925;
+          --card: #3a352f;
+          --ink: #f4ece0;
+          --muted: #b3a593;
+          --line: #4a433b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--bg);
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      button {
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+      main {
+        padding: 6px 16px 24px;
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px;
+        margin-top: 12px;
+      }
+      h2 {
+        margin: 0 0 6px;
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+      }
+      h2 small {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+        padding: 6px 0;
+        border-top: 1px solid var(--line);
+      }
+      li:first-child {
+        border-top: none;
+      }
+      .when {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .forget {
+        border: none;
+        background: none;
+        color: var(--muted);
+        padding: 0 4px;
+        font-size: 16px;
+        line-height: 1;
+      }
+      .forget:hover {
+        color: var(--bad);
+      }
+      .empty,
+      .notes {
+        color: var(--muted);
+        white-space: pre-wrap;
+        margin: 0;
+      }
+      .day h3 {
+        margin: 8px 0 2px;
+        font-size: 13px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .day p {
+        margin: 0 0 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Togepi's memories</h1>
+      <p>What he remembers. × makes him forget it. Everything is also in Markdown files you can edit.</p>
+      <div class="actions">
+        <button id="notes-edit">Tell him about you…</button>
+        <button id="folder">Show the folder</button>
+      </div>
+    </header>
+    <main>
+      <section>
+        <h2>Your notes <small>he reads these, never changes them</small></h2>
+        <p class="notes" id="notes"></p>
+      </section>
+      <section>
+        <h2>What he's learned about you</h2>
+        <ul id="facts"></ul>
+      </section>
+      <section>
+        <h2>His opinions and jokes</h2>
+        <ul id="opinions"></ul>
+      </section>
+      <section>
+        <h2>His diary</h2>
+        <div id="journal"></div>
+      </section>
+    </main>
+    <script src="memories.js"></script>
+  </body>
+</html>

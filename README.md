@@ -105,7 +105,14 @@ Both run in llama.cpp's `llama-server`, in background processes listening on `12
 
 **What he sees** of your screen comes from *Notice which app I'm using* (under *Brain*): the app in front and, in a browser, the title and site of the tab you're looking at. Without it he only knows what you do with him. **Privacy is built in:** private / incognito windows (Chrome, Arc, Brave, Edge), password managers, payment, checkout and banking pages, money apps, sign-in pages and medical portals are never shown to him; he only notes that "something private" is open. Add your own apps, sites or words to `privacyBlock` in `settings.json` (*Mind → Privacy blocklist…*). Safari doesn't say which of its windows are private, so a private Safari window is only caught by these rules.
 
-**His memory** so far is `events.jsonl` in `~/Library/Application Support/Togepi/mind/` (*Mind → Show his memory folder…*): what you were doing, what he said and how you reacted. **Show his brain…** shows his last thought and why he spoke or stayed quiet.
+**His memory.** Everything lives as plain files in `~/Library/Application Support/Togepi/mind/` that you can read and edit (*Mind → Show his memory folder…*):
+
+- `events.jsonl`: what you were doing, what you did with him, what he said or kept to himself and how you reacted. Kept for 90 days.
+- `journal/YYYY-MM-DD.md`: **his diary**, a few lines in his own baby voice, written when you're away at the end of the day (from 6 pm, after 10 minutes away), or the next time he runs for days he missed.
+- `about-sushant.md`: **what he's learned about you** (written with his diary), plus a *Notes from Sushant* section for anything you want him to know (your goals, your resume, what you like). He reads your notes but never changes them.
+- `about-me.md`: **his own opinions and running jokes**.
+
+When he thinks, the few memories that fit best come to mind (how recent, how important and how relevant they are), and he may bring one up: "Amazon again? Third one this week!". Email is only remembered as "read emails", never the subjects, and private things are never stored. *Mind → Memories…* shows everything he remembers, with a × to make him forget something, and a button to write your notes. **Show his brain…** shows his last thought, what came to mind, when he last wrote his diary, and why he spoke or stayed quiet.
 
 *Mind → Think and talk for himself* turns it all off (and stops the models); *Chirp when he talks* mutes him. Without the models (or before they've loaded) he behaves exactly as before.
 
@@ -158,7 +165,7 @@ src/
   main/nudges.js       water / stretch / eye rest / bedtime timers, "remind me" notes, what he says
   main/games/          fetch (the ball's physics) and tic-tac-toe (rules and his moves)
   main/mind/           his own mind: personality, event log, privacy gate, the think/decide
-                       loop, llama-server engine, your sound clips
+                       loop, memory (diary, facts, recall), llama-server engine, your sound clips
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
                        browser tabs (AppleScript) and calendar (EventKit)
   main/main.js         Electron main: transparent always-on-top window that follows him,
@@ -168,6 +175,7 @@ src/
   renderer/games/      the thrown ball's window and the tic-tac-toe board
   renderer/chirp.js    his chirps (Web Audio)
   renderer/personality.*  the personality sliders
+  renderer/memories.*  the Memories window
 scripts/fetch-models.js  downloads llama-server and the models for `npm run dist`
 docs/mind/             the plan, decisions and research for his mind
 test/                  node:test tests for the simulation

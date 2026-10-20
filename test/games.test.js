@@ -8,6 +8,14 @@ const { TicTacToe, winner, bestMoves, chooseMove } = require('../src/main/games/
 const screens = require('../src/main/screens');
 const brain = require('../src/main/brain');
 
+// A clock that matches the hour a test says it is (the real clock at night
+// would make a bedtime nudge due in the middle of a daytime test).
+function atHour(h) {
+  const d = new Date();
+  d.setHours(h, 0, 0, 0);
+  return d.getTime();
+}
+
 const bounds = { left: 0, right: 1920, top: 0, floor: 1040 };
 
 function seeded(seed = 1) {
@@ -31,7 +39,7 @@ function runUntil(c, seconds, done, cursor) {
 
 function settled(opts = {}) {
   const c = new Companion({ bounds, rng: seeded(opts.seed || 5), x: opts.x || 800 });
-  c.setContext({ hour: 14, now: Date.now() });
+  c.setContext({ hour: 14, now: atHour(14) });
   run(c, 3);
   c.enter('idle', 1000);
   return c;
@@ -186,7 +194,7 @@ test('fetch: a meeting starting puts the ball away', () => {
   const c = settled();
   c.startGame('fetch', true);
   run(c, 2, { x: 800, y: 700 });
-  c.setContext({ hour: 14, now: Date.now(), quiet: true });
+  c.setContext({ hour: 14, now: atHour(14), quiet: true });
   run(c, 1);
   assert.strictEqual(c.game, null);
   assert.strictEqual(c.ball.state, 'away');
@@ -271,7 +279,7 @@ test('screens: after a while on one screen he wanders over to another on his own
   for (const seed of [1, 2, 3]) {
     const c = new Companion({ bounds: ss[0], halfWidth: 56, height: 142, x: 700, y: ss[0].floor, rng: seeded(seed) });
     c.setScreens(layout);
-    c.setContext({ hour: 14, now: Date.now() });
+    c.setContext({ hour: 14, now: atHour(14) });
     let switches = 0;
     let last = c.screenIndex;
     let lastSwitch = 0;

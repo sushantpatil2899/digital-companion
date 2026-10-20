@@ -70,6 +70,13 @@ const EFFECTS = {
 };
 
 // Context he lives in. Filled in by the ContextTracker (src/main/context.js).
+/** Today at 12:00 local time (ms), so a default context's clock matches its hour. */
+function middayToday() {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  return d.getTime();
+}
+
 function defaultContext() {
   return {
     hour: 12, // local hour, 0..23
@@ -87,7 +94,7 @@ function defaultContext() {
     visibleApps: [], // apps with a window showing on any screen
     nextEvent: null, // { title, start, end } (ms epoch)
     inEvent: null,
-    now: Date.now(), // wall clock (ms)
+    now: middayToday(), // wall clock (ms); the real one comes from the ContextTracker
     presenting: false,
     reminder: null, // one-shot: { kind: '30' | '5', event } an event starts soon
     eventEnded: false, // one-shot

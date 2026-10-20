@@ -16,6 +16,7 @@ const { Mind } = require('./mind/mind');
 const { Engine } = require('./mind/engine');
 const { EventLog } = require('./mind/events');
 const { SoundLibrary } = require('./mind/sounds');
+const { Memory, pruneEvents } = require('./mind/memory');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -114,6 +115,8 @@ let personality = null;
 let personalityWin = null;
 let noticeTimer = null;
 let sounds = null;
+let memory = null;
+let memoriesWin = null;
 const IS_MAC = process.platform === 'darwin';
 
 // --------------------------------------------------------------- opt-in context (macOS)
@@ -786,6 +789,7 @@ function mindMenu() {
     },
     { type: 'separator' },
     { label: 'Personality…', click: showPersonality },
+    { label: 'Memories…', click: showMemories },
     { label: 'Open sounds folder…', click: () => sounds && shell.openPath(sounds.dir) },
     { label: 'Privacy blocklist… (settings.json)', click: () => settings && shell.openPath(settings.file) },
     { label: 'Show his memory folder…', click: () => shell.openPath(mindDir()) },
@@ -907,12 +911,30 @@ function personalityFile() {
   return path.join(mindDir(), 'personality.md');
 }
 
+function eventsFile() {
+  return path.join(mindDir(), 'events.jsonl');
+}
+
 function startMind() {
   personality = P.load(personalityFile());
   sounds = new SoundLibrary(path.join(app.getPath('userData'), 'sounds'));
+  memory = new Memory(mindDir());
+  // The raw event log is kept 90 days (his diary keeps the gist); checked daily.
+  const prune = () => pruneEvents(eventsFile());
+  prune();
+  setInterval(prune, 24 * 3600 * 1000);
+  // You can edit his memory files by hand: pick up the changes.
+  for (const f of ['about-sushant.md', 'about-me.md']) {
+    fs.watchFile(path.join(mindDir(), f), { interval: 3000 }, () => {
+      memory.load();
+      sendMemories();
+    });
+  }
   mind = new Mind({
     personality,
-    log: new EventLog({ file: path.join(mindDir(), 'events.jsonl') }),
+    memory,
+    eventsFile: eventsFile(),
+    log: new EventLog({ file: eventsFile() }),
     getSelf: () => ({
       band: companion.moodBand(),
       needs: companion.needs,
@@ -920,6 +942,7 @@ function startMind() {
       hour: companion.context.hour,
       quiet: !!companion.context.quiet,
       away: !!companion.context.userAway,
+      awayFor: companion.context.awayFor || 0,
       asleep: companion.state === 'sleep',
       busy: !!companion.board(),
     }),
@@ -935,7 +958,7 @@ function applyMind(on) {
   if (!mind) return;
   mind.setEnabled(on);
   if (on && !engine) {
-    engine = new Engine();
+    engine = new Engine({ pidFile: path.join(mindDir(), 'engine.pids') });
     mind.engine = engine;
     engine
       .start()
@@ -1014,6 +1037,48 @@ ipcMain.on('personality-reset', () => {
 });
 
 ipcMain.on('personality-open-file', () => shell.showItemInFolder(personalityFile()));
+
+function sendMemories() {
+  if (memoriesWin && !memoriesWin.isDestroyed() && memory) memoriesWin.webContents.send('memories', memory.all());
+}
+
+function showMemories() {
+  if (memoriesWin && !memoriesWin.isDestroyed()) {
+    memory.load();
+    sendMemories();
+    memoriesWin.show();
+    memoriesWin.focus();
+    return;
+  }
+  memoriesWin = new BrowserWindow({
+    width: 440,
+    height: 620,
+    title: "Togepi's memories",
+    resizable: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'memories-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  followYou(memoriesWin);
+  memoriesWin.loadFile(path.join(__dirname, '..', 'renderer', 'memories.html'));
+  memoriesWin.webContents.on('did-finish-load', () => {
+    if (memory) memory.load();
+    sendMemories();
+  });
+  memoriesWin.on('closed', () => {
+    memoriesWin = null;
+  });
+}
+
+ipcMain.on('memory-forget', (_e, id) => {
+  if (memory && typeof id === 'string' && memory.forget(id)) sendMemories();
+});
+ipcMain.on('memory-open-folder', () => shell.openPath(mindDir()));
+ipcMain.on('memory-edit-notes', () => shell.openPath(path.join(mindDir(), 'about-sushant.md')));
 
 // Fully local: nothing in his windows may reach the internet. (The models run
 // in llama-server on 127.0.0.1; see src/main/mind/engine.js.)
