@@ -20,6 +20,8 @@ const { spawn, execFileSync } = require('child_process');
 const START_TIMEOUT = 180 * 1000; // ms to load a model
 const REQUEST_TIMEOUT = 60 * 1000;
 const MAX_RESTARTS = 3;
+const MEDIA_MARKER = '<__media__>'; // where llama.cpp puts a picture in the prompt
+const IMAGE_SLOT = '[[togepi-picture]]';
 
 /** Where the engine and models live: inside the app when packaged, the repo otherwise. */
 function defaultRoot() {
@@ -245,12 +247,15 @@ class Engine {
     const t = await fetchJson(`${this.voice.url}/apply-template`, {
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: withImage ? `<__media__>\nThis is a picture of the window Sushant is looking at.\n\n${user}` : user },
+        { role: 'user', content: withImage ? `${IMAGE_SLOT}\nThis is a picture of the window Sushant is looking at.\n\n${user}` : user },
       ],
       chat_template_kwargs: { enable_thinking: false },
     });
+    // The template step drops llama.cpp's media marker, so a placeholder goes
+    // through it and is swapped for the marker afterwards.
+    const prompt = withImage ? t.prompt.replace(IMAGE_SLOT, MEDIA_MARKER) : t.prompt;
     const r = await fetchJson(`${this.voice.url}/completion`, {
-      prompt: withImage ? { prompt_string: t.prompt, multimodal_data: [image] } : t.prompt,
+      prompt: withImage ? { prompt_string: prompt, multimodal_data: [image] } : prompt,
       n_predict: 400,
       temperature: 0.9,
       top_p: 0.95,
