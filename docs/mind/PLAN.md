@@ -88,7 +88,7 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `questions` (structure agreed; editor and remaining layers being confirmed)
+### Phase 1: his own voice — status: `questions` answered; waiting for Hugging Face access to start the Laya spike
 
 Goal: he comments in his own words, in character, on what you're doing.
 
@@ -105,8 +105,10 @@ Planned scope (updated 2026-10-19 after Sushant's answers):
   `decide(question, options) → probabilities`. Uses: privacy gate, wake-up,
   picking among ~4 LLM candidate lines, picking an action. Phase 1 starts with
   a spike to run Laya in Node (ONNX); fallback is LLM self-rating.
-- **Voice = sound**: Togepi chirps when he speaks, never words read aloud
-  (Phase 1 or 5, to be confirmed).
+- **Voice = sound**: Togepi chirps when he speaks, never words read aloud.
+  Generated chirps by default; Sushant's own clips from
+  `~/Library/Application Support/Togepi/sounds/` (`<mood>-<anything>.<ext>`)
+  when present. See DECISIONS.md.
 - **Decision loop** (research §9): observe → event log → wake-up → think
   (LLM) → decide → act or stay silent → write the decision and your reaction
   back so the next think step sees it. Wake-ups only decide *whether he
@@ -167,7 +169,7 @@ Planned scope:
 
 ### Phase 5: polish — status: `not started`
 
-Candidates: mood-based chirp sounds (Animal Crossing style), optional vision
+Candidates: optional vision
 model for screenshots, optional fine-tuning of his speaking style, bigger model.
 
 ## Honest limits (agreed up front)
