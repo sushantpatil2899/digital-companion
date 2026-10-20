@@ -114,7 +114,7 @@ test('lines are cut to one short sentence and checked', () => {
 });
 
 test('the model answer is parsed and made safe', () => {
-  const t = T.parseThought(JSON.stringify({ thought: 'He looks tired', urge: 1.4, lines: ['Break time?', 'As an AI…', 'Break time?!'], action: 'dance' }));
+  const t = T.parseThought(JSON.stringify({ thought: 'He looks tired', urge: 14, lines: ['Break time?', 'As an AI…', 'Break time?!'], action: 'dance' }));
   assert.deepEqual(t, { thought: 'He looks tired', urge: 1, lines: ['Break time?'], action: 'none' });
   assert.equal(T.parseThought('not json'), null);
 });
@@ -153,6 +153,8 @@ test('private observations are described without details', () => {
 
 function fakeEngine(answers, opts = {}) {
   const calls = [];
+  // Answers are written with urge 0..1 here; the model's scale is 0..10.
+  const scale = (a) => (a && typeof a.urge === 'number' ? { ...a, urge: a.urge * 10 } : a);
   return {
     ready: true,
     canDecide: !!opts.decide,
@@ -160,7 +162,7 @@ function fakeEngine(answers, opts = {}) {
     async think(req) {
       calls.push(req);
       const a = typeof answers === 'function' ? answers(req) : answers;
-      return JSON.stringify(a);
+      return JSON.stringify(scale(a));
     },
     async decide(state, questions) {
       calls.push({ state, questions });
@@ -231,6 +233,14 @@ test('the rails: no speaking in meetings, while away, or too often', async () =>
   m.mind.wake({ kind: 'heartbeat', text: 'Nothing special.', interactive: false });
   await flush();
   assert.equal(m.spoken.length, 2);
+});
+
+test('he never talks in his sleep, even if he fell asleep while thinking', async () => {
+  const m = makeMind(fakeEngine({ thought: 'zzz', urge: 1, lines: ['Hiii!'], action: 'none' }), { asleep: true });
+  m.mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(m.spoken.length, 0);
+  assert.equal(m.mind.log.last(['silent']).why, 'asleep');
 });
 
 test('how you react is written back: clicked, or ignored after a while', async () => {

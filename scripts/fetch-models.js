@@ -28,10 +28,13 @@ const ENGINE_ASSETS = {
   'linux-arm64': `llama-${LLAMA_TAG}-bin-ubuntu-arm64.tar.gz`,
 };
 
-// The two models (Hugging Face repo + file). `args` are extra llama-server options.
+// The two models (Hugging Face repo + file). `args` are extra llama-server
+// options. Chosen by testing on Togepi's own prompts (docs/mind/DECISIONS.md):
+// a lighter voice is ggml-org/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q4_0.gguf,
+// a lighter decision model ggml-org/Laya-GGUF Laya-Q8_0.gguf.
 const MODELS = {
   voice: { repo: 'ggml-org/gemma-4-12B-it-GGUF', file: 'gemma-4-12B-it-Q4_0.gguf', args: [] },
-  decide: { repo: 'ggml-org/Laya-GGUF', file: 'Laya-Q8_0.gguf', args: [] },
+  decide: { repo: 'ggml-org/vllm-d3-nano-GGUF', file: 'vllm-d3-nano-Q8_0.gguf', args: [] },
 };
 
 function mb(n) {

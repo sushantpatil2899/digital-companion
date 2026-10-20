@@ -35,7 +35,7 @@ const MIND = {
   recencyPenalty: 0.3,
   recencyTau: 90, // s
   ignoredPenalty: 0.08, // per line in a row you ignored (max 3)
-  privacyThreshold: 0.6, // decision model's "this is sensitive" probability that blocks
+  privacyThreshold: 0.5, // decision model's "this is sensitive" probability that blocks (tested: normal pages ≈ 0.01, sensitive ≥ 0.69)
 };
 
 // What he says when he notices you changed his personality, if the language
@@ -278,7 +278,7 @@ class Mind {
     if (!this.enabled) return 'mind off';
     if (self.quiet) return 'quiet (meeting)';
     if (self.away) return 'you are away';
-    if (self.asleep && !trigger.interactive) return 'asleep';
+    if (self.asleep) return 'asleep';
     if (self.busy) return 'busy showing something';
     const since = (this.now() - this.lastSpokeAt) / 1000;
     if (since < (trigger.interactive ? MIND.gapInteractive : MIND.gapUnprompted)) return 'spoke too recently';

@@ -73,10 +73,11 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
   so animation never stalls. Chosen over `node-llama-cpp` because llama-server
   natively serves decision models (`/v1/systemone`: Laya, OpenJev, Clef, …) as
   well as language models. Code: `src/main/mind/engine.js`.
-- **Voice model:** Gemma 4 12B instruct, GGUF Q4_0 (~7 GB file), Apache-2.0.
-  Proposed default, to be confirmed by testing (DECISIONS.md). Swappable in
-  `scripts/fetch-models.js`.
-- **Decision model:** Laya, GGUF Q8_0 (`ggml-org/Laya-GGUF`), Apache-2.0.
+- **Voice model:** Gemma 4 12B instruct, GGUF Q4_0 (~7 GB file), Apache-2.0,
+  chosen by testing (DECISIONS.md). Swappable in `scripts/fetch-models.js`.
+- **Decision model:** vLLM d3-nano, GGUF Q8_0 (`ggml-org/vllm-d3-nano-GGUF`,
+  2.5 GB), Apache-2.0, chosen over Laya by testing. It also reads images
+  (Phase 3).
 - **Bundling:** `scripts/fetch-models.js` downloads llama-server
   (llama.cpp release `b11748`) into `engine/` and the models into `models/`
   (both git-ignored); `npm run dist` runs it, electron-builder copies both into
@@ -96,7 +97,7 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `in progress` (built and tested without the real models; model testing waits for model downloads in the dev container)
+### Phase 1: his own voice — status: `in progress` (built and tested with the real models; waiting for Sushant to try it on his Mac)
 
 Goal: he comments in his own words, in character, on what you're doing.
 
@@ -140,11 +141,11 @@ Built (2026-10-20): everything above. Tested: unit tests for all of it with a
 fake model; the real app in Electron (speech bubble, clicking it, he notices
 personality changes, editor, network blocked); llama-server end to end with a
 tiny throwaway model (start, JSON-constrained think, the decision loop).
-Remaining before `done`:
-1. Download the real models in the dev container (needs `*.hf.co` allowed in
-   its network settings), check Laya's answers on Togepi's questions and the
-   voice model's lines, and confirm or change the model choice.
-2. Sushant builds the app and tries it on his Mac (speed, chirps, feel).
+Then (2026-10-20) tested with the real models: Gemma 4 12B / E4B on his real
+prompts, Laya vs. d3-nano on privacy and line picking, and the whole app end
+to end (he answered a pat with "Yay! Soft and warm!"). Results and choices in
+DECISIONS.md. Remaining before `done`: Sushant builds the app and tries it on
+his Mac (speed, chirps, how he feels).
 
 Known limit: the GPU can't be tested in the dev container; reply quality is
 checked there on CPU, speed is confirmed by Sushant on his Mac.

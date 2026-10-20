@@ -36,7 +36,8 @@ const SENSITIVE_TITLE = [
   /\b(checkout|payment|pay now|place (your )?order|billing|invoice|credit card|card details|bank(ing)?|wire transfer|transfer money|account balance|routing number|wallet)\b/i,
   /\b(sign in|log in|login|sign-in|password|passcode|verification code|two-factor|2fa|one-time code)\b/i,
   /\b(private browsing|incognito|inprivate)\b/i,
-  /\b(test results|medical record|patient portal|prescription)\b/i,
+  /\b(test results|lab results|medical record|patient portal|prescription|diagnosis)\b/i,
+  /\b(tax return|social security|ssn|passport number|1040|w-2)\b/i,
 ];
 
 function lower(s) {

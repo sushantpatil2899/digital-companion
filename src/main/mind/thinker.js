@@ -21,7 +21,7 @@ const SCHEMA = {
   type: 'object',
   properties: {
     thought: { type: 'string', maxLength: 140 },
-    urge: { type: 'number', minimum: 0, maximum: 1 },
+    urge: { type: 'integer', minimum: 0, maximum: 10 },
     lines: { type: 'array', items: { type: 'string', maxLength: 60 }, minItems: 1, maxItems: MAX_LINES },
     action: { type: 'string', enum: ACTIONS },
   },
@@ -74,6 +74,7 @@ function systemPrompt(personality) {
   return [
     "You are the inner voice of Togepi, a baby Pokémon who lives on Sushant's computer screen as his companion.",
     personality.self,
+    'You talk like a baby, but you understand what Sushant does on his computer (job hunting, coding, emails, videos, games) and you have feelings and opinions about it.',
     '',
     'Your personality (only what stands out):',
     traits,
@@ -117,8 +118,11 @@ function situationPrompt(s) {
   lines.push('', `Just now: ${s.trigger.text}`);
   lines.push(
     '',
-    'Think one short private thought. Then decide how much you want to say something right now (urge, 0 = not at all, 1 = must say it), ' +
-      `write up to ${MAX_LINES} different lines you might say, and pick an action (${ACTIONS.join(', ')}). Answer in JSON.`,
+    'Think one short private thought. Then decide how much you want to say something right now, as "urge" from 0 to 10:',
+    '- 0-3: nothing worth saying. Most moments are like this, especially when nothing new happened, or you spoke recently and Sushant ignored it.',
+    '- 4-6: you would like to say something.',
+    '- 7-10: you really must: Sushant just played with you, or something big happened.',
+    `Then write up to ${MAX_LINES} different lines you might say, and pick an action (${ACTIONS.join(', ')}). Answer in JSON.`,
   );
   return lines.join('\n');
 }
@@ -178,7 +182,8 @@ function parseThought(text, recent = []) {
     if (c) lines.push(c);
     if (lines.length >= MAX_LINES) break;
   }
-  const urge = Number(o.urge);
+  // The model answers 0..10; the mind works with 0..1.
+  const urge = Number(o.urge) / 10;
   return {
     thought: typeof o.thought === 'string' ? o.thought.slice(0, 200) : '',
     urge: Number.isFinite(urge) ? Math.max(0, Math.min(1, urge)) : 0,

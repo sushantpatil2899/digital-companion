@@ -93,7 +93,7 @@ Nothing leaves your Mac: no internet, no accounts. His needs, mood, today's wate
 On top of his rule-based brain, Togepi **thinks and talks for himself**, using two AI models that run on your Mac (no internet, no accounts):
 
 - a **language model** (his "voice", Gemma 4 12B) that thinks about what's going on and writes what he might say;
-- a **decision model** ([Laya](https://huggingface.co/convaiinnovations/laya)) that quickly picks which of those lines fits him best, and double-checks that nothing private slips through.
+- a **decision model** ([vLLM d3-nano](https://huggingface.co/vllm-sr/d3-nano)) that quickly picks which of those lines fits him best, and double-checks that nothing private slips through.
 
 Both run in llama.cpp's `llama-server`, in background processes listening on `127.0.0.1` only, so his animation never stutters while he thinks. His windows can't reach the internet at all.
 
@@ -129,7 +129,7 @@ npm install
 npm run dist
 ```
 
-The first time, this downloads his mind's engine and models (about 8 GB, into `engine/` and `models/` in the repo; later builds reuse them, and `npm run fetch-models` does just this step). Then it builds `dist/mac-arm64/Togepi.app` (or `dist/mac/` on Intel), with the models inside, so the app itself never needs the internet. It needs about 9 GB of free memory while he thinks; a Mac with 16 GB or more is best. Drag it into **Applications** and open it. It's a personal build that isn't notarized, so the first time macOS may say it can't verify it: **right-click Togepi.app → Open → Open**. After that it opens normally.
+The first time, this downloads his mind's engine and models (about 10 GB, into `engine/` and `models/` in the repo; later builds reuse them, and `npm run fetch-models` does just this step). Then it builds `dist/mac-arm64/Togepi.app` (or `dist/mac/` on Intel), with the models inside, so the app itself never needs the internet. His mind uses about 11 GB of memory while the app runs; a Mac with 16 GB or more is best. Drag it into **Applications** and open it. It's a personal build that isn't notarized, so the first time macOS may say it can't verify it: **right-click Togepi.app → Open → Open**. After that it opens normally.
 
 Then, from his menu: turn on *Start at login*, and under *Brain* turn on the features you want. Rebuilding the app may make macOS ask for the permissions again.
 

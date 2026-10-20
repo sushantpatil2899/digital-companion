@@ -3,7 +3,7 @@
 // Runs the two local models with llama.cpp's llama-server, each in its own
 // background process so thinking never stalls his animation:
 // - "voice": the language model that thinks and writes his lines
-// - "decide": the decision model (Laya) that answers typed questions fast
+// - "decide": the decision model (vLLM d3-nano) that answers typed questions fast
 // Both listen on 127.0.0.1 only; nothing leaves your computer.
 //
 // Files (downloaded by scripts/fetch-models.js, bundled into the app):
@@ -160,8 +160,8 @@ class Engine {
       return false;
     }
     this.state = 'starting';
-    const voiceArgs = ['-m', f.voice, '-c', '8192', '-ngl', 'all', '-np', '1', ...((f.manifest.voice && f.manifest.voice.args) || [])];
-    const decideArgs = ['-m', f.decide, '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
+    const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...((f.manifest.voice && f.manifest.voice.args) || [])];
+    const decideArgs = ['-m', f.decide, '-c', '4096', '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
     this.voice = new Server('voice', voiceArgs, f.server);
     this.decider = new Server('decide', decideArgs, f.server);
     const results = await Promise.allSettled([this.voice.start(), this.decider.start()]);
