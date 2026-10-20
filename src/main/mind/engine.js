@@ -20,7 +20,7 @@ const { spawn, execFileSync } = require('child_process');
 const START_TIMEOUT = 180 * 1000; // ms to load a model
 const REQUEST_TIMEOUT = 60 * 1000;
 const MAX_RESTARTS = 3;
-const MEDIA_MARKER = '<__media__>'; // where llama.cpp puts a picture in the prompt
+const DEFAULT_MEDIA_MARKER = '<__media__>'; // older llama-servers; newer ones pick a random one (GET /props)
 const IMAGE_SLOT = '[[togepi-picture]]';
 
 /** Where the engine and models live: inside the app when packaged, the repo otherwise. */
@@ -251,9 +251,9 @@ class Engine {
       ],
       chat_template_kwargs: { enable_thinking: false },
     });
-    // The template step drops llama.cpp's media marker, so a placeholder goes
-    // through it and is swapped for the marker afterwards.
-    const prompt = withImage ? t.prompt.replace(IMAGE_SLOT, MEDIA_MARKER) : t.prompt;
+    // A placeholder goes through the template and is swapped for the
+    // server's media marker (where the picture goes) afterwards.
+    const prompt = withImage ? t.prompt.replace(IMAGE_SLOT, await this.mediaMarker()) : t.prompt;
     const r = await fetchJson(`${this.voice.url}/completion`, {
       prompt: withImage ? { prompt_string: prompt, multimodal_data: [image] } : prompt,
       n_predict: 400,
@@ -263,6 +263,21 @@ class Engine {
       cache_prompt: true,
     });
     return r ? r.content : null;
+  }
+
+  /** The marker the voice server expects where a picture goes (random per server run). */
+  async mediaMarker() {
+    if (this.voice.mediaMarker && this.voice.markerPort === this.voice.port) return this.voice.mediaMarker;
+    let marker = DEFAULT_MEDIA_MARKER;
+    try {
+      const props = await fetchJson(`${this.voice.url}/props`, null, 5000);
+      if (props && typeof props.media_marker === 'string' && props.media_marker) marker = props.media_marker;
+    } catch {
+      // older server: the default marker
+    }
+    this.voice.mediaMarker = marker;
+    this.voice.markerPort = this.voice.port; // a restarted server picks a new one
+    return marker;
   }
 
   /** Typed questions about `state` (TypeSafe System One shape); returns the answers. */
