@@ -388,11 +388,65 @@ window rendered with history and locks; a simulated week through Gemma 12B
 Remaining before `done`: Sushant tries it on his Mac (growth shows after a
 day of use; the first reflection on a Sunday evening with 3+ diary days).
 
-### Phase 5: polish — status: `not started`
+### Phase 5: polish — status: `questions` (proposal below, asked 2026-10-20 while Sushant tests Phases 3 and 4)
 
-Candidates: optional fine-tuning of his speaking style, bigger model,
-Togetic evolution (parked by Sushant on 2026-10-20; only if he brings it up), anything found while using
-him.
+Goal: make what's built pleasant to live with day to day: see results
+without waiting days, light on memory and battery, his lines more like him,
+and easy to diagnose from a distance.
+
+Original candidates: optional fine-tuning of his speaking style, a bigger
+model, anything found while using him. Togetic evolution stays parked
+(Sushant, 2026-10-20) and is not part of this phase.
+
+Where things stand: the two models take about 10 GB on disk and about
+11 GB of memory while running (Gemma 12B 7.2 GB + vision 0.2 GB + d3-nano
+2.6 GB + their working memory) out of 24 GB, all the time he's running. The
+diary and growth only show up after a day or a week. Problems on the Mac
+can only be described to me in words and screenshots.
+
+Proposal (each point is a question for Sushant, see DECISIONS.md):
+1. "Try it now" (Mind menu): *Write today's diary now*, *Count today
+   towards our relationship now* and *Reflect on this week now*, so you can
+   see Phases 2 and 4 working in minutes instead of days. The results are
+   real: undo from the Personality window, forget from Memories. A
+   reflection started by hand counts as that week's one (no second one on
+   Sunday).
+2. Lighter on memory and battery: stop the models when you've been away
+   30+ minutes (after the diary and reflection are done), at night while he
+   sleeps, and on battery below 20%; start them again when you're back
+   (~10-20 s on the Mac, he behaves as he did before Phase 1 meanwhile).
+   The brain view shows why they're off.
+3. His speaking style without fine-tuning: a "style bank" of example
+   Togepi lines in his prompt, starting from a hand-written set, plus the
+   lines you clicked or petted. Lines you ignored are not used as examples.
+   Fine-tuning (training the model itself) needs hundreds of good examples
+   and a long training run, and would have to be redone for every model
+   update; it stays an option if the style bank isn't enough.
+4. No bigger model: a bigger one wouldn't leave enough of the 24 GB for your
+   own work. Instead, measure on your Mac (seconds per thought, memory used)
+   and show it in the brain view. Optional "Lighter mind" switch using Gemma
+   4 E4B (4.6 GB instead of 7.2 GB; less specific diary, tested in Phase 2,
+   picture reading not tried with it yet).
+5. Diagnostics: *Mind → Copy a report* puts a short report on the
+   clipboard to paste to me: app and model versions, model status and
+   timings, permissions, settings, recent errors, counts of memories and
+   growth weeks. No screen text, titles, memories or notes.
+6. First-run welcome: one window the first time he runs that explains what
+   he can do and asks for each permission in turn (app/tab titles, screen
+   reading, calendar), with the same switches as the menus.
+7. How chatty he is: a *Chattiness* choice (quieter / as he is / chattier)
+   on top of his personality, and *Shush for an hour* in the menu.
+8. Fixes for anything Sushant finds while testing Phases 3 and 4.
+
+Testing: unit tests for each part (power rules with a fake clock and
+battery, style bank selection, report contents leaking nothing private,
+try-it-now paths with a fake model); the models stopping and starting in the
+app here; real-model check of the style bank.
+
+## Later
+
+Sushant has more ideas for after Phase 5; they'll be planned the same way
+(questions first) once he shares them.
 
 ## Honest limits (agreed up front)
 
