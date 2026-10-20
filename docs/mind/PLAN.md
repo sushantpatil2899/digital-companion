@@ -239,6 +239,32 @@ Proposal (each point is a question for Sushant, see DECISIONS.md):
 6. Smarter comments: he compares what he reads with your notes (e.g. a job
    description vs. your skills: "Python! You know Python!").
 
+Multiple screens and attention (Sushant's feedback, 2026-10-20; proposal):
+- Today: he only knows the app with keyboard focus (plus that browser's front
+  tab), from `lsappinfo`; the window list (`windows.jxa.js`) is used only for
+  meeting detection; the cursor isn't used. His "on screen right now" changes
+  only when the focused app changes, so a window without a title (e.g. a
+  chat app) leaves him leaning on the last interesting one (GitHub).
+- Proposal: track **attention**, not just focus. Inputs he already has or
+  can get: the focused app; every visible window in front-to-back order with
+  its screen position (CoreGraphics, already read every 3 s; titles too once
+  Screen Recording is allowed); the cursor position (main process, 60x/s);
+  the display layout.
+  - Window under the cursor = the frontmost window containing the cursor.
+  - Attention: if the cursor moved in the last ~15 s, the window under it
+    (you're reading or scrolling there); otherwise the focused window
+    (you're typing there).
+  - He's told all three: "typing in: Claude (screen 1)", "cursor on: Chrome
+    — PR #14 · GitHub (screen 2)", "also open: …", so he can understand
+    multitasking ("talking to Claude while GitHub is open").
+  - Switching attention between windows counts as "something new on screen"
+    only after ~5 s there, so moving the cursor across doesn't wake him.
+- Pictures with several screens: always **one window**, never a whole
+  screen. `screencapture -l <window id>` captures just that window, whichever
+  screen it's on (even partly covered). One picture per look, of the window
+  you're paying attention to; other windows only by title. If the focused and
+  the cursor windows differ, they alternate between looks.
+
 Honest limits: Screen Recording, Vision OCR and window capture only exist on
 the Mac, so that part can't be run in the dev container (it will be tested
 on Sushant's Mac; the vision-model part can be tested here). Ad-hoc signed
