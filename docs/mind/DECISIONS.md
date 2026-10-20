@@ -86,3 +86,21 @@ Technical choices made while building Phase 1, for Sushant to confirm.
 | 2026-10-20 | He knows Chrome is open but not what the tab shows. | Explained: he gets the front tab's title and site (now shown as "He sees" in the brain view); reading the page itself is Phase 3 (screen text). | Phase boundary. |
 | 2026-10-20 | Copilot review emails on PRs. | PRs never request Copilot; it's requested automatically by a GitHub setting (repository ruleset or personal Copilot settings), which Sushant can turn off. | Not set by the PRs. |
 
+## Phase 2 questions
+
+Asked 2026-10-20. Phase 1 marked done (Sushant: no issues).
+
+1. How long he keeps memories: raw event log, journals, facts.
+2. His journal: when it's written, and in whose voice.
+3. Facts about Sushant: learned only by watching, or also told by Sushant (resume, goals)? Ask before saving? How to correct or forget.
+4. How often memories show up in what he says, and anything he must never bring up.
+5. His own opinions and running jokes (about-me.md).
+6. Anything else he must not remember (beyond private things).
+7. A "Memories" window in the app, or just the folder.
+8. Relationship growth: start in Phase 2 (from time together) or keep for Phase 4.
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+

@@ -97,7 +97,7 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `in progress` (built and tested with the real models; waiting for Sushant to try it on his Mac)
+### Phase 1: his own voice — status: `done` (merged; tried and accepted by Sushant on 2026-10-20)
 
 Goal: he comments in his own words, in character, on what you're doing.
 
@@ -150,10 +150,14 @@ his Mac (speed, chirps, how he feels).
 Known limit: the GPU can't be tested in the dev container; reply quality is
 checked there on CPU, speed is confirmed by Sushant on his Mac.
 
-### Phase 2: memory — status: `not started`
+### Phase 2: memory — status: `questions` (asked 2026-10-20, see DECISIONS.md)
 
 Goal: he remembers what happened and refers back to it ("Third Amazon role
 this week!").
+
+Already there from Phase 1: `events.jsonl` (what you were doing, what you
+did with him, what he said or kept to himself, how you reacted; private
+things only as "something private"), and the last ~14 entries in each prompt.
 
 Planned scope:
 - `events.jsonl`: raw event log (apps/sites, games, petting, reactions).
@@ -163,6 +167,9 @@ Planned scope:
 - `about-me.md`: his opinions, running jokes.
 - Relevant memories added to each prompt (keyword search first; small local
   embedding model later if needed).
+- Proposed technique (Generative Agents): each memory scored by recency,
+  importance and relevance; importance rated by the decision model (d3-nano,
+  a `score` question), journals and facts written by the voice model.
 
 ### Phase 3: reading the screen — status: `not started`
 
