@@ -103,4 +103,26 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
+| 2026-10-20 | 1. How long he keeps memories | Raw event log **90 days**; journals and facts **forever**. | Default accepted. |
+| 2026-10-20 | 2. Journal | Written when Sushant is away at the end of the day (or the next time the app runs if it was off), as a **short diary in his own baby voice**. | Default accepted. |
+| 2026-10-20 | 3. Facts about Sushant | Learned **by watching**, saved **silently**. Sushant can add his own notes to `about-sushant.md` and edit or delete anything. | Default accepted. |
+| 2026-10-20 | 4. How often memories come up | **His own decision**: memories are simply available when he thinks. | Default accepted. |
+| 2026-10-20 | 5. Opinions and running jokes | **Yes**, he writes `about-me.md` himself. | Default accepted. |
+| 2026-10-20 | 6. What not to remember | Besides private things: **no full email subjects in long-term memory**, only "read emails". | Default accepted. |
+| 2026-10-20 | 7. Memories window | **Yes**: a simple window to read and delete memories, plus the folder. | Default accepted. |
+| 2026-10-20 | 8. Relationship growth | **Phase 4**, as planned. | Default accepted. |
+| 2026-10-20 | Night-time test failures | Fix them as part of this round. | Sushant asked. |
+
+**Phase 2 questions: all answered (2026-10-20).**
+
+## Phase 2 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-20 | When "end of day" is | From 18:00, once Sushant has been away 10 minutes; past days with 5+ new events are written the next time he runs. Later evening events are added to that day's diary afterwards. | Matches "when you're away at the end of the day". |
+| 2026-10-20 | Recall formula | recency + importance + relevance, each 0..1 (Generative Agents); diary lines fade with a 7-day half-life, facts and opinions 60 days; top 5 per prompt; a memory unrelated to the moment needs a total score ≥ 1.5. | Research §6. |
+| 2026-10-20 | Importance | Rated by d3-nano (`score` question, 5 levels → 1..10). It rates conservatively (mostly 1-5), which is fine for ranking. | Tested on a real day. |
+| 2026-10-20 | Specific facts | The diary prompt asks for specific names (companies, sites, projects); vague facts ("looks at big jobs") can't be recalled later. | E4B test produced vague facts; 12B with the new prompt is specific. |
+| 2026-10-20 | Limits | Up to 80 facts and 40 opinions; beyond that the least important, oldest go. Your notes are never trimmed in the file (the first 1,200 characters go into prompts). | Keeps prompts small and fast. |
+| 2026-10-20 | Stray servers | Engine saves its process ids (`mind/engine.pids`) and stops leftovers from a crashed run on the next start. | A crash would otherwise leave ~11 GB in use. |
 

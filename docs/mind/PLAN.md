@@ -150,7 +150,7 @@ his Mac (speed, chirps, how he feels).
 Known limit: the GPU can't be tested in the dev container; reply quality is
 checked there on CPU, speed is confirmed by Sushant on his Mac.
 
-### Phase 2: memory — status: `questions` (asked 2026-10-20, see DECISIONS.md)
+### Phase 2: memory — status: `in progress` (built and tested with the real models; waiting for Sushant to try it)
 
 Goal: he remembers what happened and refers back to it ("Third Amazon role
 this week!").
@@ -170,6 +170,30 @@ Planned scope:
 - Proposed technique (Generative Agents): each memory scored by recency,
   importance and relevance; importance rated by the decision model (d3-nano,
   a `score` question), journals and facts written by the voice model.
+
+Built (2026-10-20), code in `src/main/mind/memory.js` and `journal.js`:
+- Files in the mind folder: `journal/YYYY-MM-DD.md`, `about-sushant.md` (his
+  facts + "Notes from Sushant", read but never changed), `about-me.md`. Each
+  line keeps its date and importance in a hidden comment.
+- Diary written when you're away at the end of the day (from 18:00, after
+  10 min away) or for missed days the next time he runs; needs at least 5
+  events that day. One voice-model call writes the diary, new facts and
+  opinions; the decision model rates each for importance (1-10).
+- Recall: score = recency (half-life 7 days for diary lines, 60 for facts) +
+  importance/10 + keyword relevance; top 5 go into each prompt; unrelated
+  memories need a high score. Your notes go into every prompt (1,200 chars).
+- Email is only "read emails" in the diary digest; lines with email
+  addresses or links are dropped. Event log pruned to 90 days daily.
+- Memories window (read, forget, write your notes); brain view shows what
+  came to mind and the last diary.
+- Also: stray llama-server processes from a crashed run are stopped on the
+  next start (`engine.pids`).
+Tested: unit tests; the Memories window in Electron; a realistic day through
+the real models (12B diary: "He looked at Notion and Stripe.", fact "Sushant
+looked at Amazon, Stripe, and Notion on JobRight.", recalled when he opens
+an Amazon job).
+Remaining before `done`: Sushant tries it (it needs a day of use before the
+first diary appears).
 
 ### Phase 3: reading the screen — status: `not started`
 

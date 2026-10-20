@@ -5,6 +5,14 @@ const assert = require('node:assert');
 const brain = require('../src/main/brain');
 const { Companion } = require('../src/main/companion');
 
+// A clock that matches the hour a test says it is (the real clock at night
+// would make a bedtime nudge due in the middle of a daytime test).
+function atHour(h) {
+  const d = new Date();
+  d.setHours(h, 0, 0, 0);
+  return d.getTime();
+}
+
 const bounds = { left: 0, right: 1920, top: 0, floor: 1040 };
 
 function seeded(seed = 1) {
@@ -379,11 +387,11 @@ function companion() {
 
 test('joining a meeting: he stops walking and sits still for the whole call', () => {
   const c = companion();
-  c.setContext({ hour: 10, now: Date.now() });
+  c.setContext({ hour: 10, now: atHour(10) });
   c.startActivity('walk');
   c.update(0.5);
   assert.strictEqual(c.state, 'walk');
-  c.setContext({ hour: 10, now: Date.now(), quiet: true, quietReason: 'meeting (zoom.us)' });
+  c.setContext({ hour: 10, now: atHour(10), quiet: true, quietReason: 'meeting (zoom.us)' });
   assert.strictEqual(c.state, 'sit');
   const x = c.x;
   const seen = new Set();
@@ -402,7 +410,7 @@ test('joining a meeting cancels a trip to another screen', () => {
   c.enter('idle', 1000);
   assert.ok(c.travelTo(1, 2200));
   c.update(0.2);
-  c.setContext({ hour: 10, now: Date.now(), quiet: true });
+  c.setContext({ hour: 10, now: atHour(10), quiet: true });
   assert.strictEqual(c.route, null);
   assert.strictEqual(c.state, 'sit');
 });

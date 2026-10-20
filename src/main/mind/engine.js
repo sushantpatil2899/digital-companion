@@ -15,7 +15,7 @@
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 
 const START_TIMEOUT = 180 * 1000; // ms to load a model
 const REQUEST_TIMEOUT = 60 * 1000;
@@ -136,9 +136,23 @@ class Server {
   }
 }
 
+/** Is `pid` a running llama-server (and not some other process that reused the number)? */
+function isOurServer(pid) {
+  try {
+    return /llama-server/.test(execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }));
+  } catch {
+    return false;
+  }
+}
+
 class Engine {
-  /** @param {object} [opts] { root } */
+  /**
+   * @param {object} [opts] { root, pidFile }
+   *   pidFile: where the servers' process ids are kept, so ones left running
+   *   after a crash (holding gigabytes of memory) are stopped next time.
+   */
   constructor(opts = {}) {
+    this.pidFile = opts.pidFile || null;
     this.files = locate(opts.root);
     this.voice = null;
     this.decider = null;
@@ -160,11 +174,15 @@ class Engine {
       return false;
     }
     this.state = 'starting';
+    this.stopLeftovers();
     const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...((f.manifest.voice && f.manifest.voice.args) || [])];
     const decideArgs = ['-m', f.decide, '-c', '4096', '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
     this.voice = new Server('voice', voiceArgs, f.server);
     this.decider = new Server('decide', decideArgs, f.server);
-    const results = await Promise.allSettled([this.voice.start(), this.decider.start()]);
+    const started = Promise.allSettled([this.voice.start(), this.decider.start()]);
+    this.savePids();
+    const results = await started;
+    this.savePids();
     const failed = results.map((r, i) => (r.status === 'rejected' ? `${['voice', 'decide'][i]}: ${r.reason.message}` : null)).filter(Boolean);
     this.state = failed.length ? `trouble: ${failed.join('; ')}` : 'running';
     return this.ready;
@@ -174,6 +192,37 @@ class Engine {
     if (this.voice) this.voice.stop();
     if (this.decider) this.decider.stop();
     this.state = 'stopped';
+    this.savePids();
+  }
+
+  savePids() {
+    if (!this.pidFile) return;
+    const pids = [this.voice, this.decider].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
+    try {
+      fs.mkdirSync(path.dirname(this.pidFile), { recursive: true });
+      fs.writeFileSync(this.pidFile, pids.join('\n'));
+    } catch {
+      // not critical
+    }
+  }
+
+  /** Stop servers a previous run left behind (it crashed or was force-quit). */
+  stopLeftovers() {
+    if (!this.pidFile) return;
+    let pids = [];
+    try {
+      pids = fs.readFileSync(this.pidFile, 'utf8').split('\n').map(Number).filter((n) => n > 0);
+    } catch {
+      return;
+    }
+    for (const pid of pids) {
+      if (!isOurServer(pid)) continue;
+      try {
+        process.kill(pid);
+      } catch {
+        // already gone
+      }
+    }
   }
 
   /** One think step: returns the model's JSON answer as text. */
