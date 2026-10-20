@@ -98,8 +98,15 @@ Planned scope (updated 2026-10-19 after Sushant's answers):
   2026-10-20: 34 traits (Big Five facets + Honesty-Humility) and 19 Schwartz
   values, each 0-100.
 - **Personality editor**: Sushant sets the sliders himself.
-- **Option scorer**: pluggable `score(context, options)`; LLM self-rating +
-  embeddings now, JEPA later (research §11).
+- **Starting personality**: based on Togepi from Pokémon
+  ([togepi-personality.md](togepi-personality.md)); relationship starts at
+  "just met". He notices when you change him in the editor.
+- **Decision layer**: Laya (open decision model, research §12) behind
+  `decide(question, options) → probabilities`. Uses: privacy gate, wake-up,
+  picking among ~4 LLM candidate lines, picking an action. Phase 1 starts with
+  a spike to run Laya in Node (ONNX); fallback is LLM self-rating.
+- **Voice = sound**: Togepi chirps when he speaks, never words read aloud
+  (Phase 1 or 5, to be confirmed).
 - **Decision loop** (research §9): observe → event log → wake-up → think
   (LLM) → decide → act or stay silent → write the decision and your reaction
   back so the next think step sees it. Wake-ups only decide *whether he

@@ -373,7 +373,7 @@ Recommendation:
 - **Later:** if it works, also use it to pre-filter which events are worth a
   think step.
 
-## 11. JEPA-style models (what Sushant actually meant)
+## 11. JEPA-style models (wrong guess: Sushant meant Jev, see §12)
 
 Added 2026-10-20. Sushant clarified that he meant **JEPA**-type models, not
 GLiClass. He mentioned the paid one and open-source names he recalled ("Laya",
@@ -424,6 +424,82 @@ Extra sources:
 - VL-JEPA overview (TechTalks): https://bdtechtalks.com/2026/01/03/meta-vl-jepa-vision-language-model/
 - LLM-JEPA paper: https://arxiv.org/abs/2509.14252
 - awesome-jepa list (LeJEPA, V-JEPA 2, I-JEPA and others): https://github.com/AbdelStark/awesome-jepa
+
+## 12. Decision models: Jev and Laya (what Sushant meant, confirmed)
+
+Added 2026-10-20, after Sushant sent the link to Laya (laya-ai.com). "JEV" is
+**Jev**, not JEPA. §11 was a wrong guess and is kept only for the record.
+
+**Jev (TypeSafe AI)**
+- A closed, paid "System One" **decision model**. It never generates text.
+- You give it a typed question (a choice, a score or yes/no) plus context. It
+  returns calibrated probabilities in about 70–500 ms.
+- Price: about $0.042 per million input tokens, through an API only. No
+  downloadable weights.
+- It went viral in September and October 2026.
+
+Not usable for Togepi: it's paid, online only, and has no local weights.
+
+**Laya (Convai Innovations): the open alternative**
+- `convaiinnovations/laya` on Hugging Face, **Apache-2.0**.
+- 421M parameters: a ModernBERT-large encoder plus a small decision head.
+  Context of 512 tokens (1024 for the `laya-typed-decisions` variant).
+- A 322M multilingual checkpoint (mmBERT) also exists.
+- Question types:
+  - **choice**: pick one of N options;
+  - **score**: place the input on an ordered scale;
+  - **noul**: yes/no, with one calibrated probability.
+- Answers in one forward pass (claimed ~33 ms). It can't hallucinate text
+  because it only outputs probabilities over the options it is given.
+- Reported runtimes:
+  - ONNX export with INT8 quantisation and a TypeScript SDK that runs in the
+    browser, per a third-party listing;
+  - a community GGUF, `mys/laya-GGUF`.
+
+  Both still need verifying.
+- **Caveats** (from independent write-ups):
+  - All benchmark numbers come from the vendor, with no paper.
+  - On one benchmark the base checkpoint was near chance without fine-tuning.
+  - Choices with many options (e.g. 77 labels) perform poorly.
+  - **score** is its weakest question type.
+
+  So use it for **few-option choices and yes/no questions**.
+
+**Where Laya fits Togepi's decision loop (§9):**
+
+| Step | Laya question | Type |
+|---|---|---|
+| Privacy gate | "Is this window/page about payment, banking, passwords or private chat?" | noul (yes/no), before anything reaches the LLM |
+| Wake-up | "Would Togepi, with this personality and mood, want to react to this?" | noul. Cheap, so the 8B LLM only runs when it matters. |
+| Pick a line | "Which of these 4 lines fits Togepi best right now?" | choice (4 options) |
+| Pick an action | "Speak, do something (wave, sulk, invite), or stay quiet?" | choice |
+
+This is the classic System 1 / System 2 split: Laya decides fast, and the LLM
+thinks and writes only when needed. It also directly answers Sushant's idea of
+the LLM writing ~4 candidates and a fast model scoring them.
+
+**Risks and plan:**
+- Laya's reference code is Python. Running it inside the Electron app needs
+  the ONNX/INT8 export with `onnxruntime-node` (or the TypeScript SDK).
+- Its zero-shot quality on our questions is unproven.
+- **Phase 1 starts with a spike:** load Laya in Node, measure speed, and test
+  it on a set of real Togepi decisions.
+- If it's good, it becomes the decision layer. If not, the LLM rates its own
+  candidates (slower). The interface `decide(question, options) →
+  probabilities` stays the same either way.
+- The dev container currently can't reach huggingface.co (network policy).
+  Sushant needs to allow that host for the spike.
+
+Extra sources:
+- Laya model card: https://huggingface.co/convaiinnovations/laya
+- Laya typed decisions: https://huggingface.co/convaiinnovations/laya-typed-decisions
+- Laya GGUF (community): https://huggingface.co/mys/laya-GGUF
+- Laya specs and caveats: https://systemonemodels.org/models/laya/
+- Laya overview: https://innfactory.ai/en/ai-models/laya/
+- Laya vs. Jev: https://medium.com/@visrow/what-is-laya-laya-vs-jev-with-live-demo-42c2ab494e02
+- Jev explained: https://www.layer3labs.io/guides/jev-explained
+- Jev pricing: https://openrouter.ai/typesafe/jev-1.13
+- Jev funding (Tech Times): https://www.techtimes.com/articles/328875/20261013/typesafe-ai-raises-870m-jev-decision-model-that-never-generates-text.htm
 
 ## Sources
 
