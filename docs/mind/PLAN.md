@@ -302,20 +302,67 @@ the Mac, so that part can't be run in the dev container (it will be tested
 on Sushant's Mac; the vision-model part can be tested here). Ad-hoc signed
 builds may make macOS ask for the permission again after each rebuild.
 
-### Phase 4: personality growth — status: `not started`
+### Phase 4: personality growth — status: `questions` (proposal below, asked 2026-10-21 while Sushant tests Phase 3)
 
 Goal: his personality changes with experience.
 
-Planned scope:
-- Traits stored as numbers; weekly "reflection" over the journal proposes
-  small, capped changes (e.g. ignored all week → a bit sassier; played a lot
-  → warmer). Same idea as Stanford's "Generative Agents" (observe → remember →
-  reflect).
+Original plan: traits stored as numbers; a weekly "reflection" over the
+journal proposes small, capped changes (e.g. ignored all week → a bit
+sassier; played a lot → warmer), like Stanford's "Generative Agents"
+(observe → remember → reflect).
+
+Already agreed (DECISIONS.md, 2026-10-20): growth limits per weekly
+reflection: traits ±3, values ±1, relationship ±10. Relationship growth was
+deferred to this phase.
+
+What's there to build on: 34 traits + 19 values + relationship in
+personality.md; a diary and facts every day (Phase 2); everything you did
+with him in events.jsonl (petting, throwing, games, answered/ignored lines
+and nudges).
+
+Proposal (each point is a question for Sushant, see DECISIONS.md):
+1. Relationship grows daily, by clear rules, from what happened that day
+   (capped ±10 a week in total):
+   - familiarity: time together (days you used the Mac with him around);
+     only goes up, slowly.
+   - affection: petting, playing, clicking his bubbles, answering his
+     invitations → up; throwing him, ignoring him for days → down.
+   - trust: coming back after breaks, answering his nudges and reminders,
+     few throws → up; lots of throwing → down.
+   Rules rather than the model, so it's predictable and explainable.
+2. Weekly reflection for traits and values: once a week (Sunday evening when
+   you're away, or the next time he runs), Gemma reads the week's diary,
+   facts and a summary of what you did together, and proposes a few changes
+   with a reason each ("played fetch every day → warmth +2"). Code clamps
+   them (±3 a trait, ±1 a value) and needs at least 3 diary days that week.
+   The same reflection also writes 1-3 "insights" about you into his memory
+   ("Sushant works late when job hunting"), as in Generative Agents.
+3. Who wins over your sliders: your changes always win; growth continues
+   from where you put them. Option to lock any slider so growth never moves
+   it.
+4. Staying Togepi: a long-term limit so he can't drift too far from who he
+   is, e.g. at most ±15 from his starting value per trait (you can still
+   set anything by hand).
+5. You can see and undo it: a "How I've grown" history (growth.md and a
+   section in the Personality window) with each change, its reason and the
+   week; "undo this week" puts it back.
+6. He notices: after a reflection he may say so in his own words ("I feel
+   braver this week!"), using the existing "he notices when he's changed".
+7. Mood from personality (from the research, not built yet): his resting
+   mood comes from his traits (the ALMA formula), so a gloomier personality
+   is gloomier by default, a cheerful one bounces back faster.
+8. Optional, fun: evolution. In the games Togepi evolves into Togetic through
+   high friendship. When affection and trust stay very high for a while he
+   could evolve (needs new Togetic artwork, so it may fit Phase 5 better).
+
+Testing: rules and reflection with a fake model in unit tests; a simulated
+week of diary entries through the real models here.
 
 ### Phase 5: polish — status: `not started`
 
-Candidates: optional vision
-model for screenshots, optional fine-tuning of his speaking style, bigger model.
+Candidates: optional fine-tuning of his speaking style, bigger model,
+Togetic evolution artwork (if not in Phase 4), anything found while using
+him.
 
 ## Honest limits (agreed up front)
 

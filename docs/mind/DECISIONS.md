@@ -168,3 +168,21 @@ Answers:
 | 2026-10-20 | Scrubbing | Email addresses, card/account numbers, SSNs, phone numbers, API keys and long tokens, and any line mentioning passwords, secrets, tokens, PINs or CVVs. | Built-in privacy. |
 | 2026-10-20 | Vision test | Gemma 4 12B + its vision add-on, through llama-server, looking at a screenshot of an Amazon "Software Engineer II, Backend" posting with Sushant's notes ("I know Python, Java, React and AWS"): thought "Sushant looks at big Amazon job! He knows Python and Java! Toge!", lines "Big Amazon!", "Toge! Is it a fun job?". ~90 s on the dev container's CPU (a few seconds expected on the Mac's GPU). Found and fixed two bugs on the way: the chat template dropped the picture marker, and newer llama-servers use a random marker per run (now read from GET /props). | Verified. |
 
+## Phase 4 questions
+
+Asked 2026-10-21, while Sushant tests Phase 3. Proposal in PLAN.md, Phase 4.
+
+1. Relationship grows daily by clear rules (familiarity, affection, trust), capped ±10 a week (recommended)?
+2. Weekly reflection by Gemma for traits and values, clamped ±3 / ±1, needs 3+ diary days, also writes insights about Sushant (recommended)?
+3. Sushant's slider changes always win; growth continues from there; lockable sliders (recommended)?
+4. Long-term limit: at most ±15 from his starting value per trait (recommended)?
+5. Growth history with reasons, and "undo this week" (recommended)?
+6. He may say he feels different after a reflection (recommended)?
+7. Resting mood from his personality (ALMA formula) (recommended)?
+8. Evolution into Togetic at high friendship: Phase 4, Phase 5, or not at all?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+
