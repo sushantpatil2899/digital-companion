@@ -142,4 +142,12 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
+| 2026-10-20 | 1. How he sees | **C: both** — OCR text every look, Gemma looks at the picture now and then. | Recommendation accepted. |
+| 2026-10-20 | 2. When he looks | Recommendation accepted, **but with multiple screens in mind** (Sushant's feedback below). | |
+| 2026-10-20 | 3. Email and chat apps | Not read by default, titles only. | Recommendation accepted. |
+| 2026-10-20 | 4. Saving | Nothing from the screen saved. | Recommendation accepted. |
+| 2026-10-20 | 5. Opt-in | "Let him read my screen" switch, off by default. | Recommendation accepted. |
+| 2026-10-20 | 6. Notes | Compare what he reads with Sushant's notes. | Recommendation accepted. |
+| 2026-10-20 | 7. Window titles | Titles of all apps with the same permission. | Recommendation accepted. |
+| 2026-10-20 | Feedback: multiple screens | Sushant works on two screens (talking to an assistant on one, GitHub open on the other) and Togepi thought he was "looking at GitHub again". He should know where the cursor is, which window Sushant is in, and that several windows are in use; and screenshots must make sense with several screens. **Proposal in PLAN.md Phase 3 ("Multiple screens and attention"), waiting for Sushant's confirmation.** | Today he only knows the app with keyboard focus (and that browser's front tab), and his "on screen right now" only changes when that changes. |
 
