@@ -329,7 +329,7 @@ observe ──► event log ──► wake-up? ──► think (LLM) ──► d
 His thoughts can also be logged (not shown), which makes his behaviour
 explainable, and will feed Phase 2's journal.
 
-## 10. The "fast classifier" idea
+## 10. The "fast classifier" idea (GLiClass; see §11 for JEPA)
 
 Sushant recalled a newer, much faster model type that scores a set of options
 with confidence. The best match is **GLiClass** (Knowledgator, 2025):
@@ -372,6 +372,58 @@ Recommendation:
   filter. Spike GLiClass for the privacy gate.
 - **Later:** if it works, also use it to pre-filter which events are worth a
   think step.
+
+## 11. JEPA-style models (what Sushant actually meant)
+
+Added 2026-10-20. Sushant clarified that he meant **JEPA**-type models, not
+GLiClass. He mentioned the paid one and open-source names he recalled ("Laya",
+"Kev", "NanoJEV", "OpenJEV", "SEMIF"). Of those, **LeJEPA** is confirmed to
+exist. The others could not be found yet and need a link from Sushant.
+
+**What JEPA is:**
+- JEPA stands for Joint Embedding Predictive Architecture. It comes from Yann
+  LeCun and Meta FAIR.
+- It does **not** generate text token by token. It predicts an *embedding*: a
+  vector that stands for the meaning of the answer.
+- To choose among options, each option is embedded too, and they are scored by
+  how close they are to the prediction. That gives a confidence per option in
+  one step. This is exactly Sushant's idea.
+
+Relevant models:
+
+| Model | What it is | Usable for Togepi now? |
+|---|---|---|
+| **VL-JEPA** (Meta, Dec 2025; ICLR 2026) | Vision-language model, 1.6B parameters. Predicts text embeddings from video or images. Supports open-vocabulary classification, retrieval and multiple-choice question answering without generating text. Its "selective decoding" needs about 2.85× fewer decoding operations on streams. | No official weights or licence found. When available, it fits **Phase 3 (understanding the screen)** better than Phase 1. |
+| **LLM-JEPA** (Huang, LeCun, Balestriero; ICLR 2026) | A JEPA *training objective* for normal text LLMs (Llama, Gemma, ...). Improves fine-tuning quality. | Not a fast classifier: it makes training slower and doesn't speed up running the model. Possibly relevant to Phase 5 fine-tuning. |
+| **LeJEPA** (galilai-group/lejepa) | Theory and a simpler training recipe (SIGReg) for JEPAs. | A research method, not a ready model. |
+| I-JEPA, V-JEPA 2 / 2.1 (Meta) | Image and video encoders with released weights. | Vision only, no text options. |
+
+**Honest assessment:**
+- There is no ready-made, open, *text* JEPA classifier today that could score
+  Togepi's candidate lines or classify window titles.
+- The **mechanism** can be reproduced now with a small open text embedding
+  model:
+  1. Embed the situation (or "lines that sound like Togepi in this mood").
+  2. Embed each candidate line or label.
+  3. Score them by cosine similarity, in milliseconds.
+
+  It's JEPA-style scoring without JEPA training. It also covers the repetition
+  filter (§10).
+
+**Recommendation:**
+- Build the "score a set of options" step as a **pluggable scorer** with one
+  interface, `score(context, options) → confidences`.
+- Phase 1 implementations:
+  - (a) the LLM rates its own candidates;
+  - (b) embedding similarity, for repetition and quick label checks.
+- Swap in a JEPA model (VL-JEPA for screenshots in Phase 3, or a text JEPA if
+  one is released openly) without changing the rest of the decision loop.
+
+Extra sources:
+- VL-JEPA paper: https://arxiv.org/abs/2512.10942
+- VL-JEPA overview (TechTalks): https://bdtechtalks.com/2026/01/03/meta-vl-jepa-vision-language-model/
+- LLM-JEPA paper: https://arxiv.org/abs/2509.14252
+- awesome-jepa list (LeJEPA, V-JEPA 2, I-JEPA and others): https://github.com/AbdelStark/awesome-jepa
 
 ## Sources
 

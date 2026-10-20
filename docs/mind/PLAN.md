@@ -88,14 +88,18 @@ MacBook with **M5 Pro, 24 GB RAM, 1 TB storage** (Sushant's). The model is
 Status values: `not started` → `questions` → `in progress` → `done` (merged
 and tried by Sushant).
 
-### Phase 1: his own voice — status: `questions` (personality structure research under review)
+### Phase 1: his own voice — status: `questions` (structure agreed; editor and remaining layers being confirmed)
 
 Goal: he comments in his own words, in character, on what you're doing.
 
 Planned scope (updated 2026-10-19 after Sushant's answers):
-- **Personality file**: layered, numeric + prose (structure under review, see
-  [research/personality.md](research/personality.md) §8). His actual
-  personality is chosen after the structure is agreed.
+- **Personality file**: layered, numeric + prose
+  ([research/personality.md](research/personality.md) §8). Agreed
+  2026-10-20: 34 traits (Big Five facets + Honesty-Humility) and 19 Schwartz
+  values, each 0-100.
+- **Personality editor**: Sushant sets the sliders himself.
+- **Option scorer**: pluggable `score(context, options)`; LLM self-rating +
+  embeddings now, JEPA later (research §11).
 - **Decision loop** (research §9): observe → event log → wake-up → think
   (LLM) → decide → act or stay silent → write the decision and your reaction
   back so the next think step sees it. Wake-ups only decide *whether he
