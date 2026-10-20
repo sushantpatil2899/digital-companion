@@ -150,7 +150,7 @@ his Mac (speed, chirps, how he feels).
 Known limit: the GPU can't be tested in the dev container; reply quality is
 checked there on CPU, speed is confirmed by Sushant on his Mac.
 
-### Phase 2: memory — status: `in progress` (built and tested with the real models; waiting for Sushant to try it)
+### Phase 2: memory — status: `done` (merged; tried and accepted by Sushant on 2026-10-20: "improved a lot")
 
 Goal: he remembers what happened and refers back to it ("Third Amazon role
 this week!").
@@ -195,17 +195,54 @@ an Amazon job).
 Remaining before `done`: Sushant tries it (it needs a day of use before the
 first diary appears).
 
-### Phase 3: reading the screen — status: `not started`
+### Phase 3: reading the screen — status: `questions` (proposal below, asked 2026-10-20)
 
 Goal: he understands what's on screen (e.g. the job description you're
 reading), not just app and tab names.
 
-Planned scope:
-- Small Swift helper using Apple's built-in Vision text recognition (OCR) on
-  the front window when it changes / every 20-30 s in interesting apps. No
-  continuous capture.
-- Needs macOS Screen Recording permission.
-- Privacy blocklist applies before anything reaches the model or memory.
+Original plan: a small Swift helper using Apple's Vision text recognition
+(OCR) on the front window when it changes / every 20-30 s, no continuous
+capture, Screen Recording permission, privacy blocklist first.
+
+What changed since (2026-10-20):
+- Both models already in the app can look at images: Gemma 4 12B with its
+  vision add-on (`mmproj`, 0.16 GB) and d3-nano (0.36 GB add-on). llama-server
+  takes images directly. So "looking" doesn't have to be text only.
+- Apple's Vision OCR can be called from a JXA/AppleScript-ObjC script (like
+  the existing `windows.jxa.js`), so no Swift compiler is needed to build.
+- The same Screen Recording permission also gives window titles of every app
+  (VS Code file, Slack channel, Notes document), not just browser tabs.
+
+Proposal (each point is a question for Sushant, see DECISIONS.md):
+1. How he sees, three options:
+   - A. Text only (OCR): screenshot of the front window → Apple Vision text
+     recognition, on the Mac, ~0.1-0.5 s. Exact text (job descriptions,
+     code, articles), very light. Blind to pictures, videos, games.
+   - B. Vision model: Gemma looks at the screenshot itself. Understands
+     pictures, videos, layout. A few seconds per look and a little more
+     memory.
+   - C. Both (recommended): OCR text every time he looks (cheap), and Gemma
+     looks at the picture now and then, e.g. when there's little text.
+2. When he looks: when the front window changes (after you've stayed ~2 s),
+   then at most every 30 s while you stay; only the front window, never the
+   whole screen; only while his mind is on and you're there.
+3. Privacy, built in: nothing private is captured (the existing rules run on
+   app/title before taking the picture); the text is checked again after
+   reading (card numbers, passwords, keys, phone numbers, email addresses
+   scrubbed; d3-nano double-checks); email and chat apps (Mail, Gmail,
+   Slack, Messages, WhatsApp, …) are not read by default (titles only).
+4. Nothing from the screen is saved: screenshots and screen text are used
+   for that one thought and then discarded; only his own thoughts, lines and
+   diary (which may mention what he understood) are kept.
+5. Opt-in: a new "Let him read my screen" switch under Brain, off by
+   default; macOS asks for Screen Recording permission once.
+6. Smarter comments: he compares what he reads with your notes (e.g. a job
+   description vs. your skills: "Python! You know Python!").
+
+Honest limits: Screen Recording, Vision OCR and window capture only exist on
+the Mac, so that part can't be run in the dev container (it will be tested
+on Sushant's Mac; the vision-model part can be tested here). Ad-hoc signed
+builds may make macOS ask for the permission again after each rebuild.
 
 ### Phase 4: personality growth — status: `not started`
 
