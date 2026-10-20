@@ -228,6 +228,9 @@ class Companion {
 
     // Something he's saying in his own words (src/main/mind): { text, until }.
     this.speech = null;
+    // How his personality colours his mood (personality.temperament): his
+    // resting mood and how fast it moves. Togepi's own is { 0, 1 }.
+    this.temperament = { offset: 0, speed: 1 };
 
     this.events = []; // one-shot events for the renderer (sounds/particles)
   }
@@ -665,7 +668,7 @@ class Companion {
     this.time += dt;
     this.stateTime += dt;
     if (cursor) this.lastCursor = { x: cursor.x, y: cursor.y };
-    this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context);
+    this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context, this.temperament);
     this.grumpiness = Math.max(0, this.grumpiness - brain.NEEDS.grumpyFade * dt);
     this.nudges.tick(dt, this.context);
     // Petting "charge" fades once the rubbing stops.
@@ -1351,7 +1354,7 @@ class Companion {
 
   /** Time passed without the simulation running (app closed, Mac asleep). */
   catchUp(seconds) {
-    this.mood = brain.catchUp(this.needs, this.mood, seconds);
+    this.mood = brain.catchUp(this.needs, this.mood, seconds, this.temperament);
   }
 
   // ---------------------------------------------------------------- games

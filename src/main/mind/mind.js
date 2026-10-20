@@ -17,8 +17,10 @@ const P = require('./personality');
 const T = require('./thinker');
 const privacy = require('./privacy');
 const { EventLog } = require('./events');
-const { readEvents, journalDue, MEMORY } = require('./memory');
+const { readEvents, journalDue, MEMORY, dayString: memoryDay } = require('./memory');
 const { writeDay } = require('./journal');
+const { reflect } = require('./reflect');
+const { weekOf } = require('./growth');
 
 const MIND = {
   gapUnprompted: 60, // s: rail, at most one line a minute on his own
@@ -47,28 +49,7 @@ const MIND = {
 // model isn't available.
 const FEEL_DIFFERENT = 'Huh? I feel… different!';
 
-// Companion events (src/main/companion.js) that mean you did something with
-// him, as he'd describe them. Each one wakes him up to think.
-const INTERACTIONS = {
-  heart: 'Sushant petted you.',
-  throw: 'Sushant picked you up and threw you!',
-  drop: 'Sushant picked you up and put you down.',
-  angry: "You got angry because Sushant keeps throwing you around.",
-  wake: 'Sushant woke you up.',
-  welcomeBack: 'Sushant came back after being away.',
-  goodMorning: 'You see Sushant for the first time today.',
-  hello: 'You see Sushant for the first time today.',
-  waterDone: 'Sushant drank some water like you asked.',
-  stretchDone: 'Sushant took a stretch break like you asked.',
-  bedtimeDone: 'Sushant said he will go to bed.',
-  nudgeLater: 'Sushant ignored your reminder.',
-  gaveUp: 'You asked Sushant to play but he never answered, so you gave up.',
-  thatWasFun: 'You just finished playing with Sushant.',
-  tttYouWin: 'Sushant beat you at tic-tac-toe.',
-  tttIWin: 'You beat Sushant at tic-tac-toe!',
-  tttDraw: 'Your tic-tac-toe game with Sushant was a draw.',
-  gotBall: 'You fetched the ball Sushant threw.',
-};
+const { INTERACTIONS } = require('./interactions');
 // Interactions that are also a reaction to what he just said.
 const REACTIONS = { heart: 'petted', throw: 'threw' };
 
@@ -94,6 +75,8 @@ class Mind {
    * @param {() => number} [opts.rng]
    * @param {object} [opts.memory]      long-term memory (memory.js), Phase 2
    * @param {string} [opts.eventsFile]  events.jsonl, read when his diary is due
+   * @param {object} [opts.growth]      personality growth (growth.js), Phase 4
+   * @param {(p: object) => void} [opts.onPersonality] his personality grew: save and show it
    */
   constructor(opts) {
     this.engine = opts.engine || null;
@@ -122,6 +105,10 @@ class Mind {
     this.writingJournal = false;
     this.lastJournal = null; // { day, at } or { error }
     this.nextJournalCheck = this.now() + 60 * 1000; // a minute after starting (models loading)
+    this.growth = opts.growth || null;
+    this.onPersonality = opts.onPersonality || (() => {});
+    this.lastGrowth = null; // for the brain view
+    this.toNotice = null; // he grew while you were away: think about it when you're back
     this.view = null; // windows in use (Phase 3)
     this.reading = null; // what he last read on the window you're looking at
     this.lastLook = null;
@@ -264,7 +251,15 @@ class Mind {
     const t = this.now();
     if (t >= this.nextJournalCheck) {
       this.nextJournalCheck = t + MIND.journalCheckEvery * 1000;
-      this.maybeWriteJournal();
+      this.maybeWriteJournal().then(() => this.maybeGrow());
+    }
+    if (this.toNotice && this.engine && this.engine.ready && !this.thinking && !this.writingJournal) {
+      const self = this.getSelf();
+      if (!self.away && !self.quiet && !self.asleep) {
+        const trigger = this.toNotice;
+        this.toNotice = null;
+        this.wake(trigger);
+      }
     }
     if (this.awaiting && t >= this.awaiting.until) {
       this.awaiting.entry.reaction = 'ignored it';
@@ -301,6 +296,57 @@ class Mind {
     } finally {
       this.writingJournal = false;
     }
+  }
+
+  /**
+   * Phase 4: count finished days towards your relationship (quietly), and
+   * when it's time, reflect on the week and grow a little (he notices).
+   */
+  async maybeGrow() {
+    if (!this.growth || !this.enabled) return null;
+    const events = this.eventsFile ? readEvents(this.eventsFile) : this.log.items;
+    const withDays = this.growth.applyDays(this.personality, events);
+    if (P.diff(this.personality, withDays).length) {
+      this.personality = withDays;
+      this.onPersonality(withDays);
+    }
+    const self = this.getSelf();
+    if (!this.memory || !this.engine || !this.engine.ready || this.writingJournal || this.thinking) return null;
+    if (!this.growth.reflectionDue({ away: !!self.away, awayFor: self.awayFor || 0 })) return null;
+    this.writingJournal = true; // one big job at a time
+    try {
+      const week = this.growth.week(weekOf(memoryDay(this.now())));
+      const r = week.relationship;
+      const together = ['affection', 'trust', 'familiarity'].filter((m) => r[m]).map((m) => `${m} ${r[m] > 0 ? 'grew' : 'fell'} by ${Math.abs(r[m])}`).join(', ');
+      const proposal = await reflect(this.engine, this.personality, this.memory, { now: this.now(), together });
+      if (!proposal) {
+        const note = 'not enough diary this week to reflect';
+        this.growth.skipReflection(note);
+        this.lastGrowth = { at: this.now(), note };
+        return null;
+      }
+      const { personality, applied } = this.growth.applyReflection(this.personality, proposal);
+      this.memory.addFacts(proposal.insights.slice(0, 3).map((text) => ({ text, importance: 7 })));
+      this.lastGrowth = { at: this.now(), changes: applied.length, insights: proposal.insights.length };
+      if (applied.length) {
+        this.personality = personality;
+        this.onPersonality(personality);
+        this.grew(applied);
+      }
+      return applied;
+    } catch (e) {
+      this.lastGrowth = { at: this.now(), error: e.message };
+      return null;
+    } finally {
+      this.writingJournal = false;
+    }
+  }
+
+  /** After a reflection he may say he feels different (his own decision, like any thought). */
+  grew(applied) {
+    const text = applied.map((c) => `${c.label} ${c.to > c.from ? 'up' : 'down'} (${c.reason})`).join('; ');
+    this.log.add({ kind: 'changed', text: `you grew this week: ${text}` });
+    this.toNotice = { kind: 'changed', text: `Looking back on your week, you changed a little: ${text}. You notice you feel different.`, interactive: true };
   }
 
   /** Something worth thinking about. Only one think runs at a time; the newest waits. */
@@ -441,6 +487,7 @@ class Mind {
       looked: this.lastLook || null,
       recalled: this.lastRecalled.map((m) => m.text),
       journal: this.writingJournal ? 'writing…' : this.lastJournal,
+      growth: this.lastGrowth,
       lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
       thinking: this.thinking,
       lastThought: this.lastThought,

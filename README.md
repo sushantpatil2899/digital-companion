@@ -103,6 +103,10 @@ Both run in llama.cpp's `llama-server`, in background processes listening on `12
 
 **His personality** is 34 traits (the 30 Big Five facets plus 4 Honesty-Humility facets) and 19 values, each 0–100, starting from who Togepi is in the games and anime: very joyful and warm, curious and mischievous, willful, a fearless baby. *Mind → Personality…* opens sliders for all of them; change one and after a few seconds he notices ("Huh? I feel… different!"). His relationship with you (affection, trust, familiarity) starts at "just met". It's all in `personality.md` (numbers at the top, his self-description below), which you can also edit by hand. The research behind it is in [`docs/mind/`](docs/mind/).
 
+**He grows with you.** His relationship with you changes a little every day from what you did together: petting him, playing, clicking his lines and coming back after a break raise affection and trust; throwing him around, ignoring his reminders and his invitations lower them; every day with him around adds familiarity. That's at most ±10 a week each. Once a week (Sunday evening while you're away, or the next time he runs) he looks back on his diary and may change a little: at most ±3 on a trait and ±1 on a value, a few at a time, and never more than 15 away from who he started as (or from where you last put the slider). He also writes down a few things he understood about you. Afterwards he may tell you he feels different.
+
+*Mind → Personality…* has a 🔒 on every slider: a locked slider never grows. **How I've grown** at the top lists each week's changes with his reason ("Warmth 90 → 92: Sushant petted me every morning") and has **Undo this week**. Your own slider changes always win. The same history is in `growth.md` in his mind folder. His personality also sets his resting mood: a gloomier personality settles lower and a more joyful one bounces back faster (Togepi as designed feels exactly as before).
+
 **What he sees** of your screen comes from *Notice which app I'm using* (under *Brain*). He follows your **attention** across windows and screens: the window you're typing in, the window under your cursor, and the other windows that are open. If you've moved the cursor in the last ~15 seconds, he takes it that you're looking at the window under it (reading or scrolling); otherwise at the one you're typing in. A window only counts once your attention has stayed on it ~5 seconds, so moving the cursor across screens doesn't distract him. So when you chat in one app while GitHub is open on your other screen, he knows both. He keeps roaming wherever he likes; he doesn't follow you to the screen you're working on.
 
 **Let him read my screen** (under *Brain*, macOS, off by default) goes further: he reads the window you're looking at.
@@ -123,6 +127,7 @@ Both run in llama.cpp's `llama-server`, in background processes listening on `12
 - `journal/YYYY-MM-DD.md`: **his diary**, a few lines in his own baby voice, written when you're away at the end of the day (from 6 pm, after 10 minutes away), or the next time he runs for days he missed.
 - `about-sushant.md`: **what he's learned about you** (written with his diary), plus a *Notes from Sushant* section for anything you want him to know (your goals, your resume, what you like). He reads your notes but never changes them.
 - `about-me.md`: **his own opinions and running jokes**.
+- `growth.md` (and `growth.json`): **how he's grown**, week by week, with the reasons.
 
 When he thinks, the few memories that fit best come to mind (how recent, how important and how relevant they are), and he may bring one up: "Amazon again? Third one this week!". Email is only remembered as "read emails", never the subjects, and private things are never stored. *Mind → Memories…* shows everything he remembers, with a × to make him forget something, and a button to write your notes. **Show his brain…** shows his last thought, what came to mind, when he last wrote his diary, and why he spoke or stayed quiet.
 
@@ -177,8 +182,9 @@ src/
   main/nudges.js       water / stretch / eye rest / bedtime timers, "remind me" notes, what he says
   main/games/          fetch (the ball's physics) and tic-tac-toe (rules and his moves)
   main/mind/           his own mind: personality, event log, privacy gate, the think/decide
-                       loop, memory (diary, facts, recall), attention across windows and
-                       screens, reading the screen, llama-server engine, your sound clips
+                       loop, memory (diary, facts, recall), growth (relationship, weekly
+                       reflection), attention across windows and screens, reading the
+                       screen, llama-server engine, your sound clips
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
                        browser tabs (AppleScript), calendar (EventKit), window pictures
                        (screencapture) and their text (Vision, ocr.applescript)
@@ -188,7 +194,7 @@ src/
   renderer/            canvas drawing, animation, particles, mouse input, brain view
   renderer/games/      the thrown ball's window and the tic-tac-toe board
   renderer/chirp.js    his chirps (Web Audio)
-  renderer/personality.*  the personality sliders
+  renderer/personality.*  the personality sliders, locks and growth history
   renderer/memories.*  the Memories window
 scripts/fetch-models.js  downloads llama-server and the models for `npm run dist`
 docs/mind/             the plan, decisions and research for his mind

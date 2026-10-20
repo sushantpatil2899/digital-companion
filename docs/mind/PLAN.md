@@ -302,7 +302,7 @@ the Mac, so that part can't be run in the dev container (it will be tested
 on Sushant's Mac; the vision-model part can be tested here). Ad-hoc signed
 builds may make macOS ask for the permission again after each rebuild.
 
-### Phase 4: personality growth — status: `questions` (proposal below, asked 2026-10-21 while Sushant tests Phase 3)
+### Phase 4: personality growth — status: `in progress` (built and tested here; Sushant to try it on his Mac. Evolution parked.)
 
 Goal: his personality changes with experience.
 
@@ -358,10 +358,40 @@ Proposal (each point is a question for Sushant, see DECISIONS.md):
 Testing: rules and reflection with a fake model in unit tests; a simulated
 week of diary entries through the real models here.
 
+Answers (2026-10-20): points 1-7 as recommended; evolution (8) parked, not
+to be built until Sushant brings it up. Details in DECISIONS.md.
+
+Built:
+- `src/main/mind/growth.js`: daily relationship rules (per-event daily caps,
+  ±10 a week per metric, whole points with carry-over, finished days only),
+  when the weekly reflection is due, clamping and applying a reflection
+  (±3 / ±1 / ±15 from the baseline / at most 6 / locks), undo a week,
+  baselines from your hand-set values; state in `growth.json`, readable
+  history in `growth.md` (both in his mind folder).
+- `src/main/mind/reflect.js`: the weekly reflection prompt (the week's
+  diary, what you did together, facts, every trait/value score) with a JSON
+  schema that only allows trait and value sliders; up to 3 insights.
+- Mind: after the diary check, counts finished days and reflects when due;
+  saves personality.md, adds insights to his facts, and thinks about the
+  change when you're back. Brain view: Growth row.
+- `personality.js`: `locked:` list in personality.md; `temperament()`
+  (ALMA pleasure relative to Togepi → resting-mood offset and mood speed),
+  used by `brain.js` mood drift.
+- Personality window: a 🔒 per slider, "How I've grown" with each week's
+  changes, reasons and insights, and "Undo this week".
+Tested: unit tests (rules and caps, carry-over, weekly cap, locks,
+reflection clamping and baselines, undo, when it's due, the mind growing
+with a fake model and noticing only when you're back, locks round-trip,
+temperament); the suite at 01:00, 07:00, 18:00 and 23:00; the Personality
+window rendered with history and locks; a simulated week through Gemma 12B
+(see DECISIONS.md).
+Remaining before `done`: Sushant tries it on his Mac (growth shows after a
+day of use; the first reflection on a Sunday evening with 3+ diary days).
+
 ### Phase 5: polish — status: `not started`
 
 Candidates: optional fine-tuning of his speaking style, bigger model,
-Togetic evolution artwork (if not in Phase 4), anything found while using
+Togetic evolution (parked by Sushant on 2026-10-20; only if he brings it up), anything found while using
 him.
 
 ## Honest limits (agreed up front)

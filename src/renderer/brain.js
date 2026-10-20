@@ -145,6 +145,7 @@ function render(b) {
     else rows.push(['He sees', 'nothing yet (turn on "Notice which app I\'m using" under Brain)']);
     if (m.recalled && m.recalled.length) rows.push(['Remembered', m.recalled.join(' · ')]);
     if (m.journal) rows.push(['Diary', m.journal === 'writing…' ? 'writing…' : m.journal.error ? `${m.journal.day}: couldn't write (${m.journal.error})` : `wrote ${m.journal.day} (${m.journal.facts} new facts, ${m.journal.opinions} opinions)`]);
+    if (m.growth) rows.push(['Growth', m.growth.error ? `reflection failed (${m.growth.error})` : m.growth.note || `reflected: ${m.growth.changes} changes, ${m.growth.insights} insights`]);
     if (m.lastSaid) rows.push(['Last said', `"${m.lastSaid.text}"${m.lastSaid.reaction ? ` → ${m.lastSaid.reaction}` : ''}`]);
     const t = m.lastThought;
     if (t && t.error) rows.push(['Last thought', `(failed: ${t.error})`]);

@@ -18,6 +18,7 @@ const { EventLog } = require('./mind/events');
 const { SoundLibrary } = require('./mind/sounds');
 const { Memory, pruneEvents } = require('./mind/memory');
 const { Attention } = require('./mind/attention');
+const { Growth } = require('./mind/growth');
 const { ScreenReader, screenKey } = require('./mind/screen');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
@@ -118,6 +119,7 @@ let personalityWin = null;
 let noticeTimer = null;
 let sounds = null;
 let memory = null;
+let growth = null;
 let memoriesWin = null;
 const attention = new Attention();
 let lastApps = null; // latest window list etc. from the app watcher
@@ -945,9 +947,19 @@ function startMind() {
       sendMemories();
     });
   }
+  growth = new Growth(mindDir());
+  companion.temperament = P.temperament(personality);
   mind = new Mind({
     personality,
     memory,
+    growth,
+    // He grew (a day counted towards your relationship, or a weekly reflection).
+    onPersonality: (p) => {
+      personality = p;
+      P.save(personalityFile(), personality);
+      companion.temperament = P.temperament(personality);
+      sendPersonality();
+    },
     eventsFile: eventsFile(),
     log: new EventLog({ file: eventsFile() }),
     getSelf: () => ({
@@ -1078,7 +1090,12 @@ function sendPersonality() {
   if (!personalityWin || personalityWin.isDestroyed() || !personality) return;
   const values = {};
   for (const [p] of P.sliders()) values[p] = P.getPath(personality, p);
-  personalityWin.webContents.send('personality', { sliders: P.sliders(), values });
+  personalityWin.webContents.send('personality', {
+    sliders: P.sliders(),
+    values,
+    locked: personality.locked || [],
+    history: growth ? growth.history() : [],
+  });
 }
 
 function showPersonality() {
@@ -1112,6 +1129,7 @@ function showPersonality() {
 function updatePersonality(next) {
   personality = next;
   P.save(personalityFile(), personality);
+  if (companion) companion.temperament = P.temperament(personality);
   sendPersonality();
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => mind && mind.setPersonality(P.normalize(personality)), 3000);
@@ -1120,7 +1138,30 @@ function updatePersonality(next) {
 ipcMain.on('personality-set', (_e, p, value) => {
   if (!personality || typeof p !== 'string' || !Number.isFinite(value) || p.startsWith('relationship.')) return;
   const next = P.normalize(personality);
-  if (P.setScore(next, p, value)) updatePersonality(next);
+  if (P.setScore(next, p, value)) {
+    // Growth counts its limits from where you put it.
+    if (growth) growth.setBaseline(p, P.getPath(next, p));
+    updatePersonality(next);
+  }
+});
+
+// Lock a slider so growth never moves it (or unlock it).
+ipcMain.on('personality-lock', (_e, p, locked) => {
+  if (!personality || typeof p !== 'string') return;
+  const next = P.normalize(personality);
+  const set = new Set(next.locked);
+  if (locked) set.add(p);
+  else set.delete(p);
+  next.locked = [...set];
+  updatePersonality(P.normalize(next));
+  // Nothing for him to notice, but growth must respect it straight away.
+  if (mind) mind.personality.locked = personality.locked;
+});
+
+// Undo a week of growth (he notices, like any change).
+ipcMain.on('growth-undo', (_e, week) => {
+  if (!personality || !growth || typeof week !== 'string') return;
+  updatePersonality(growth.undo(personality, week));
 });
 
 ipcMain.on('personality-reset', () => {
@@ -1128,6 +1169,11 @@ ipcMain.on('personality-reset', () => {
   // Back to Togepi's traits and values; the relationship stays as it has grown.
   const next = P.defaultPersonality();
   next.relationship = { ...personality.relationship };
+  next.locked = personality.locked || [];
+  if (growth) {
+    growth.state.baselines = {};
+    growth.save();
+  }
   updatePersonality(next);
 });
 

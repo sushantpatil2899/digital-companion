@@ -157,7 +157,7 @@ function clone(o) {
 
 /** A fresh personality: Togepi's starting values. */
 function defaultPersonality() {
-  return { version: 1, ...clone(TOGEPI), self: SELF };
+  return { version: 1, ...clone(TOGEPI), self: SELF, locked: [] };
 }
 
 /** Every slider as [path, label, explanation], e.g. ['traits.openness.fantasy', 'Fantasy', '…']. */
@@ -199,6 +199,10 @@ function normalize(p) {
     if (Number.isFinite(v) && v >= 0) out.change[k] = v;
   }
   if (typeof p.self === 'string' && p.self.trim()) out.self = p.self.trim();
+  // Sliders that growth (Phase 4) must never move.
+  const valid = new Set(sliders().map(([sp]) => sp));
+  const locked = Array.isArray(p.locked) ? p.locked : typeof p.locked === 'string' ? p.locked.split(',') : [];
+  out.locked = [...new Set(locked.map((x) => String(x).trim()).filter((x) => valid.has(x)))];
   return out;
 }
 
@@ -218,6 +222,7 @@ function serialize(p) {
   for (const [k] of RELATIONSHIP) lines.push(`  ${k}: ${p.relationship[k]}`);
   lines.push('change:            # max change per weekly reflection');
   for (const [k, v] of Object.entries(p.change)) lines.push(`  ${k}: ${v}`);
+  lines.push(`locked: ${(p.locked || []).join(', ')}   # sliders growth never moves`);
   lines.push('---', '', '# Who I am', '', p.self, '');
   return lines.join('\n');
 }
@@ -249,6 +254,11 @@ function parse(text) {
     const line = raw.replace(/\s+#.*$/, '');
     if (!line.trim()) continue;
     const top = line.match(/^([\w-]+)\s*:\s*(.*)$/);
+    if (top && top[1] === 'locked') {
+      data.locked = top[2].replace(/#.*$/, '');
+      section = null;
+      continue;
+    }
     if (top) {
       const v = parseScalar(top[2]);
       if (v === null) {
@@ -335,6 +345,26 @@ function talkativeness(p) {
   return (e.gregariousness + e.positive_emotions + e.warmth + e.excitement_seeking + n.impulsiveness) / 500;
 }
 
+/**
+ * His resting mood from his personality (ALMA: pleasure = 0.21·E + 0.59·A +
+ * 0.19·S, S = emotional stability), relative to Togepi's own so his starting
+ * self behaves as before: { offset } shifts the mood his needs suggest,
+ * { speed } scales how fast his mood moves (cheerful ones bounce back faster).
+ */
+function temperament(p) {
+  const avg = (o) => Object.values(o).reduce((a, b) => a + b, 0) / Object.values(o).length;
+  const pleasure = (q) => {
+    const E = (avg(q.traits.extraversion) - 50) / 50;
+    const A = (avg(q.traits.agreeableness) - 50) / 50;
+    const S = -(avg(q.traits.neuroticism) - 50) / 50;
+    return 0.21 * E + 0.59 * A + 0.19 * S;
+  };
+  const base = { traits: TOGEPI.traits };
+  const offset = Math.max(-0.4, Math.min(0.4, pleasure(p) - pleasure(base)));
+  const speed = Math.max(0.6, Math.min(1.5, 1 + (p.traits.extraversion.positive_emotions - TOGEPI.traits.extraversion.positive_emotions) / 150));
+  return { offset: Math.round(offset * 1000) / 1000, speed: Math.round(speed * 1000) / 1000 };
+}
+
 /** Scores that changed between two personalities: [{ path, label, from, to }]. */
 function diff(a, b) {
   const out = [];
@@ -364,5 +394,6 @@ module.exports = {
   describe,
   describeRelationship,
   talkativeness,
+  temperament,
   diff,
 };
