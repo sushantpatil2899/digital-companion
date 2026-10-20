@@ -29,30 +29,6 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
-| 2026-10-20 | 1. Relationship | **Yes:** grows daily by clear rules, at most ±10 a week per metric. | Sushant: "go with the recommendations". |
-| 2026-10-20 | 2. Weekly reflection | **Yes:** Gemma, traits ±3, values ±1, needs 3+ diary days, also writes insights about Sushant. | Recommendation. |
-| 2026-10-20 | 3. Your sliders | **Yes:** your changes always win, growth continues from there, any slider can be locked. | Recommendation. |
-| 2026-10-20 | 4. Staying Togepi | **Yes:** at most ±15 from his starting value (or from where you last set it by hand). | Recommendation. |
-| 2026-10-20 | 5. History and undo | **Yes:** growth.md and "How I've grown" in the Personality window, with "Undo this week". | Recommendation. |
-| 2026-10-20 | 6. He notices | **Yes:** he may say he feels different, in his own words. | Recommendation. |
-| 2026-10-20 | 7. Resting mood | **Yes:** from his personality (ALMA). | Recommendation. |
-| 2026-10-20 | 8. Evolution | **Parked.** Not in Phase 4; don't build it until Sushant brings it up again. | Sushant: "park the evolution for now. I don't want to touch the evolution part just now, so let it be like that." |
-
-**Phase 4 questions: all answered (2026-10-20).**
-
-## Phase 4 implementation decisions
-
-| Date | Question | Decision | Why |
-|---|---|---|---|
-| 2026-10-20 | Relationship rules | Per day, each with a daily cap: petting affection +0.6 (max +3); a game finished, won, lost or drawn, or a fetched ball +0.3 to +0.7 (max +2 to +3); being thrown affection −0.7 (max −4) and trust −0.5 (max −3); getting angry trust −1 (max −2); an unanswered invitation affection −0.4; coming back after a break trust +0.5 (max +1.5); water/stretch/bedtime done trust +0.3 each (max +1); a reminder ignored trust −0.2 (max −1); his lines clicked or petted affection +0.3 each (max +1.5), ignored −0.1 each (max −1); familiarity +1 for a day with him around (10+ events). Counted for finished days only, whole points go into personality.md, the rest carries over. | Predictable and explainable (proposal point 1); tuned so a good day is about +3 and a week can't exceed the agreed ±10. |
-| 2026-10-20 | When he reflects | Sunday from 18:00 while you've been away 10+ minutes; if a Sunday is missed, the next time he runs 8+ days after the last one. A week with too little diary is skipped, not retried. | "Sunday evening when you're away, or the next time he runs." |
-| 2026-10-20 | Reflection limits | At most 6 changes; the model may only name trait and value sliders (not the relationship); code clamps every step and the ±15 limit; locked sliders are skipped. Up to 3 insights go into his facts (importance 7); emails and links are dropped. | Agreed limits, enforced in code rather than trusted to the model. |
-| 2026-10-20 | Baseline for ±15 | Togepi's starting value, or the value you last set by hand (stored in growth.json). Reset to Togepi clears them. | "Growth continues from where you put them." |
-| 2026-10-20 | Undo | Undoing a week takes back its trait/value changes and its relationship points; he notices like any slider change. | Proposal point 5. |
-| 2026-10-20 | He notices | The reflection happens while you're away; he thinks about it when you're back (his own decision whether to say anything). Lock changes are silent. | Proposal point 6, without talking to an empty room. |
-| 2026-10-20 | Resting mood | ALMA pleasure (0.21·E + 0.59·A + 0.19·(1−N), from the Big Five) relative to Togepi's own, so his mood is unchanged until he grows: shifts the mood he settles at by up to ±0.4. Positive emotions sets how fast his mood moves (×0.6 to ×1.5). | Proposal point 7; relative so Togepi as designed feels exactly as before. |
-| 2026-10-20 | Real-model check | A simulated week (job applications, an interview with Stripe, fetch and tic-tac-toe, a day of being thrown and ignored reminders) through Gemma 4 12B, twice. Run 1: Anxiety 25→23 "Sushant's Stripe smile made me feel safe!", Self-discipline 20→21 "Watching him study Rust is very brave.", Security: personal 60→61; insights "Sushant gets very scared before Stripe interviews.", "Sushant likes learning hard things like Rust.". Run 2: Anxiety −2 again, Warmth 90→91 "More happy pettings made my heart big!", Security: personal +1; insights "Sushant works very hard until he is sleepy.", "Sushant likes playing games with me on Saturdays.". Small, consistent, in his voice; no clamping needed. 2-4 min each on the dev container's CPU (much faster on the Mac's GPU, and it runs while you're away). | Verified. |
-
 | 2026-10-19 | 1. Starting personality | `superseded by the 2026-10-20 rows` **Deferred.** First research how personality is represented, stored and maintained (published work, games, AI characters), covering as many traits as possible; agree on the structure, then choose his personality. Research in research/personality.md, waiting for review. | Sushant doesn't want a superficial choice; the structure must support every trait. |
 | 2026-10-19 | 2. How often he comments | **He decides himself.** No fixed frequency. The model gets his personality, recent events, his previous decisions (what he said or didn't say, when) and your reactions, and decides whether to speak and what to say. Every decision is fed into the next one (a loop). Once a conversation has started it continues. Not being annoying comes from his personality and past reactions, not a fixed rule. | Sushant wants him to have his own decision power. |
 | 2026-10-19 | 3. What makes him comment | **No hard-coded comment triggers.** Triggers only wake him up to *think*; whether and what he says is his decision. Your interactions (petting, clicking, game events, invitations, replies) always wake him. Switching apps/sites is an observation he may or may not react to. | Same as above. |
@@ -127,29 +103,6 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
-| 2026-10-20 | 1. Relationship | **Yes:** grows daily by clear rules, at most ±10 a week per metric. | Sushant: "go with the recommendations". |
-| 2026-10-20 | 2. Weekly reflection | **Yes:** Gemma, traits ±3, values ±1, needs 3+ diary days, also writes insights about Sushant. | Recommendation. |
-| 2026-10-20 | 3. Your sliders | **Yes:** your changes always win, growth continues from there, any slider can be locked. | Recommendation. |
-| 2026-10-20 | 4. Staying Togepi | **Yes:** at most ±15 from his starting value (or from where you last set it by hand). | Recommendation. |
-| 2026-10-20 | 5. History and undo | **Yes:** growth.md and "How I've grown" in the Personality window, with "Undo this week". | Recommendation. |
-| 2026-10-20 | 6. He notices | **Yes:** he may say he feels different, in his own words. | Recommendation. |
-| 2026-10-20 | 7. Resting mood | **Yes:** from his personality (ALMA). | Recommendation. |
-| 2026-10-20 | 8. Evolution | **Parked.** Not in Phase 4; don't build it until Sushant brings it up again. | Sushant: "park the evolution for now. I don't want to touch the evolution part just now, so let it be like that." |
-
-**Phase 4 questions: all answered (2026-10-20).**
-
-## Phase 4 implementation decisions
-
-| Date | Question | Decision | Why |
-|---|---|---|---|
-| 2026-10-20 | Relationship rules | Per day, each with a daily cap: petting affection +0.6 (max +3); a game finished, won, lost or drawn, or a fetched ball +0.3 to +0.7 (max +2 to +3); being thrown affection −0.7 (max −4) and trust −0.5 (max −3); getting angry trust −1 (max −2); an unanswered invitation affection −0.4; coming back after a break trust +0.5 (max +1.5); water/stretch/bedtime done trust +0.3 each (max +1); a reminder ignored trust −0.2 (max −1); his lines clicked or petted affection +0.3 each (max +1.5), ignored −0.1 each (max −1); familiarity +1 for a day with him around (10+ events). Counted for finished days only, whole points go into personality.md, the rest carries over. | Predictable and explainable (proposal point 1); tuned so a good day is about +3 and a week can't exceed the agreed ±10. |
-| 2026-10-20 | When he reflects | Sunday from 18:00 while you've been away 10+ minutes; if a Sunday is missed, the next time he runs 8+ days after the last one. A week with too little diary is skipped, not retried. | "Sunday evening when you're away, or the next time he runs." |
-| 2026-10-20 | Reflection limits | At most 6 changes; the model may only name trait and value sliders (not the relationship); code clamps every step and the ±15 limit; locked sliders are skipped. Up to 3 insights go into his facts (importance 7); emails and links are dropped. | Agreed limits, enforced in code rather than trusted to the model. |
-| 2026-10-20 | Baseline for ±15 | Togepi's starting value, or the value you last set by hand (stored in growth.json). Reset to Togepi clears them. | "Growth continues from where you put them." |
-| 2026-10-20 | Undo | Undoing a week takes back its trait/value changes and its relationship points; he notices like any slider change. | Proposal point 5. |
-| 2026-10-20 | He notices | The reflection happens while you're away; he thinks about it when you're back (his own decision whether to say anything). Lock changes are silent. | Proposal point 6, without talking to an empty room. |
-| 2026-10-20 | Resting mood | ALMA pleasure (0.21·E + 0.59·A + 0.19·(1−N), from the Big Five) relative to Togepi's own, so his mood is unchanged until he grows: shifts the mood he settles at by up to ±0.4. Positive emotions sets how fast his mood moves (×0.6 to ×1.5). | Proposal point 7; relative so Togepi as designed feels exactly as before. |
-
 | 2026-10-20 | 1. How long he keeps memories | Raw event log **90 days**; journals and facts **forever**. | Default accepted. |
 | 2026-10-20 | 2. Journal | Written when Sushant is away at the end of the day (or the next time the app runs if it was off), as a **short diary in his own baby voice**. | Default accepted. |
 | 2026-10-20 | 3. Facts about Sushant | Learned **by watching**, saved **silently**. Sushant can add his own notes to `about-sushant.md` and edit or delete anything. | Default accepted. |
@@ -189,29 +142,6 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
-| 2026-10-20 | 1. Relationship | **Yes:** grows daily by clear rules, at most ±10 a week per metric. | Sushant: "go with the recommendations". |
-| 2026-10-20 | 2. Weekly reflection | **Yes:** Gemma, traits ±3, values ±1, needs 3+ diary days, also writes insights about Sushant. | Recommendation. |
-| 2026-10-20 | 3. Your sliders | **Yes:** your changes always win, growth continues from there, any slider can be locked. | Recommendation. |
-| 2026-10-20 | 4. Staying Togepi | **Yes:** at most ±15 from his starting value (or from where you last set it by hand). | Recommendation. |
-| 2026-10-20 | 5. History and undo | **Yes:** growth.md and "How I've grown" in the Personality window, with "Undo this week". | Recommendation. |
-| 2026-10-20 | 6. He notices | **Yes:** he may say he feels different, in his own words. | Recommendation. |
-| 2026-10-20 | 7. Resting mood | **Yes:** from his personality (ALMA). | Recommendation. |
-| 2026-10-20 | 8. Evolution | **Parked.** Not in Phase 4; don't build it until Sushant brings it up again. | Sushant: "park the evolution for now. I don't want to touch the evolution part just now, so let it be like that." |
-
-**Phase 4 questions: all answered (2026-10-20).**
-
-## Phase 4 implementation decisions
-
-| Date | Question | Decision | Why |
-|---|---|---|---|
-| 2026-10-20 | Relationship rules | Per day, each with a daily cap: petting affection +0.6 (max +3); a game finished, won, lost or drawn, or a fetched ball +0.3 to +0.7 (max +2 to +3); being thrown affection −0.7 (max −4) and trust −0.5 (max −3); getting angry trust −1 (max −2); an unanswered invitation affection −0.4; coming back after a break trust +0.5 (max +1.5); water/stretch/bedtime done trust +0.3 each (max +1); a reminder ignored trust −0.2 (max −1); his lines clicked or petted affection +0.3 each (max +1.5), ignored −0.1 each (max −1); familiarity +1 for a day with him around (10+ events). Counted for finished days only, whole points go into personality.md, the rest carries over. | Predictable and explainable (proposal point 1); tuned so a good day is about +3 and a week can't exceed the agreed ±10. |
-| 2026-10-20 | When he reflects | Sunday from 18:00 while you've been away 10+ minutes; if a Sunday is missed, the next time he runs 8+ days after the last one. A week with too little diary is skipped, not retried. | "Sunday evening when you're away, or the next time he runs." |
-| 2026-10-20 | Reflection limits | At most 6 changes; the model may only name trait and value sliders (not the relationship); code clamps every step and the ±15 limit; locked sliders are skipped. Up to 3 insights go into his facts (importance 7); emails and links are dropped. | Agreed limits, enforced in code rather than trusted to the model. |
-| 2026-10-20 | Baseline for ±15 | Togepi's starting value, or the value you last set by hand (stored in growth.json). Reset to Togepi clears them. | "Growth continues from where you put them." |
-| 2026-10-20 | Undo | Undoing a week takes back its trait/value changes and its relationship points; he notices like any slider change. | Proposal point 5. |
-| 2026-10-20 | He notices | The reflection happens while you're away; he thinks about it when you're back (his own decision whether to say anything). Lock changes are silent. | Proposal point 6, without talking to an empty room. |
-| 2026-10-20 | Resting mood | ALMA pleasure (0.21·E + 0.59·A + 0.19·(1−N), from the Big Five) relative to Togepi's own, so his mood is unchanged until he grows: shifts the mood he settles at by up to ±0.4. Positive emotions sets how fast his mood moves (×0.6 to ×1.5). | Proposal point 7; relative so Togepi as designed feels exactly as before. |
-
 | 2026-10-20 | 1. How he sees | **C: both** — OCR text every look, Gemma looks at the picture now and then. | Recommendation accepted. |
 | 2026-10-20 | 2. When he looks | Recommendation accepted, **but with multiple screens in mind** (Sushant's feedback below). | |
 | 2026-10-20 | 3. Email and chat apps | Not read by default, titles only. | Recommendation accepted. |
@@ -277,5 +207,22 @@ Answers:
 | 2026-10-20 | Undo | Undoing a week takes back its trait/value changes and its relationship points; he notices like any slider change. | Proposal point 5. |
 | 2026-10-20 | He notices | The reflection happens while you're away; he thinks about it when you're back (his own decision whether to say anything). Lock changes are silent. | Proposal point 6, without talking to an empty room. |
 | 2026-10-20 | Resting mood | ALMA pleasure (0.21·E + 0.59·A + 0.19·(1−N), from the Big Five) relative to Togepi's own, so his mood is unchanged until he grows: shifts the mood he settles at by up to ±0.4. Positive emotions sets how fast his mood moves (×0.6 to ×1.5). | Proposal point 7; relative so Togepi as designed feels exactly as before. |
+| 2026-10-20 | Real-model check | A simulated week (job applications, an interview with Stripe, fetch and tic-tac-toe, a day of being thrown and ignored reminders) through Gemma 4 12B, twice. Run 1: Anxiety 25→23 "Sushant's Stripe smile made me feel safe!", Self-discipline 20→21 "Watching him study Rust is very brave.", Security: personal 60→61; insights "Sushant gets very scared before Stripe interviews.", "Sushant likes learning hard things like Rust.". Run 2: Anxiety −2 again, Warmth 90→91 "More happy pettings made my heart big!", Security: personal +1; insights "Sushant works very hard until he is sleepy.", "Sushant likes playing games with me on Saturdays.". Small, consistent, in his voice; no clamping needed. 2-4 min each on the dev container's CPU (much faster on the Mac's GPU, and it runs while you're away). | Verified. |
 
+## Phase 5 questions
 
+Asked 2026-10-20, while Sushant tests Phases 3 and 4. Proposal in PLAN.md, Phase 5.
+
+1. "Try it now" menu items: diary now, relationship now, reflect now; a hand-started reflection counts as that week's (recommended)?
+2. Stop the models when away 30+ min, at night while he sleeps, and on battery below 20%; restart when you're back (recommended)? Different thresholds?
+3. Style bank of example lines (hand-written set + lines you clicked or petted) instead of fine-tuning (recommended)?
+4. No bigger model; measure speed and memory on the Mac and show them; optional "Lighter mind" switch with Gemma 4 E4B (recommended)?
+5. *Copy a report* for diagnostics, with nothing private in it (recommended)?
+6. A first-run welcome window that walks through the permissions: yes or no?
+7. A Chattiness choice and *Shush for an hour*: yes or no?
+8. Anything else that bothers you while using him, to fix in this phase?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
