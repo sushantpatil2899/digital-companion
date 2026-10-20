@@ -20,6 +20,8 @@ const { spawn, execFileSync } = require('child_process');
 const START_TIMEOUT = 180 * 1000; // ms to load a model
 const REQUEST_TIMEOUT = 60 * 1000;
 const MAX_RESTARTS = 3;
+const DEFAULT_MEDIA_MARKER = '<__media__>'; // older llama-servers; newer ones pick a random one (GET /props)
+const IMAGE_SLOT = '[[togepi-picture]]';
 
 /** Where the engine and models live: inside the app when packaged, the repo otherwise. */
 function defaultRoot() {
@@ -39,7 +41,9 @@ function locate(root = defaultRoot()) {
     // not downloaded yet
   }
   const model = (role) => (manifest[role] && manifest[role].file ? path.join(root, 'models', manifest[role].file) : null);
-  const files = { server, voice: model('voice'), decide: model('decide'), manifest };
+  // The voice model's vision add-on (optional): lets him look at pictures of windows.
+  const vision = manifest.voice && manifest.voice.mmproj ? path.join(root, 'models', manifest.voice.mmproj) : null;
+  const files = { server, voice: model('voice'), decide: model('decide'), vision: vision && fs.existsSync(vision) ? vision : null, manifest };
   files.missing = ['server', 'voice', 'decide'].filter((k) => !files[k] || !fs.existsSync(files[k]));
   return files;
 }
@@ -167,6 +171,11 @@ class Engine {
     return !!this.decider && this.decider.ready;
   }
 
+  /** The voice model can look at pictures (its vision add-on is installed). */
+  get canSee() {
+    return this.ready && !!this.files.vision;
+  }
+
   async start() {
     const f = this.files;
     if (f.missing.length) {
@@ -175,7 +184,7 @@ class Engine {
     }
     this.state = 'starting';
     this.stopLeftovers();
-    const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...((f.manifest.voice && f.manifest.voice.args) || [])];
+    const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...(f.vision ? ['--mmproj', f.vision] : []), ...((f.manifest.voice && f.manifest.voice.args) || [])];
     const decideArgs = ['-m', f.decide, '-c', '4096', '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
     this.voice = new Server('voice', voiceArgs, f.server);
     this.decider = new Server('decide', decideArgs, f.server);
@@ -225,20 +234,28 @@ class Engine {
     }
   }
 
-  /** One think step: returns the model's JSON answer as text. */
-  async think({ system, user, schema }) {
+  /**
+   * One think step: returns the model's JSON answer as text. `image`: a
+   * base64 JPEG he looks at too (only if canSee).
+   */
+  async think({ system, user, schema, image = null }) {
     if (!this.ready) throw new Error('voice model not running');
+    const withImage = !!image && this.canSee;
     // The model's own chat format, then plain completion constrained to the
-    // schema (no thinking-mode or tool-call parsing to trip over).
+    // schema (no thinking-mode or tool-call parsing to trip over). A picture
+    // goes in at llama.cpp's media marker.
     const t = await fetchJson(`${this.voice.url}/apply-template`, {
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: user },
+        { role: 'user', content: withImage ? `${IMAGE_SLOT}\nThis is a picture of the window Sushant is looking at.\n\n${user}` : user },
       ],
       chat_template_kwargs: { enable_thinking: false },
     });
+    // A placeholder goes through the template and is swapped for the
+    // server's media marker (where the picture goes) afterwards.
+    const prompt = withImage ? t.prompt.replace(IMAGE_SLOT, await this.mediaMarker()) : t.prompt;
     const r = await fetchJson(`${this.voice.url}/completion`, {
-      prompt: t.prompt,
+      prompt: withImage ? { prompt_string: prompt, multimodal_data: [image] } : prompt,
       n_predict: 400,
       temperature: 0.9,
       top_p: 0.95,
@@ -246,6 +263,21 @@ class Engine {
       cache_prompt: true,
     });
     return r ? r.content : null;
+  }
+
+  /** The marker the voice server expects where a picture goes (random per server run). */
+  async mediaMarker() {
+    if (this.voice.mediaMarker && this.voice.markerPort === this.voice.port) return this.voice.mediaMarker;
+    let marker = DEFAULT_MEDIA_MARKER;
+    try {
+      const props = await fetchJson(`${this.voice.url}/props`, null, 5000);
+      if (props && typeof props.media_marker === 'string' && props.media_marker) marker = props.media_marker;
+    } catch {
+      // older server: the default marker
+    }
+    this.voice.mediaMarker = marker;
+    this.voice.markerPort = this.voice.port; // a restarted server picks a new one
+    return marker;
   }
 
   /** Typed questions about `state` (TypeSafe System One shape); returns the answers. */

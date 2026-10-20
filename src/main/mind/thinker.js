@@ -47,6 +47,23 @@ const STATE_WORDS = {
   offerGame: 'asking Sushant to play tic-tac-toe', ttt: 'playing tic-tac-toe with Sushant',
 };
 
+function windowWords(w) {
+  if (!w) return null;
+  if (w.private) return `something private${w.screen ? ` (screen ${w.screen})` : ''}`;
+  return `${w.app}${w.title ? `, "${w.title}"` : ''}${w.site ? ` (${w.site})` : ''}${w.screen ? ` (screen ${w.screen})` : ''}`;
+}
+
+/** Where Sushant is working: the window he types in, the one under his cursor, the others. */
+function describeView(v) {
+  const out = [];
+  const same = v.typing && v.cursorOn && windowWords(v.typing) === windowWords(v.cursorOn);
+  if (v.typing) out.push(`Sushant is typing in: ${windowWords(v.typing)}${same || v.via !== 'cursor' ? ' ← he is looking here' : ''}.`);
+  if (v.cursorOn && !same) out.push(`His cursor is on: ${windowWords(v.cursorOn)}${v.via === 'cursor' ? ' ← he is looking here' : ''}.`);
+  const others = (v.others || []).map(windowWords).filter(Boolean);
+  if (others.length) out.push(`Also open: ${others.join('; ')}.`);
+  return out;
+}
+
 /** "today", "yesterday", "3 days ago" for a 'YYYY-MM-DD' day. */
 function daysAgo(day, now) {
   const [y, m, d] = day.split('-').map(Number);
@@ -86,6 +103,8 @@ function systemPrompt(personality, notes = '') {
     personality.self,
     'You talk like a baby, but you understand what Sushant does on his computer (job hunting, coding, emails, videos, games) and you have feelings and opinions about it.',
     'When you think or talk about what he is doing, name the actual thing (the company, the email subject, the video, the code), in your own baby words.',
+    'He often uses several windows and screens at once; the one he is looking at matters most.',
+    'If what he is reading has to do with what he told you about himself (his skills, his goals), notice it.',
     '',
     'Your personality (only what stands out):',
     traits,
@@ -118,13 +137,19 @@ function situationPrompt(s) {
   const doing = STATE_WORDS[self.state];
   lines.push(`It's ${partOfDay(self.hour != null ? self.hour : 12)}. You feel ${feel}.${doing ? ` You are ${doing}.` : ''}`);
   const sc = s.screen;
-  if (sc) {
+  if (s.view && (s.view.typing || s.view.cursorOn)) {
+    lines.push(...describeView(s.view));
+  } else if (sc) {
     lines.push(
       sc.private
         ? "On Sushant's screen right now: something private. You can't see it and don't ask about it."
         : `On Sushant's screen right now: ${sc.app}${sc.title ? `, "${sc.title}"` : ''}${sc.site ? ` (${sc.site})` : ''}.`,
     );
   }
+  const rd = s.reading;
+  if (rd && rd.text) lines.push(`Text on the window he's looking at (part of it):\n«${rd.text}»`);
+  if (rd && rd.picture) lines.push('You can also see a picture of that window.');
+  if (rd && rd.skipped === 'email or chat') lines.push("(That window is his email or chat: you don't read those.)");
   const happened = (s.events || []).filter((e) => ['observe', 'interact', 'changed'].includes(e.kind));
   const decided = (s.events || []).filter((e) => ['said', 'silent'].includes(e.kind));
   if (happened.length) {
@@ -216,4 +241,4 @@ function parseThought(text, recent = []) {
   };
 }
 
-module.exports = { MAX_WORDS, ACTIONS, SCHEMA, systemPrompt, situationPrompt, cleanLine, parseThought, similar, needsWords };
+module.exports = { MAX_WORDS, ACTIONS, SCHEMA, systemPrompt, situationPrompt, describeView, cleanLine, parseThought, similar, needsWords };

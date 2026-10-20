@@ -34,9 +34,13 @@ const DEFAULTS = {
   // never shown to his mind. Matched case-insensitively anywhere in the app
   // name, the page address, or (for words) the window title and address.
   privacyBlock: { apps: [], sites: [], words: [] },
+  // Opt-in (macOS): he reads the window you're looking at (text, and now and
+  // then a picture of it) for his thoughts. Needs Screen Recording permission.
+  readScreen: false,
+  // Email and chat apps he may read anyway (he only sees their titles otherwise).
+  screenAllow: { apps: [], sites: [] },
 };
 
-const BLOCK_KEYS = ['apps', 'sites', 'words'];
 
 // Lists you can add to in settings.json. Saved lists are added to the
 // built-in ones (not replacing them), so new defaults reach older installs.
@@ -67,9 +71,9 @@ class Settings {
           for (const [nk, nv] of Object.entries(saved[k])) {
             if (nk in DEFAULTS[k] && typeof nv === typeof DEFAULTS[k][nk]) this.values[k][nk] = nv;
           }
-        } else if (k === 'privacyBlock' && saved[k] && !Array.isArray(saved[k])) {
+        } else if ((k === 'privacyBlock' || k === 'screenAllow') && saved[k] && !Array.isArray(saved[k])) {
           this.values[k] = {};
-          for (const bk of BLOCK_KEYS) {
+          for (const bk of Object.keys(DEFAULTS[k])) {
             const list = saved[k][bk];
             this.values[k][bk] = Array.isArray(list) ? list.filter((v) => typeof v === 'string' && v.trim()) : [];
           }

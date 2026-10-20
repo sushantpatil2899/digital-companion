@@ -32,7 +32,8 @@
       "package.json"
     ],
     "asarUnpack": [
-      "src/main/mac/*.jxa.js"
+      "src/main/mac/*.jxa.js",
+      "src/main/mac/*.applescript"
     ],
     "mac": {
       "target": [
@@ -45,7 +46,7 @@
         "LSUIElement": true,
         "NSCalendarsUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
         "NSCalendarsFullAccessUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
-        "NSAppleEventsUsageDescription": "Togepi checks which app is in front so he can keep quiet during meetings. Nothing leaves your Mac."
+        "NSAppleEventsUsageDescription": "Togepi checks which app is in front so he can keep quiet during meetings and know what you're working on. Nothing leaves your Mac."
       }
     },
     "extraResources": [

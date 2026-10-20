@@ -33,7 +33,8 @@ const ENGINE_ASSETS = {
 // a lighter voice is ggml-org/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q4_0.gguf,
 // a lighter decision model ggml-org/Laya-GGUF Laya-Q8_0.gguf.
 const MODELS = {
-  voice: { repo: 'ggml-org/gemma-4-12B-it-GGUF', file: 'gemma-4-12B-it-Q4_0.gguf', args: [] },
+  // mmproj: the vision add-on, so he can look at pictures of windows (Phase 3).
+  voice: { repo: 'ggml-org/gemma-4-12B-it-GGUF', file: 'gemma-4-12B-it-Q4_0.gguf', mmproj: 'mmproj-gemma-4-12B-it-Q8_0.gguf', args: [] },
   decide: { repo: 'ggml-org/vllm-d3-nano-GGUF', file: 'vllm-d3-nano-Q8_0.gguf', args: [] },
 };
 
@@ -103,11 +104,12 @@ async function fetchModels() {
   for (const [role, m] of Object.entries(MODELS)) {
     console.log(`${role}: ${m.repo}/${m.file}`);
     await download(`https://huggingface.co/${m.repo}/resolve/main/${m.file}`, path.join(MODELS_DIR, m.file));
-    manifest[role] = { file: m.file, repo: m.repo, args: m.args };
+    if (m.mmproj) await download(`https://huggingface.co/${m.repo}/resolve/main/${m.mmproj}`, path.join(MODELS_DIR, m.mmproj));
+    manifest[role] = { file: m.file, mmproj: m.mmproj || null, repo: m.repo, args: m.args };
   }
   fs.writeFileSync(path.join(MODELS_DIR, 'models.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   // Remove models no longer used (e.g. after switching to a different one).
-  const keep = new Set(['models.json', ...Object.values(MODELS).map((m) => m.file)]);
+  const keep = new Set(['models.json', ...Object.values(MODELS).flatMap((m) => [m.file, m.mmproj].filter(Boolean))]);
   for (const f of fs.readdirSync(MODELS_DIR)) {
     if (!keep.has(f) && f.endsWith('.gguf')) {
       fs.rmSync(path.join(MODELS_DIR, f));

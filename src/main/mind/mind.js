@@ -122,6 +122,9 @@ class Mind {
     this.writingJournal = false;
     this.lastJournal = null; // { day, at } or { error }
     this.nextJournalCheck = this.now() + 60 * 1000; // a minute after starting (models loading)
+    this.view = null; // windows in use (Phase 3)
+    this.reading = null; // what he last read on the window you're looking at
+    this.lastLook = null;
   }
 
   heartbeatDelay() {
@@ -140,6 +143,10 @@ class Mind {
    */
   async observe(o) {
     if (!o || !o.app) return;
+    // Phase 3: the other windows in use (typing / cursor / also open), and
+    // what he read on the one you're looking at. Kept in memory only.
+    if (o.view) this.view = this.cleanView(o.view);
+    if (o.reading !== undefined) this.reading = o.reading;
     const key = `${o.app}|${o.title || ''}|${o.url || ''}|${o.private ? 1 : 0}`;
     if (this.lastObservation === key) return;
     this.lastObservation = key;
@@ -149,7 +156,8 @@ class Mind {
     const prev = this.log.last(['observe']);
     const entry = blocked
       ? { kind: 'observe', private: true }
-      : { kind: 'observe', app: o.app, title: cleanTitle(o.title), site: privacy.domainOf(o.url) };
+      : { kind: 'observe', app: o.app, title: cleanTitle(o.title), site: privacy.domainOf(o.url), ...(o.screen ? { screen: o.screen } : {}), ...(o.via ? { via: o.via } : {}) };
+    if (blocked) this.reading = null;
     if (prev && prev.private && entry.private) return; // still private: nothing new to note
     const added = this.log.add(entry);
     if (blocked) return;
@@ -159,6 +167,26 @@ class Mind {
       this.lastObserveThink = t;
       this.wake({ kind: 'observe', text: `Sushant switched to ${entry.app}${entry.title ? `: "${entry.title}"` : ''}.`, interactive: false, seen: added });
     }
+  }
+
+  /** The windows you're using, for his prompt: private ones without details. */
+  cleanView(view) {
+    const clean = (w) => {
+      if (!w) return null;
+      if (w.private || privacy.check({ app: w.app, title: w.title, url: w.url }, this.getBlocklist()).blocked) return { private: true, screen: w.screen || null };
+      return { app: w.app, title: cleanTitle(w.title), site: privacy.domainOf(w.url), screen: w.screen || null };
+    };
+    return { typing: clean(view.typing), cursorOn: clean(view.cursorOn), via: view.via || 'typing', others: (view.others || []).map(clean).filter(Boolean) };
+  }
+
+  /** The windows in use changed but your attention didn't move (no new thought). */
+  setView(view) {
+    this.view = this.cleanView(view);
+  }
+
+  /** A newer reading of the window you're still looking at (no new thought for it). */
+  setReading(reading) {
+    this.reading = reading;
   }
 
   /** Ask the decision model about anything the privacy rules let through (cached per window). */
@@ -296,11 +324,14 @@ class Mind {
       const decisions = this.log.recent(MIND.recentDecisions, ['said', 'silent']);
       const self = this.getSelf();
       const screen = this.log.last(['observe']);
-      const memories = this.recall(trigger, screen);
-      const user = T.situationPrompt({ trigger, self, screen, memories, events: [...events, ...decisions], now: t });
+      const reading = screen && !screen.private && this.reading && this.reading.app === screen.app ? this.reading : null;
+      const memories = this.recall(trigger, screen, reading);
+      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: T.SCHEMA });
+      const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
+      this.lastLook = reading ? { app: reading.app, chars: reading.text ? reading.text.length : 0, picture: !!image, skipped: reading.skipped || null, at: reading.at } : null;
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: T.SCHEMA, image });
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
       this.lastThought = { ...thought, trigger: trigger.kind, at: this.now() };
@@ -316,9 +347,13 @@ class Mind {
   }
 
   /** Long-term memories that fit what's going on (Phase 2). */
-  recall(trigger, screen) {
+  recall(trigger, screen, reading = null) {
     if (!this.memory) return [];
-    const query = [trigger.text, screen && !screen.private ? `${screen.app} ${screen.title || ''} ${screen.site || ''}` : ''].join(' ');
+    const query = [
+      trigger.text,
+      screen && !screen.private ? `${screen.app} ${screen.title || ''} ${screen.site || ''}` : '',
+      reading && reading.text ? reading.text.slice(0, 300) : '',
+    ].join(' ');
     this.lastRecalled = this.memory.recall(query);
     return this.lastRecalled;
   }
@@ -402,6 +437,8 @@ class Mind {
       enabled: this.enabled,
       engine: this.engine ? this.engine.status() : 'no engine',
       sees: this.log.last(['observe']),
+      view: this.view || null,
+      looked: this.lastLook || null,
       recalled: this.lastRecalled.map((m) => m.text),
       journal: this.writingJournal ? 'writing…' : this.lastJournal,
       lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
