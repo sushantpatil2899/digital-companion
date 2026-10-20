@@ -1,9 +1,9 @@
 // JavaScript for Automation (run with `osascript -l JavaScript`): lists the
-// apps that have a normal window showing on any screen, with where it is, as
-// JSON: {"windows":[{"app":"zoom.us","x":0,"y":25,"width":1280,"height":800}]}
-// Only owner (app) names and positions are read; macOS gives these without
-// any permission prompt. Window titles (which would need Screen Recording
-// permission) are not read.
+// normal windows showing on any screen, front to back, with where they are, as
+// JSON: {"windows":[{"id":123,"app":"zoom.us","title":"…","x":0,"y":25,"width":1280,"height":800}]}
+// App names, window ids and positions come without any permission prompt.
+// Window titles only come once Togepi may record the screen ("Let him read my
+// screen"); otherwise macOS leaves them out and `title` is null.
 
 ObjC.import('CoreGraphics');
 ObjC.import('Foundation');
@@ -20,7 +20,15 @@ function run() {
     const width = Number(b.Width) || 0;
     const height = Number(b.Height) || 0;
     if (!w.kCGWindowOwnerName || width < 120 || height < 90) continue; // skip tiny helper windows
-    windows.push({ app: String(w.kCGWindowOwnerName), x: Number(b.X) || 0, y: Number(b.Y) || 0, width, height });
+    windows.push({
+      id: Number(w.kCGWindowNumber) || null,
+      app: String(w.kCGWindowOwnerName),
+      title: w.kCGWindowName ? String(w.kCGWindowName) : null,
+      x: Number(b.X) || 0,
+      y: Number(b.Y) || 0,
+      width,
+      height,
+    });
   }
   return JSON.stringify({ windows });
 }

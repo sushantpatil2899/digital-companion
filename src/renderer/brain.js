@@ -130,6 +130,16 @@ function render(b) {
   const m = b.mind;
   if (m) {
     rows.push(['Mind', m.enabled ? `${m.engine}${m.thinking ? ' · thinking…' : ''}` : 'off']);
+    const v = m.view;
+    const win = (w) => (!w ? '' : w.private ? 'something private' : `${w.app}${w.title ? `: "${w.title}"` : ''}${w.screen ? ` (screen ${w.screen})` : ''}`);
+    if (v && (v.typing || v.cursorOn)) {
+      const parts = [];
+      if (v.typing) parts.push(`typing in ${win(v.typing)}${v.via === 'typing' ? ' ← looking' : ''}`);
+      if (v.cursorOn && win(v.cursorOn) !== win(v.typing)) parts.push(`cursor on ${win(v.cursorOn)}${v.via === 'cursor' ? ' ← looking' : ''}`);
+      rows.push(['Attention', parts.join(' · ')]);
+    }
+    const l = m.looked;
+    if (l) rows.push(['Read', l.skipped ? `${l.app}: didn't read it (${l.skipped})` : `${l.app}: ${l.chars} characters${l.picture ? ' + a picture' : ''}`]);
     const seen = m.sees;
     if (seen) rows.push(['He sees', seen.private ? 'something private (no details)' : `${seen.app}${seen.title ? `: "${seen.title}"` : ''}${seen.site ? ` (${seen.site})` : ''}`]);
     else rows.push(['He sees', 'nothing yet (turn on "Notice which app I\'m using" under Brain)']);

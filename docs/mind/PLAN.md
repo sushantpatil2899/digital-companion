@@ -195,7 +195,7 @@ an Amazon job).
 Remaining before `done`: Sushant tries it (it needs a day of use before the
 first diary appears).
 
-### Phase 3: reading the screen — status: `questions` (proposal below, asked 2026-10-20)
+### Phase 3: reading the screen — status: `in progress` (built; screen capture and OCR need testing on Sushant's Mac)
 
 Goal: he understands what's on screen (e.g. the job description you're
 reading), not just app and tab names.
@@ -264,6 +264,31 @@ Multiple screens and attention (Sushant's feedback, 2026-10-20; proposal):
   screen it's on (even partly covered). One picture per look, of the window
   you're paying attention to; other windows only by title. If the focused and
   the cursor windows differ, they alternate between looks.
+
+Built (2026-10-20):
+- `src/main/mind/attention.js`: typing window vs. window under the cursor
+  (front-to-back window list from `windows.jxa.js`, now with window ids and,
+  with permission, titles), 15 s cursor rule, 5 s settle, screen numbers.
+  Togepi's own windows are ignored. Runs every second in the main process.
+- `src/main/mind/screen.js`: one window per look (attention window, taking
+  turns with the other when typing and cursor windows differ), on settle and
+  then at most every 30 s (8 s between any looks); `whyNotRead` (privacy
+  rules, email/chat apps and sites unless in `screenAllow`); `scrub` (emails,
+  card/account numbers, SSN, phone numbers, API keys and long tokens, lines
+  mentioning passwords/secrets); d3-nano double-check; a picture for Gemma
+  when there's < 200 characters of text and every 4th look; readings stay
+  usable 60 s; picture files deleted immediately; nothing written to disk.
+- `src/main/mac/screen-capture.js` + `ocr.applescript`: `screencapture -x -o
+  -l <window id>`, Apple Vision text recognition via AppleScript-ObjC (no
+  Swift compiler), `sips` for a 1280 px JPEG.
+- Engine: Gemma's vision add-on (`mmproj-gemma-4-12B-it-Q8_0.gguf`,
+  downloaded by `fetch-models.js`) with `--mmproj`; images go to
+  `/completion` as `multimodal_data` at the `<__media__>` marker.
+- Prompt: "typing in … / cursor on … ← he is looking here / also open …",
+  the text he read, "you can also see a picture"; he's asked to notice links
+  with Sushant's notes. Brain view: Attention and Read rows.
+- "Let him read my screen" switch (turns on app watching, triggers the
+  macOS permission prompt once); permission status shown in the brain view.
 
 Honest limits: Screen Recording, Vision OCR and window capture only exist on
 the Mac, so that part can't be run in the dev container (it will be tested

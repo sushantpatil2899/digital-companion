@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session, systemPreferences, desktopCapturer } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
 const { Settings } = require('./settings');
@@ -17,6 +17,8 @@ const { Engine } = require('./mind/engine');
 const { EventLog } = require('./mind/events');
 const { SoundLibrary } = require('./mind/sounds');
 const { Memory, pruneEvents } = require('./mind/memory');
+const { Attention } = require('./mind/attention');
+const { ScreenReader, screenKey } = require('./mind/screen');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -117,6 +119,10 @@ let noticeTimer = null;
 let sounds = null;
 let memory = null;
 let memoriesWin = null;
+const attention = new Attention();
+let lastApps = null; // latest window list etc. from the app watcher
+let reader = null; // "Let him read my screen" (macOS)
+let attentionBusy = false;
 const IS_MAC = process.platform === 'darwin';
 
 // --------------------------------------------------------------- opt-in context (macOS)
@@ -134,10 +140,8 @@ function applyWatchApps(on) {
     (r) => {
       tracker.setNote('apps', r.error);
       tracker.setApps({ watching: true, ...r });
-      if (mind && r.frontApp) {
-        const t = r.frontTab;
-        mind.observe({ app: r.frontApp, bundle: r.frontBundle, title: t && t.title, url: t && t.url, private: !!(t && t.private) });
-      }
+      // His mind follows your attention from this (see updateAttention).
+      lastApps = r;
       if (r.frontKind === 'presenting') hideForPresenting();
       else showAfterPresenting();
     },
@@ -424,6 +428,7 @@ function tick() {
   lastTick = now;
 
   const cursor = screen.getCursorScreenPoint();
+  attention.cursorAt(cursor);
 
   // A press turns into a pick-up once the cursor moves; held still, it's petting.
   if (press && companion.state !== 'grabbed') {
@@ -739,6 +744,16 @@ function buildMenu() {
         },
       },
       {
+        label: 'Let him read my screen',
+        type: 'checkbox',
+        enabled: IS_MAC,
+        checked: !!(settings && settings.get('readScreen')),
+        click: (item) => {
+          applyReadScreen(item.checked);
+          refreshTrayMenu();
+        },
+      },
+      {
         label: 'Read my calendar',
         type: 'checkbox',
         enabled: IS_MAC,
@@ -949,8 +964,88 @@ function startMind() {
     onSpeak: ({ text, action }) => companion.say(text, action),
     getBlocklist: () => settings.get('privacyBlock'),
   });
-  mindTimer = setInterval(() => mind.tick(), 1000);
+  mindTimer = setInterval(() => {
+    mind.tick();
+    updateAttention();
+  }, 1000);
+  if (IS_MAC) {
+    reader = new ScreenReader(require('./mac/screen-capture'), {
+      decide: (state, q) => (engine && engine.canDecide ? engine.decide(state, q) : Promise.resolve(null)),
+      getRules: () => ({ block: settings.get('privacyBlock'), allow: settings.get('screenAllow') }),
+    });
+  }
   applyMind(settings.get('mind'));
+}
+
+// --------------------------------------------------------------- attention and reading the screen
+
+function screenPermission() {
+  try {
+    return systemPreferences.getMediaAccessStatus('screen');
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** He may look at your windows right now. */
+function canReadScreen() {
+  if (!reader || !settings.get('readScreen') || !mind || !mind.enabled || !engine || !engine.ready) return false;
+  if (companion.context.userAway || companion.context.quiet) return false;
+  return screenPermission() === 'granted';
+}
+
+/**
+ * Every second: where your attention is (window you type in vs. the one
+ * under your cursor, across screens). When it settles on a new window he
+ * reads it (if allowed) and notices it; otherwise he just keeps the view and
+ * rereads the window now and then.
+ */
+async function updateAttention() {
+  if (!mind || !lastApps || !lastApps.frontApp || attentionBusy) return;
+  attentionBusy = true;
+  try {
+    const displays = screen.getAllDisplays().map((d) => d.bounds);
+    const v = attention.update({ windows: lastApps.windows || [], frontApp: lastApps.frontApp, frontTab: lastApps.frontTab, displays });
+    const a = v.attention;
+    if (!a) return;
+    const view = { typing: v.typing, cursorOn: v.cursorOn, others: v.others, via: v.via };
+    const reading = canReadScreen();
+    if (settings.get('readScreen') && IS_MAC) {
+      tracker.setNote('screen', screenPermission() === 'granted' ? null : 'To let him read your screen, allow Togepi under System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen him.');
+    }
+    if (v.settled) {
+      let r = reading ? reader.readingFor(screenKey(a)) || (await reader.look(v, { force: true })) : null;
+      if (r && r.key !== screenKey(a)) r = null;
+      await mind.observe({ app: a.app, title: a.title, url: a.url, private: a.private, screen: a.screen, via: v.via, view, reading: r });
+    } else {
+      mind.setView(view);
+      if (reading) {
+        await reader.look(v);
+        const r = reader.readingFor(screenKey(a));
+        if (r) mind.setReading(r);
+      }
+    }
+  } catch (e) {
+    console.error('Attention:', e.message);
+  } finally {
+    attentionBusy = false;
+  }
+}
+
+/** Turn "Let him read my screen" on or off (it needs app watching and Screen Recording permission). */
+function applyReadScreen(on) {
+  settings.set('readScreen', on);
+  tracker.setNote('screen', null);
+  if (!on) {
+    if (mind) mind.setReading(null);
+    return;
+  }
+  if (!settings.get('watchApps')) {
+    settings.set('watchApps', true);
+    applyWatchApps(true);
+  }
+  // Asking for a picture of the screen makes macOS show its permission prompt once.
+  if (screenPermission() !== 'granted') desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => {});
 }
 
 /** Turn his mind (and the local models) on or off. */

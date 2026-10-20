@@ -150,4 +150,20 @@ Answers:
 | 2026-10-20 | 6. Notes | Compare what he reads with Sushant's notes. | Recommendation accepted. |
 | 2026-10-20 | 7. Window titles | Titles of all apps with the same permission. | Recommendation accepted. |
 | 2026-10-20 | Feedback: multiple screens | Sushant works on two screens (talking to an assistant on one, GitHub open on the other) and Togepi thought he was "looking at GitHub again". He should know where the cursor is, which window Sushant is in, and that several windows are in use; and screenshots must make sense with several screens. **Proposal in PLAN.md Phase 3 ("Multiple screens and attention"), waiting for Sushant's confirmation.** | Today he only knows the app with keyboard focus (and that browser's front tab), and his "on screen right now" only changes when that changes. |
+| 2026-10-20 | Attention rule | **Accepted**: cursor moved in the last ~15 s → the window under the cursor; otherwise the focused window. He's told typing / cursor / also open. | Sushant agreed. |
+| 2026-10-20 | Pictures | **Accepted**: one window per look, never a whole screen; alternating when the typing and cursor windows differ. | Sushant agreed. |
+| 2026-10-20 | Follow you to the screen you're working on | **No.** He keeps roaming freely across screens and doesn't walk over to where you're working. | Sushant: it would disturb him, and Togepi would get stuck on one screen. |
+
+**Phase 3 questions: all answered (2026-10-20).**
+
+## Phase 3 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-20 | OCR without Swift | Apple Vision via an AppleScript-ObjC script run with `osascript` (like the existing JXA helpers). If it fails, he still gets a picture of the window for Gemma. | No compiler needed to build the app; a fallback if OCR misbehaves. |
+| 2026-10-20 | Capture | `screencapture -l <window id>`: one window, whichever screen, even partly covered; file deleted right after. | Matches "one window per look". |
+| 2026-10-20 | Timing | On settle, then at most every 30 s per window, at least 8 s between any looks; readings usable for 60 s. | Recommendation, light on the Mac. |
+| 2026-10-20 | When he looks at the picture | When the text is under 200 characters, and every 4th look at the same window. | "Now and then, e.g. when there's little text." |
+| 2026-10-20 | Email and chat | Not read unless listed in `screenAllow` (apps/sites) in settings.json. | Recommendation. |
+| 2026-10-20 | Scrubbing | Email addresses, card/account numbers, SSNs, phone numbers, API keys and long tokens, and any line mentioning passwords, secrets, tokens, PINs or CVVs. | Built-in privacy. |
 

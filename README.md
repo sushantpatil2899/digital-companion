@@ -103,7 +103,19 @@ Both run in llama.cpp's `llama-server`, in background processes listening on `12
 
 **His personality** is 34 traits (the 30 Big Five facets plus 4 Honesty-Humility facets) and 19 values, each 0–100, starting from who Togepi is in the games and anime: very joyful and warm, curious and mischievous, willful, a fearless baby. *Mind → Personality…* opens sliders for all of them; change one and after a few seconds he notices ("Huh? I feel… different!"). His relationship with you (affection, trust, familiarity) starts at "just met". It's all in `personality.md` (numbers at the top, his self-description below), which you can also edit by hand. The research behind it is in [`docs/mind/`](docs/mind/).
 
-**What he sees** of your screen comes from *Notice which app I'm using* (under *Brain*): the app in front and, in a browser, the title and site of the tab you're looking at. Without it he only knows what you do with him. **Privacy is built in:** private / incognito windows (Chrome, Arc, Brave, Edge), password managers, payment, checkout and banking pages, money apps, sign-in pages and medical portals are never shown to him; he only notes that "something private" is open. Add your own apps, sites or words to `privacyBlock` in `settings.json` (*Mind → Privacy blocklist…*). Safari doesn't say which of its windows are private, so a private Safari window is only caught by these rules.
+**What he sees** of your screen comes from *Notice which app I'm using* (under *Brain*). He follows your **attention** across windows and screens: the window you're typing in, the window under your cursor, and the other windows that are open. If you've moved the cursor in the last ~15 seconds, he takes it that you're looking at the window under it (reading or scrolling); otherwise at the one you're typing in. A window only counts once your attention has stayed on it ~5 seconds, so moving the cursor across screens doesn't distract him. So when you chat in one app while GitHub is open on your other screen, he knows both. He keeps roaming wherever he likes; he doesn't follow you to the screen you're working on.
+
+**Let him read my screen** (under *Brain*, macOS, off by default) goes further: he reads the window you're looking at.
+- One window per look, never a whole screen (whichever screen it's on); when you type in one window and point at another, his looks take turns.
+- He looks when your attention settles on a window, then at most every 30 seconds while you stay.
+- He reads its text with Apple's on-device text recognition. When there's little text (a picture, a video, a game), and now and then anyway, his language model looks at a picture of the window too.
+- He compares what he reads with your notes, e.g. a job description with your skills.
+- Nothing from the screen is saved: the picture is deleted straight away and the text is only used for his next thought.
+- He never reads private things (the rules below run first), and he doesn't read email or chat apps (Mail, Gmail, Slack, Messages, WhatsApp, Teams, Discord, …) unless you add them to `screenAllow` in `settings.json`; for those he only knows the window title.
+- Card numbers, passwords, keys, phone numbers and email addresses are blanked out of what he reads, and his decision model double-checks the rest.
+- macOS asks once for **Screen Recording** permission (*System Settings → Privacy & Security → Screen & System Audio Recording*); quit and reopen him after allowing it. The same permission also gives him the titles of all your windows, not just browser tabs. Because the app is self-signed, macOS may ask again after you rebuild it.
+
+**Privacy is built in:** private / incognito windows (Chrome, Arc, Brave, Edge), password managers, payment, checkout and banking pages, money apps, sign-in pages and medical portals are never shown to him; he only notes that "something private" is open. Add your own apps, sites or words to `privacyBlock` in `settings.json` (*Mind → Privacy blocklist…*). Safari doesn't say which of its windows are private, so a private Safari window is only caught by these rules.
 
 **His memory.** Everything lives as plain files in `~/Library/Application Support/Togepi/mind/` that you can read and edit (*Mind → Show his memory folder…*):
 
@@ -165,9 +177,11 @@ src/
   main/nudges.js       water / stretch / eye rest / bedtime timers, "remind me" notes, what he says
   main/games/          fetch (the ball's physics) and tic-tac-toe (rules and his moves)
   main/mind/           his own mind: personality, event log, privacy gate, the think/decide
-                       loop, memory (diary, facts, recall), llama-server engine, your sound clips
+                       loop, memory (diary, facts, recall), attention across windows and
+                       screens, reading the screen, llama-server engine, your sound clips
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
-                       browser tabs (AppleScript) and calendar (EventKit)
+                       browser tabs (AppleScript), calendar (EventKit), window pictures
+                       (screencapture) and their text (Vision, ocr.applescript)
   main/main.js         Electron main: transparent always-on-top window that follows him,
                        60 Hz loop, cursor polling for dragging, tray + menus, saving his brain
   preload.js           small IPC bridge (game-preload.js: the same for the ball and the board)

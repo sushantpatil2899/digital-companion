@@ -197,7 +197,7 @@ class AppWatcher {
         if (r.error) errors.push(r.error);
       }
       const summary = summarize(this.lastFront, windows, tabs, settings, this.lastBundle);
-      if (this.timer) this.onResult({ ...summary, frontTab, error: errors.join(' ') || null });
+      if (this.timer) this.onResult({ ...summary, windows: windows || [], frontTab, error: errors.join(' ') || null });
     } finally {
       this.busy = false;
     }
