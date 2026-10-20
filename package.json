@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "node scripts/fetch-models.js && electron-builder --mac --dir && node scripts/adhoc-sign.js",
+    "dist": "node scripts/fetch-models.js && node scripts/clean-dist.js && electron-builder --mac --dir && node scripts/adhoc-sign.js",
     "fetch-models": "node scripts/fetch-models.js"
   },
   "keywords": [
