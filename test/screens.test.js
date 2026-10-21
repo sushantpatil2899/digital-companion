@@ -210,3 +210,36 @@ test('he walks along the very bottom of every screen (in front of the Dock), bel
   const c = companionOn(LAYOUTS.laptopAndMonitor, 0, 700);
   assert.strictEqual(c.y, 982);
 });
+
+test('unplugging a screen while he walks to a hop does not crash him; he picks something else to do', () => {
+  const c = companionOn(LAYOUTS.laptopAndMonitor, 1, 2400);
+  assert.ok(c.travelTo(0, 700));
+  for (let i = 0; i < 10; i++) c.update(1 / 60);
+  assert.ok(c.afterMove && c.afterMove.cross, 'on his way to the hop');
+  c.setScreens([LAYOUTS.laptopAndMonitor[0]]); // the monitor is unplugged
+  assert.equal(c.route, null);
+  assert.ok(!c.afterMove || !c.afterMove.cross, 'the planned hop is forgotten');
+  assert.doesNotThrow(() => travel(c, 20));
+  assert.equal(c.screenIndex, 0);
+});
+
+test('a crossing planned for a screen that is gone is skipped, not followed', () => {
+  const c = companionOn(LAYOUTS.laptopAndMonitor, 1, 2400);
+  const link = screens.route(c.screens, 1, 0, 56)[0];
+  c.setScreens([LAYOUTS.laptopAndMonitor[0]]);
+  assert.doesNotThrow(() => c.startCross(link));
+  assert.equal(c.crossing, null);
+  assert.ok(c.isGrounded());
+});
+
+test('after an error he forgets his plan and lands on the floor of the screen he is on', () => {
+  const c = companionOn(LAYOUTS.laptopAndMonitor, 1, 2400);
+  c.travelTo(0, 700);
+  c.y -= 300;
+  c.recover();
+  assert.equal(c.route, null);
+  assert.equal(c.afterMove, null);
+  assert.equal(c.state, 'fall');
+  travel(c, 5);
+  assert.equal(c.y, c.screens[c.screenIndex].floor);
+});

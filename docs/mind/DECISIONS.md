@@ -247,3 +247,11 @@ Answers:
 | 2026-10-21 | Reflection timing | Now by week: due Sunday evening unless that week's is done (by hand or skipped); caught up when last week's was missed. A hand-started reflection with too little diary isn't recorded as a skipped week. | Needed so a hand-started reflection counts as that week's. |
 | 2026-10-21 | Report contents | Versions, model files and status, memory used, resting, speed, last thought/diary/growth outcome (not their text), counts of memories, permissions, switches and numbers from settings (list sizes only), current hour/away/battery and error messages (scrubbed, 160 characters). Never: app names or titles he saw, screen text, what he said or thought, memories, notes, your lists. | "Nothing private" with enough to diagnose. |
 | 2026-10-21 | Welcome versions | `WELCOME_VERSION` = phase number (5 now) in `src/main/welcome.js`, with a What's new entry per version (a test checks every version has one). First run (or an install from before Phase 5) shows the full welcome; an update shows only what's new since the version you last saw; *Welcome and what's new…* in the menu opens it any time. | The rule for future changes (also in PLAN.md and CLAUDE.md). |
+
+## Phase 5 feedback (Sushant tried it on his Mac, 2026-10-21)
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | Crash: "Cannot read properties of undefined (reading 'floor')" in `hopHeight` | Fixed. A screen was unplugged or moved while he walked towards a hop onto it; the planned hop still pointed at the old screen. Now a layout change forgets planned routes and hops, a crossing to a screen that's gone is skipped, and an error in one frame no longer shows a dialog: he drops his plan, lands on the floor and the error appears in the brain view and the report. | Bug (seen on the previous version). |
+| 2026-10-21 | Screen Recording "denied" although switched on | Cause: the app is signed ad hoc, so macOS treats every rebuild as a new app and the switch in System Settings belongs to the old build. For now: remove Togepi from the list with −, reopen him and allow it again. His note now says this. Open question for Sushant: sign builds with a local certificate made once on his Mac, so permissions survive rebuilds (needs his password once). | Report showed "Screen Recording: denied". |
+

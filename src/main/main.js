@@ -435,7 +435,20 @@ function stopLoop() {
   timer = null;
 }
 
+// A bug in one frame shouldn't stop him (or pop up an error): he drops what
+// he was doing and lands on the floor; the error shows in his brain view and
+// in "Copy a report".
 function tick() {
+  try {
+    tickOnce();
+  } catch (e) {
+    console.error('Tick:', e);
+    if (companion) companion.recover();
+    if (tracker) tracker.setNote('crash', `He tripped over a bug and got back up: ${e.message}`);
+  }
+}
+
+function tickOnce() {
   if (!win || win.isDestroyed()) return;
   const now = Date.now();
   const dt = (now - lastTick) / 1000;
@@ -1041,6 +1054,13 @@ function screenPermission() {
   }
 }
 
+// The app is signed for this Mac only, so macOS treats every rebuild as a new
+// app: a Screen Recording switch that's already on belongs to the old build.
+const SCREEN_PERMISSION_NOTE =
+  'macOS hasn’t given him Screen Recording. Open System Settings → Privacy & Security → Screen & System Audio Recording. ' +
+  'If Togepi is already listed (even switched on), it’s from an older build: select it, remove it with −, then quit and reopen him and allow it when asked. ' +
+  'Otherwise switch Togepi on, then quit and reopen him.';
+
 /** He may look at your windows right now. */
 function canReadScreen() {
   if (!reader || !settings.get('readScreen') || !mind || !mind.enabled || !engine || !engine.ready) return false;
@@ -1065,7 +1085,7 @@ async function updateAttention() {
     const view = { typing: v.typing, cursorOn: v.cursorOn, others: v.others, via: v.via };
     const reading = canReadScreen();
     if (settings.get('readScreen') && IS_MAC) {
-      tracker.setNote('screen', screenPermission() === 'granted' ? null : 'To let him read your screen, allow Togepi under System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen him.');
+      tracker.setNote('screen', screenPermission() === 'granted' ? null : SCREEN_PERMISSION_NOTE);
     }
     if (v.settled) {
       let r = reading ? reader.readingFor(screenKey(a)) || (await reader.look(v, { force: true })) : null;

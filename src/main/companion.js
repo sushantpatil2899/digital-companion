@@ -249,9 +249,16 @@ class Companion {
 
   /** All displays, as Electron gives them: [{ bounds, workArea }]. */
   setScreens(displays) {
+    const before = JSON.stringify(this.screens || []);
     this.screens = screensLib.makeScreens(displays);
     if (!this.screens.length) return;
-    if (this.route && this.route.target >= this.screens.length) this.route = null;
+    // A screen was plugged in, unplugged or moved: any planned route or hop
+    // was worked out for the old layout (and may point at a screen that's
+    // gone), so he forgets it and decides again.
+    if (JSON.stringify(this.screens) !== before) {
+      this.route = null;
+      if (this.afterMove && this.afterMove.cross) this.afterMove = null;
+    }
     this.crossing = null;
     const idx = screensLib.screenAt(this.screens, this.x, this.y - 10);
     if (idx !== this.screenIndex) this.screenSince = this.time;
@@ -350,6 +357,12 @@ class Companion {
 
   /** The actual crossing move at the end of the approach. */
   startCross(link) {
+    if (!this.screens[link.from] || !this.screens[link.to]) {
+      // Planned for screens that aren't there any more.
+      this.crossing = null;
+      this.chooseNext();
+      return;
+    }
     this.crossing = link;
     this.vx = 0;
     switch (link.kind) {
@@ -393,6 +406,19 @@ class Companion {
     this.facing = x > this.x ? 1 : -1;
     this.enter(gait);
     this.afterMove = then;
+  }
+
+  /** After an error: forget any plan and come down onto the floor of the screen he's on. */
+  recover() {
+    this.route = null;
+    this.afterMove = null;
+    this.crossing = null;
+    this.vx = 0;
+    if (this.screens.length) {
+      this.screenIndex = screensLib.screenAt(this.screens, this.x, this.y - 10);
+      this.setBounds(this.screens[this.screenIndex]);
+    }
+    this.enter(this.y < this.bounds.floor ? 'fall' : 'idle', 2);
   }
 
   /** Reached the end of a walk/run. */
