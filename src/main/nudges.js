@@ -118,9 +118,12 @@ class NudgeTracker {
       if (night && !(this.bedtime.night === night && this.bedtime.done) && ctx.now - this.bedtime.lastAt >= TIMING.bedtimeRepeat * 1000) {
         due.push({ kind: 'bedtime', night });
       }
-      if (s.water && this.active.water >= s.waterEvery * 60) due.push({ kind: 'water' });
-      if (s.stretch && this.active.stretch >= s.stretchEvery * 60) due.push({ kind: 'stretch' });
-      if (s.eyes && this.active.eyes >= s.eyesEvery * 60) due.push({ kind: 'eyes' });
+      // Water, stretch and eye breaks wait while you're watching something together.
+      if (!ctx.watching) {
+        if (s.water && this.active.water >= s.waterEvery * 60) due.push({ kind: 'water' });
+        if (s.stretch && this.active.stretch >= s.stretchEvery * 60) due.push({ kind: 'stretch' });
+        if (s.eyes && this.active.eyes >= s.eyesEvery * 60) due.push({ kind: 'eyes' });
+      }
     }
     due.sort((a, b) => PRIORITY.indexOf(a.kind) - PRIORITY.indexOf(b.kind));
     return due[0] || null;

@@ -479,6 +479,7 @@ becomes its own phase, planned questions first. Order proposed and accepted
 
 1. **Questions with two answers** (Phase 6, below): sometimes he asks you
    something and you click one of two answers (never yes/no).
+   (Added after it: **watching together**, Phase 7.)
 2. **Chat window**: a window to have a conversation with him.
 3. **Plug-in characters**: a standard character pack (required files for
    looks, movement, personality; clearly separated basic and add-on parts)
@@ -533,6 +534,44 @@ Built:
 - Growth: an answer counts like a pat (same daily cap).
 - Brain view: "Last asked" with the answers and your reaction; when
   questions are paused.
+
+### Phase 7: watching together — status: `in progress` (built and tested here; Sushant to try it on his Mac)
+
+Sushant's idea (2026-10-21, after Phase 6): when he watches a movie, a
+series or a video, Togepi notices, says something about it ("we're watching
+this today"), goes to the screen it's on (with several screens), turns
+around and sits in its bottom-right corner watching it too, until he stops.
+Added before the chat window, which becomes the next phase.
+
+Answers (2026-10-21, details in DECISIONS.md): playback pages of Netflix,
+YouTube, Prime Video, Disney+, Hulu, Max, Apple TV and Crunchyroll (by
+address, not browsing) plus VLC, IINA, QuickTime and TV; starts after 30 s
+(YouTube after he's stayed a while), ends 1 min after he's somewhere else;
+the model says the line, after a fresh look at the window (picture); quiet
+while watching (no lines, no chirps); water and stretch breaks wait until
+it's over; full screen is fine; when it ends he decides himself whether to
+say something.
+
+Built:
+- `src/main/mind/watching.js`: what counts (sites by address, player apps),
+  the show's name from the title, start after 30 s (YouTube 2 min), stop
+  after 60 s elsewhere; not for private windows or anything on the
+  blocklist.
+- `main.js`: checks every second; at the start a forced look at the window
+  with a picture (if *Let him read my screen* is on), then his line; no
+  other screen reading and no chirps while watching.
+- `companion.js`: `startWatching(screen)` / `watchOn` / `stopWatching`; he
+  walks (across screens if needed) to the bottom-right corner and sits with
+  his back to you, comes back to the spot if moved, no cursor reactions or
+  wandering meanwhile.
+- `mind.js`: `startedWatching` (always says one line, never a question),
+  then 'watching with you' blocks everything else and he doesn't think on
+  his own; `stoppedWatching` (his own decision whether to speak).
+- Context: while watching, no mouse or keyboard for up to 3 hours doesn't
+  make you away (so he doesn't think you left or rest the models mid-movie).
+- Nudges: water, stretch and eye breaks wait while watching.
+- Brain view and report show that you're watching (the report doesn't name
+  what).
 
 ## Later
 

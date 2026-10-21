@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 6;
+const WELCOME_VERSION = 7;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -19,7 +19,7 @@ const WELCOME = [
   },
   {
     title: 'Playing with me',
-    text: 'Click me for a pat, hold the mouse on me to pet me, or pick me up and throw me (I don’t love that). Play → Fetch or Tic-tac-toe; sometimes I’ll ask you to play. Come here calls me over; Stay put keeps me still for a while.',
+    text: 'Click me for a pat, hold the mouse on me to pet me, or pick me up and throw me (I don’t love that). Play → Fetch or Tic-tac-toe; sometimes I’ll ask you to play. Come here calls me over; Stay put keeps me still for a while. When you watch a movie or a video, I sit in the corner of that screen and watch it with you, quietly.',
   },
   {
     title: 'Looking after you',
@@ -66,6 +66,15 @@ const WHATS_NEW = [
       'Sometimes I ask you a question instead of saying something: click one of my two answers. If you don’t, I shrug after 30 seconds (that’s fine).',
       'I remember answers that tell me about you (Mind → Memories), and answering makes me happy like a pat.',
       'I come up with my own things to say now, without examples to copy, and my lines can be a little longer.',
+    ],
+  },
+  {
+    version: 7,
+    title: 'Movie time together',
+    items: [
+      'When you watch something (Netflix, YouTube, Prime Video, Disney+, Hulu, Max, Apple TV, Crunchyroll, VLC, IINA, QuickTime), I say something about it and sit in the bottom-right corner of that screen with my back to you, watching too.',
+      'I start after 30 seconds (2 minutes on YouTube) and get up a minute after you stop.',
+      'While we watch I’m quiet (no chirps), and water, stretch and eye breaks wait until we’re done.',
     ],
   },
 ];

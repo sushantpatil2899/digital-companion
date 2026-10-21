@@ -23,6 +23,7 @@ class ContextTracker {
     this.now = opts.now || (() => Date.now());
     this.locked = false;
     this.suspended = false;
+    this.watching = null; // what you're watching (see src/main/mind/watching.js)
     this.idleSeconds = 0;
     this.away = false;
     this.awaySince = null;
@@ -49,6 +50,15 @@ class ContextTracker {
 
   setSuspended(v) {
     this.suspended = v;
+  }
+
+  /**
+   * You're watching something ('Netflix'…) or null. While you watch, not
+   * touching the mouse or keyboard doesn't make you away (up to `maxIdle` s).
+   */
+  setWatching(name, maxIdle = 3 * 3600) {
+    this.watching = name || null;
+    this.watchMaxIdle = maxIdle;
   }
 
   setOnBattery(v) {
@@ -99,7 +109,8 @@ class ContextTracker {
   update(idleSeconds) {
     const now = this.now();
     this.idleSeconds = idleSeconds || 0;
-    const away = this.locked || this.suspended || this.idleSeconds >= this.awayAfter;
+    const awayAfter = this.watching ? Math.max(this.awayAfter, this.watchMaxIdle) : this.awayAfter;
+    const away = this.locked || this.suspended || this.idleSeconds >= awayAfter;
     if (away && !this.away) {
       // Count the idle time that already passed as time away.
       this.awaySince = now - (this.locked || this.suspended ? 0 : this.idleSeconds * 1000);
@@ -169,6 +180,7 @@ class ContextTracker {
       quiet: !!quietReason,
       quietReason,
       presenting: quietReason === 'presenting',
+      watching: this.watching,
       frontApp: a.watching ? a.frontApp : null,
       frontBundle: a.watching ? a.frontBundle : null,
       frontKind: a.watching ? a.frontKind : null,

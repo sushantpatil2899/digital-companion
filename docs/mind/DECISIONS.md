@@ -314,3 +314,39 @@ Answers:
 | 2026-10-21 | Which answers become memories | The prompt now says "aboutSushant": true **only if his answer tells you something lasting about him, worth remembering**. | Sushant: "If it is something which is lasting about me, worth remembering, then only." |
 | 2026-10-21 | Naming things | Back to **"Try to name the actual thing."** (without "when it feels relevant"; still no examples). | Sushant: "go ahead and try to name the actual thing". |
 
+## Phase 7 questions (watching together)
+
+Sushant's idea, 2026-10-21: when he watches something, Togepi says something about it, goes to that screen's bottom-right corner, turns around and sits watching until he stops. Asked:
+
+1. What counts as watching (and YouTube)?
+2. When does he go, and when does he come back?
+3. What does he say when it starts?
+4. While you watch (quiet? reminders?)
+5. In full screen?
+6. When you stop?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | 1. What counts | **Playback pages only**, by address: Netflix, YouTube, Prime Video, Disney+, Hulu, Max, Apple TV, Crunchyroll; plus VLC, IINA, QuickTime and TV. Browsing doesn't count. **YouTube only once he's stayed on it a while** (2 minutes). | Sushant: "yes, the solution is right. And for YouTube, only once I have stayed on for a while." |
+| 2026-10-21 | 2. Timing | Goes after **30 s** on it; comes back after **1 min** somewhere else. A paused video can't be seen, so pausing doesn't end it. | Agreed. |
+| 2026-10-21 | 3. What he says | **The model decides what to say**, after a fresh look at the window **with a picture** (needs *Let him read my screen*; otherwise the tab title). | Sushant: "let the model decide what to say, but just trigger the part where it captures an image and go to the model." |
+| 2026-10-21 | 4. While watching | **Quiet: no lines, no chirps.** **Water and stretch reminders wait until it's over.** | Sushant: "make him quiet, let him not chirp or any reaction… hold them until we stop." |
+| 2026-10-21 | 5. Full screen | **He sits in the corner in full screen too.** | Sushant: "I don't mind." |
+| 2026-10-21 | 6. When you stop | He gets up and goes back to wandering; **he decides himself** whether to say something. | Agreed. |
+
+**Phase 7 questions: all answered (2026-10-21).**
+
+## Phase 7 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | YouTube "a while" | 2 minutes on YouTube watch pages (other sites 30 s). Shorts don't count. | "Only once I have stayed on for a while." |
+| 2026-10-21 | Being away during a movie | While watching, no mouse or keyboard for up to **3 hours** doesn't count as away (locking the screen or sleep still does). Otherwise after 3 minutes he'd think you left, greet you "back", and the models would rest after 15 minutes. | Needed for watching to work at all. |
+| 2026-10-21 | Eye breaks and others | Eye breaks wait too (like water and stretch). Your own notes, bedtime and meeting reminders still come. | Eye breaks are the same kind of screen-break nudge; the others are time-critical. |
+| 2026-10-21 | "No reaction" | No lines, no questions, no chirps and no cursor reactions while watching; petting still shows hearts (no sound), then he goes back to his spot. He doesn't think on his own meanwhile (saves the models' work). | "Make him quiet." |
+| 2026-10-21 | His first line | Always said (even if his urge is low), never a question; still not in a meeting. Logged in his day as "You sat down to watch … with Sushant", so the diary can mention it. | "Tell me, oh, we are watching this today." |
+| 2026-10-21 | Privacy | Private windows and anything on the blocklist never count as watching (he doesn't notice them). The report only says "watching something together", not what. | Same rules as everything else he sees. |
+| 2026-10-21 | Real-model check of his first line (Gemma 4 12B) | Asked only to "watch quietly", his lines were vague ("Movie time!"). His trigger now says "Tell him in your own words what you two are watching today": Netflix (title unknown) → "Movie time with Sushant!"; YouTube lofi → "Cozy music for us, Sushant!"; Netflix after reading "Stranger Things" on screen → "Scary monsters today?". He refers to what's on, but the small model rarely says the exact name. | Sushant: "tell me, oh, we are watching this today". |
+

@@ -71,7 +71,7 @@ class Mind {
    * @param {object} [opts.engine]      { ready, canDecide, think({system,user,schema}), decide(state, questions) }
    * @param {object} opts.personality   see personality.js
    * @param {EventLog} [opts.log]
-   * @param {() => object} opts.getSelf { band, needs, state, hour, quiet, away, asleep, busy }
+   * @param {() => object} opts.getSelf { band, needs, state, hour, quiet, away, asleep, busy, watching }
    * @param {(s: {text, action, band}) => void} opts.onSpeak
    * @param {(q: {text, answers, action, band}) => void} [opts.onAsk] show a question with two answers
    * @param {() => object} [opts.getBlocklist] { apps, sites, words }
@@ -257,6 +257,26 @@ class Mind {
     return true;
   }
 
+  /**
+   * You started watching something together (see watching.js): he says
+   * something about it in his own words (always, it's his only line until
+   * you stop), then watches quietly. `reading`: what he read on that window.
+   */
+  startedWatching({ name, title }) {
+    const what = title ? `"${title}" on ${name}` : name;
+    const text = `Sushant started watching ${what}. Tell him in your own words what you two are watching today. Then you go and sit in the corner of his screen with your back to him to watch it together.`;
+    this.log.add({ kind: 'interact', text: `You sat down to watch ${what} with Sushant.` });
+    this.wake({ kind: 'watching', text, interactive: true, watching: true });
+  }
+
+  /** You stopped watching: he gets up (and decides himself whether to say anything). */
+  stoppedWatching({ name, title }) {
+    const what = title ? `"${title}" on ${name}` : name;
+    const text = `Sushant stopped watching ${what}. You get up from your spot in the corner.`;
+    this.log.add({ kind: 'interact', text: `You and Sushant stopped watching ${what}.` });
+    this.wake({ kind: 'watching', text, interactive: true });
+  }
+
   /** You changed his personality in the editor: he notices. */
   setPersonality(p) {
     const changes = P.diff(this.personality, p);
@@ -312,7 +332,7 @@ class Mind {
     if (t >= this.nextHeartbeat) {
       this.nextHeartbeat = t + this.heartbeatDelay();
       const self = this.getSelf();
-      if (!self.away && !self.quiet && !self.asleep) this.wake({ kind: 'heartbeat', text: 'Nothing special. You are just hanging around on the screen.', interactive: false });
+      if (!self.away && !self.quiet && !self.asleep && !self.watching) this.wake({ kind: 'heartbeat', text: 'Nothing special. You are just hanging around on the screen.', interactive: false });
     }
   }
 
@@ -513,7 +533,8 @@ class Mind {
       const screen = this.log.last(['observe']);
       const reading = screen && !screen.private && this.reading && this.reading.app === screen.app ? this.reading : null;
       const memories = this.recall(trigger, screen, reading);
-      const canAsk = this.canAsk();
+      // No questions while you watch something together.
+      const canAsk = this.canAsk() && !self.watching;
       const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
@@ -572,6 +593,8 @@ class Mind {
     if (self.asleep) return 'asleep';
     if (self.busy) return 'busy showing something';
     if (this.awaiting && this.awaiting.question) return 'waiting for your answer';
+    if (trigger.watching) return null; // his one line when you start watching
+    if (self.watching) return 'watching with you';
     const since = (this.now() - this.lastSpokeAt) / 1000;
     if (!trigger.answered && since < (trigger.interactive ? MIND.gapInteractive : MIND.gapUnprompted)) return 'spoke too recently';
     return null;
@@ -581,8 +604,9 @@ class Mind {
     const th = this.threshold(trigger);
     const rail = this.blockedBy(trigger) || this.stale(trigger);
     // He wrote a question and may ask one: he asks instead of saying a line.
-    const question = thought.question && this.canAsk() && !this.mentionsBlocked([thought.question.text, ...thought.question.answers]) ? thought.question : null;
-    const wants = thought.urge >= th && (thought.lines.length > 0 || !!question);
+    const question = thought.question && this.canAsk() && !this.getSelf().watching && !this.mentionsBlocked([thought.question.text, ...thought.question.answers]) ? thought.question : null;
+    // Starting to watch something together: he always says something about it.
+    const wants = (thought.urge >= th || !!trigger.watching) && (thought.lines.length > 0 || !!question);
     this.lastDecision = { urge: thought.urge, threshold: th, rail, asked: !!question, at: this.now() };
     if (!wants || rail) {
       this.log.add({ kind: 'silent', thought: thought.thought, urge: thought.urge, why: rail || 'not worth saying' });

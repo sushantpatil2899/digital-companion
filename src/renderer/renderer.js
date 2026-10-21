@@ -489,6 +489,13 @@ function computePose(f, dt) {
     case 'backView':
       p.view = 'back';
       p.tilt = Math.sin(t * 1.2) * 0.03;
+      // Watching something with you: sitting down for it.
+      if (f.watching) {
+        p.feet = 'sit';
+        p.scaleY *= 0.95;
+        p.scaleX = 1.03;
+        p.tilt = Math.sin(t * 0.6) * 0.015;
+      }
       break;
     case 'sad':
       p.eyes = 'sad';
