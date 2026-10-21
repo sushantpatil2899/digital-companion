@@ -1,7 +1,9 @@
 # Graph Report - digital-companion  (2026-10-21)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 76 files · ~99,726 words
+- Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 2 file(s) not represented in the graph (top: (none) 1, .applescript 1)
 
 ## Summary
 - 1100 nodes · 2144 edges · 68 communities (59 shown, 9 thin omitted)
@@ -9,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `44a3c216`
+- Built from commit: `3a55ab42`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -104,7 +106,7 @@
   README.md → src/main/brain.js
 - `Phase 4: personality growth — status: `in progress` (built and tested here; Sushant to try it on his Mac. Evolution parked.)` --references--> `temperament()`  [INFERRED]
   docs/mind/PLAN.md → src/main/mind/personality.js
-- `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `scrub()`  [INFERRED]
+- `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `whyNotRead()`  [INFERRED]
   docs/mind/PLAN.md → src/main/mind/screen.js
 
 ## Import Cycles
@@ -357,13 +359,13 @@ Nodes (3): devDependencies, electron, electron-builder
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Companion` connect `Companion state machine and physics` to `Companion constants and game config`, `Electron main process setup`, `BALL`, `NudgeTracker`, `Companion tests`, `Nudge tests`, `App startup and brain saving`, `games.test.js`, `mind.test.js`, `Brain tests`, `Screen travel tests`?**
-  _High betweenness centrality (0.194) - this node is a cross-community bridge._
+  _High betweenness centrality (0.234) - this node is a cross-community bridge._
 - **What connects `electron-builder` to the rest of the system?**
   _1 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Companion state machine and physics` be split into smaller, more focused modules?**
   _Cohesion score 0.07324561403508772 - nodes in this community are weakly interconnected._
 - **Why does `Making him your own` connect `Needs and mood (brain.js)` to `Togepi drawing code`, `Desktop Companion`, `Diary writing and mood faces`?**
-  _High betweenness centrality (0.138) - this node is a cross-community bridge._
+  _High betweenness centrality (0.139) - this node is a cross-community bridge._
 - **Should `Togepi drawing code` be split into smaller, more focused modules?**
   _Cohesion score 0.08590441621294616 - nodes in this community are weakly interconnected._
 - **Should `Companion constants and game config` be split into smaller, more focused modules?**

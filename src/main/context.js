@@ -158,6 +158,7 @@ class ContextTracker {
     const ctx = {
       ...defaultContext(),
       hour: date.getHours(),
+      minute: date.getMinutes(),
       day: dayString(date),
       userAway: away,
       awayFor: away && this.awaySince != null ? (now - this.awaySince) / 1000 : 0,
