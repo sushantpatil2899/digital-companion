@@ -106,6 +106,7 @@ function render(b) {
     rows.push(['Front app', `${c.frontApp}${c.frontBundle ? ` (${c.frontBundle})` : ''} → ${kind}`]);
   }
   if (c.meetingCheck) rows.push(['Meeting check', c.meetingCheck]);
+  if (c.watching) rows.push(['Watching', `${c.watching} together (quiet; water, stretch and eye breaks wait)`]);
   if (c.visibleApps && c.visibleApps.length) rows.push(['On screen', c.visibleApps.slice(0, 8).join(', ')]);
   if (c.screens > 1) {
     const reach = (c.reachableScreens || []).map((i) => `#${i + 1}`).join(', ') || 'none';

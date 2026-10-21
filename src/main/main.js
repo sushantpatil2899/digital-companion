@@ -22,6 +22,8 @@ const { Attention } = require('./mind/attention');
 const { Growth } = require('./mind/growth');
 const { ScreenReader, screenKey } = require('./mind/screen');
 const { REST, restReason, restPlan } = require('./mind/rest');
+const { Watching, WATCH } = require('./mind/watching');
+const privacy = require('./mind/privacy');
 const { buildReport } = require('./report');
 const { SWITCHES, welcomeFor } = require('./welcome');
 
@@ -129,6 +131,7 @@ const attention = new Attention();
 let lastApps = null; // latest window list etc. from the app watcher
 let reader = null; // "Let him read my screen" (macOS)
 let attentionBusy = false;
+const watcher = new Watching(); // watching a movie or video together
 let rest = null; // why his models are resting: { kind, text, since }
 let restWanted = null; // the latest reason (for the battery hysteresis)
 let restWorking = false; // doing the diary / reflection before resting
@@ -1030,6 +1033,7 @@ function startMind() {
       awayFor: companion.context.awayFor || 0,
       asleep: companion.state === 'sleep',
       busy: !!companion.board(),
+      watching: watcher.current ? watcher.current.name : null,
     }),
     onSpeak: ({ text, action }) => companion.say(text, action),
     onAsk: ({ text, answers, action }) => companion.ask(text, answers, action),
@@ -1039,6 +1043,7 @@ function startMind() {
   mindTimer = setInterval(() => {
     mind.tick();
     updateAttention();
+    updateWatching();
     updateRest();
     if (++ticks % 10 === 0 && engine && engine.running) engine.memoryMB().then((mb) => (engineMB = mb));
   }, 1000);
@@ -1100,7 +1105,8 @@ async function updateAttention() {
       await mind.observe({ app: a.app, title: a.title, url: a.url, private: a.private, screen: a.screen, via: v.via, view, reading: r });
     } else {
       mind.setView(view);
-      if (reading) {
+      // (No looking around while you watch something: he's watching too.)
+      if (reading && !watcher.current) {
         await reader.look(v);
         const r = reader.readingFor(screenKey(a));
         if (r) mind.setReading(r);
@@ -1111,6 +1117,40 @@ async function updateAttention() {
   } finally {
     attentionBusy = false;
   }
+}
+
+/**
+ * Watching together: once you've stayed on a movie, series or video (see
+ * src/main/mind/watching.js) he goes and sits in the corner of that screen,
+ * says something about it and watches quietly until you stop.
+ */
+function updateWatching() {
+  if (!mind || !companion || !tracker) return;
+  const a = lastApps && lastApps.frontApp ? attention.current : null;
+  const blocked = !!a && (a.private || privacy.check({ app: a.app, title: a.title, url: a.url }, settings.get('privacyBlock')).blocked);
+  const before = watcher.current;
+  const event = watcher.update(blocked ? null : a);
+  const w = watcher.current;
+  if (event === 'start') {
+    startWatching(w).catch((e) => console.error('Watching:', e.message));
+  } else if (event === 'stop') {
+    tracker.setWatching(null);
+    companion.stopWatching();
+    mind.stoppedWatching(before);
+  } else if (w && w.screen && before && before.screen !== w.screen) {
+    companion.watchOn(w.screen - 1);
+  }
+}
+
+async function startWatching(w) {
+  tracker.setWatching(w.name, WATCH.maxIdle);
+  companion.startWatching(w.screen ? w.screen - 1 : null);
+  // A look at the window first (with a picture), so he knows what it is.
+  if (canReadScreen() && reader && attention.current) {
+    const r = await reader.look({ attention: attention.current }, { force: true, picture: true });
+    if (r && !r.skipped) mind.setReading(r);
+  }
+  if (watcher.current) mind.startedWatching(w);
 }
 
 /** Turn "Let him read my screen" on or off (it needs app watching and Screen Recording permission). */
@@ -1346,7 +1386,8 @@ ipcMain.on('welcome-done', () => {
 
 /** He chirps: one of your clips if there are any for his mood, otherwise a generated one. */
 function chirp(syllables) {
-  if (!win || win.isDestroyed() || !settings.get('sounds') || companion.context.quiet) return;
+  // Quiet in meetings and while you watch something together.
+  if (!win || win.isDestroyed() || !settings.get('sounds') || companion.context.quiet || watcher.current) return;
   const band = companion.moodBand();
   const clip = sounds ? sounds.clipFor(band) : null;
   win.webContents.send('voice', { band, syllables, clip: clip ? clip.data : null });

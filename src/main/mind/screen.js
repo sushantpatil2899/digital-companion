@@ -107,10 +107,11 @@ class ScreenReader {
   }
 
   /**
-   * Look at a window now if it's time. Returns the reading
+   * Look at a window now if it's time (`force`: now, at the one you're paying
+   * attention to; `picture`: always with a picture). Returns the reading
    * ({ key, app, title, text, picture, at }) or null.
    */
-  async look(view, { force = false } = {}) {
+  async look(view, { force = false, picture: wantsPicture = false } = {}) {
     if (this.busy) return null;
     if (!force && this.now() - this.lastLookAt < SCREEN.minGap * 1000) return null;
     const win = force && view && view.attention ? view.attention : this.pick(view);
@@ -139,7 +140,7 @@ class ScreenReader {
         this.reading = { key: k, app: win.app, title: win.title, text: null, picture: null, skipped: 'sensitive', at: this.now() };
         return this.reading;
       }
-      const wantPicture = text.length < SCREEN.pictureBelow || (seen.count + 1) % SCREEN.pictureEvery === 0;
+      const wantPicture = wantsPicture || text.length < SCREEN.pictureBelow || (seen.count + 1) % SCREEN.pictureEvery === 0;
       const picture = wantPicture ? await this.io.picture(file).catch(() => null) : null;
       this.reading = { key: k, app: win.app, title: win.title, text: text.slice(0, SCREEN.maxChars) || null, picture, at: this.now() };
       if (text) this.error = null;

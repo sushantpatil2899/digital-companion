@@ -86,6 +86,10 @@ const GAME_STATES = ['offerBall', 'watchBall', 'pickBall', 'offerGame', 'ttt'];
 const HELD_BALL = { x: 3, y: 64 };
 
 // How long a speech bubble with his own words stays up (s).
+// Watching together: how far from the screen's right edge he sits, and how
+// long each stretch of watching lasts before he checks his spot again (s).
+const WATCH_SPOT = { margin: 24, sit: 60 };
+
 // A question waits `question` s for you to click an answer.
 const SPEECH = { base: 2.5, perWord: 0.35, max: 6, question: 30 };
 
@@ -233,6 +237,8 @@ class Companion {
 
     // Something he's saying in his own words (src/main/mind): { text, until }.
     this.speech = null;
+    // Watching something with you: { screen } (index of the screen it's on).
+    this.watching = null;
     // How his personality colours his mood (personality.temperament): his
     // resting mood and how fast it moves. Togepi's own is { 0, 1 }.
     this.temperament = { offset: 0, speed: 1 };
@@ -1005,6 +1011,56 @@ class Companion {
     return true;
   }
 
+  /**
+   * You started watching something on screen `screen` (index, or null for the
+   * one he's on): he goes to its bottom-right corner and sits watching it with
+   * his back to you until stopWatching(). Water, stretch and eye breaks wait.
+   */
+  startWatching(screen) {
+    this.watching = { screen: Number.isInteger(screen) && this.screens && this.screens[screen] ? screen : null };
+    if (this.nudge && this.nudge.kind !== 'note' && this.nudge.kind !== 'bedtime') {
+      const showing = this.state === NUDGE[this.nudge.kind].state;
+      this.nudge = null;
+      if (showing) this.enter('idle', 0.5);
+    }
+    if (this.isGrounded() && !this.game && !this.reminder && (INTERRUPTIBLE.includes(this.state) || ['sleep', 'play', 'adventure', 'eat', 'flower'].includes(this.state))) this.goWatch();
+  }
+
+  /** What you're watching moved to screen `screen`: he follows. */
+  watchOn(screen) {
+    if (!this.watching || !Number.isInteger(screen) || screen === this.watching.screen || !this.screens[screen]) return;
+    this.watching.screen = screen;
+    if (this.isGrounded() && INTERRUPTIBLE.includes(this.state)) this.goWatch();
+  }
+
+  /** You stopped watching: he gets up and goes back to his own things. */
+  stopWatching() {
+    if (!this.watching) return;
+    this.watching = null;
+    if (this.state === 'backView' || (this.state === 'walk' && this.afterMove && this.afterMove.state === 'backView')) {
+      this.route = null;
+      this.afterMove = null;
+      this.vx = 0;
+      this.enter('idle', 1.5);
+    }
+  }
+
+  /** Go to the bottom-right corner of the screen you're watching on and sit there with his back to you. */
+  goWatch() {
+    const w = this.watching;
+    const target = w.screen != null && this.screens[w.screen] ? w.screen : this.screenIndex;
+    const sc = this.screens[target] || this.bounds;
+    const x = sc.right - this.halfWidth - WATCH_SPOT.margin;
+    const then = { state: 'backView', duration: WATCH_SPOT.sit };
+    if (target !== this.screenIndex && this.travelTo(target, x, then)) return;
+    if (Math.abs(this.x - x) > 10) {
+      this.walkTo(x, 'walk', then);
+      return;
+    }
+    this.vx = 0;
+    this.enter('backView', WATCH_SPOT.sit);
+  }
+
   /** Showing a question with answers right now. */
   asking() {
     return this.speaking() && !!this.speech.answers;
@@ -1090,6 +1146,7 @@ class Companion {
 
   /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
   reactToCursor(dt, cursor) {
+    if (this.watching) return; // busy watching
     const dist = Math.hypot(cursor.x - this.x, cursor.y - (this.y - HIT.cy));
     const on = this.isOver(cursor);
     const near = !on && dist < 180;
@@ -1125,6 +1182,10 @@ class Companion {
     if (this.route && this.continueRoute()) return;
     this.crossing = null;
     if (this.game && this.resumeGame()) return;
+    if (this.watching) {
+      this.goWatch();
+      return;
+    }
     const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
       paused: this.paused || this.asking(),
       cursorKnown: !!this.lastCursor,
@@ -1959,6 +2020,7 @@ class Companion {
       thinking: this.state === 'ttt' && !!this.game && !!this.game.ttt && this.game.ttt.myTurn,
       speech: this.speaking() ? this.speech.text : null,
       answers: this.asking() ? this.speech.answers : null,
+      watching: !!this.watching,
       time: this.time,
     };
   }

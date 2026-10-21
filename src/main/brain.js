@@ -90,6 +90,7 @@ function defaultContext() {
     justPluggedIn: false, // one-shot
     quiet: false, // in a meeting / presenting: keep still and quiet
     quietReason: null,
+    watching: null, // what you're watching together ('Netflix'…): he sits and watches, quietly
     frontApp: null,
     visibleApps: [], // apps with a window showing on any screen
     nextEvent: null, // { title, start, end } (ms epoch)

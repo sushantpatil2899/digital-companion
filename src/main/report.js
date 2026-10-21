@@ -106,7 +106,7 @@ function buildReport(src) {
 
   lines.push('Right now');
   const battery = Number.isFinite(c.batteryLevel) ? `${Math.round(c.batteryLevel * 100)}%${c.charging ? ' charging' : c.onBattery ? ' on battery' : ''}` : 'unknown';
-  lines.push(`- hour ${c.hour}, you ${c.userAway ? `away ${Math.round((c.awayFor || 0) / 60)} min` : 'here'}, ${c.quiet ? 'keeping quiet' : 'not quiet'}, battery ${battery}, screens ${c.screens || 1}`);
+  lines.push(`- hour ${c.hour}, you ${c.userAway ? `away ${Math.round((c.awayFor || 0) / 60)} min` : 'here'}, ${c.quiet ? 'keeping quiet' : 'not quiet'}, ${c.watching ? 'watching something together' : 'not watching anything'}, battery ${battery}, screens ${c.screens || 1}`);
   if (c.error) lines.push(`- problem: ${err(c.error)}`);
   return lines.join('\n');
 }
