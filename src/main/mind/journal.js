@@ -60,7 +60,7 @@ function dayDigest(events) {
     } else if (e.kind === 'interact') {
       together.set(e.text, (together.get(e.text) || 0) + 1);
     } else if (e.kind === 'said') {
-      said.push(`"${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`);
+      said.push(`${e.answers ? 'asked ' : ''}"${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`);
     } else if (e.kind === 'silent') {
       silent++;
     }

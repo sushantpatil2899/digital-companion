@@ -258,3 +258,59 @@ Answers:
 | 2026-10-21 | Skip thinking / screen reading (or stop the models) during daytime naps | **No.** Keep it as it is: models stop only at night while he sleeps; during a daytime nap they stay loaded and he still thinks about what you do (silently). | Sushant: "No, lets not do this." |
 | 2026-10-21 | Brain view time showed 22:00 at 22:15 | Fixed: it only ever showed the hour followed by ":00"; it now shows hours and minutes. | Display bug. |
 
+## Where it's going (2026-10-21)
+
+Sushant's ideas for after Phase 5, summarised in PLAN.md (*Where it's going*).
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | Order of the next phases | 1 questions with two answers, 2 chat window, 3 plug-in characters, 4 several characters, 5 iPhone. | Proposed by dependency (packs before iPhone and several characters); Sushant went ahead with #1. |
+| 2026-10-21 | iPhone without internet | Possible only partly: direct Wi-Fi/Bluetooth after pairing; no overlay over other apps (Dynamic Island / Live Activity instead); no app/screen/notification watching; Health/Fitness possible. To be planned as its own phase. | iOS limits, explained to Sushant. |
+| 2026-10-21 | Extra suggestions (offline lock, export/import of his mind, signing certificate, talking out loud) | Not decided yet. | To ask when the matching phase comes up. |
+
+## Phase 6 questions
+
+Asked 2026-10-21. Proposal in PLAN.md, Phase 6.
+
+1. How often should he ask?
+2. What should he ask about?
+3. What should the answers look like?
+4. How should it look (bubble with buttons, or a sign)?
+5. How long should he wait for an answer?
+6. What happens after you pick?
+7. A setting (Often / Sometimes / Rarely / Never)?
+8. Anything off limits?
+- A. Loosen the rules in his instructions that make his lines repetitive?
+- B. Which answers become memories, now that the model invents the questions?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | 1. How often | **The model decides** each time he thinks whether to say something, ask, or stay quiet. No frequency rule. (The usual rails still apply: not in meetings, not while away, a gap after speaking.) | Sushant: "Instead of putting it like a condition, I think it should be decided." |
+| 2026-10-21 | 2. What about | **Anything; the model invents the question and the two answers.** No topics, no examples, no patterns in the prompt; only that the answers must not be yes or no. | Sushant: "Don't put any patterns… Let the model decide what kind of question and what kind of options should be." |
+| 2026-10-21 | 3. Answers | Two short answers written fresh each time (1-3 words with an emoji), never yes/no; no third "skip" button, ignoring is skipping. | Agreed. |
+| 2026-10-21 | 4. Look | His speech bubble with two clickable buttons. | Agreed (a). |
+| 2026-10-21 | 5. Waiting | 30 s, then he shrugs and the question goes away. Two ignored in a row: no questions for an hour. | Agreed. |
+| 2026-10-21 | 6. After you pick | He reacts right away (a nod, then his own line and action); answering counts a little like a pat; ignoring costs nothing. Answers about you are saved as memories (see B). | Agreed. |
+| 2026-10-21 | 7. Setting | **No setting.** | Sushant: "No, there should not be any setting." |
+| 2026-10-21 | 8. Off limits | **Only what's on the privacy blocklist** (no extra topics like health or money). | Sushant: "anything which is there on the privacy block list, there should be off limit for the questions asking as well." |
+| 2026-10-21 | A. His instructions | Remove the example topics ("job hunting, coding, emails, videos, games") and every other example list; "name the actual thing" becomes "When it feels relevant, try to name the actual thing." (no examples, no pattern); remove the "Sometimes add a Togepi sound like 'Toge!' or 'Priii!'" line (sounds are his own choice); keep at most 8 words, one sentence (lines may now be 60 characters so 8 words fit; 50 was cutting him to about 5). | Sushant: "Let it do based on the data it receives… don't tell him that. Let him come up with that on its own." |
+| 2026-10-21 | B. Remembering answers | **Option 1:** when he asks, the model also says whether the answer tells him something about Sushant; if so the answer is saved as a memory straight away (Mind → Memories). | Sushant chose option 1. |
+
+**Phase 6 questions: all answered (2026-10-21).**
+
+## Phase 6 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | How the model decides | The answer schema gets an optional `question` ({ text, answers ×2, aboutSushant }); the model writes it only if it wants to ask, otherwise its answer is as before. It's only offered when he may ask (not during the hour-long pause). Asking still needs his urge to clear the usual bar. | "Decided by the model", not a rule. |
+| 2026-10-21 | Checks on a question | Same checks as his lines (one sentence, 8 words, nothing about being an AI, no repeats); two different answers of up to 18 characters, neither just yes/no/sure/ok/maybe; nothing naming an app, site or word on your blocklist (then he says a line instead). | Agreed rules, enforced in code. |
+| 2026-10-21 | While a question is up | He stands still and says nothing else until you answer or 30 s pass; petting him doesn't count as an answer; a press on the bubble is only a click (no pick-up). | So the buttons don't walk away and his bubble isn't replaced. |
+| 2026-10-21 | Memory text | `Sushant picked "<answer>" when asked "<question>"` (importance 6). | Plain, and the diary and recall can use it. |
+| 2026-10-21 | Relationship | An answer adds what a pat adds (affection 0.6, same daily cap of 3); an ignored question adds nothing and doesn't make him quieter. | "Counts a little like a pat; ignoring costs nothing." |
+| 2026-10-21 | Real-model check (Gemma 4 12B, 12 situations) | He asked in 8 of 12 (ramen search: "Is it tasty?" So yummy! 🍜 / Too spicy! 🔥; Netflix: "Fun movie?" Action! 💥 / Funny! 😂); never yes/no. But every question was marked as about Sushant, and on a LinkedIn job page he didn't name the job. | Checked before merging. |
+| 2026-10-21 | How often (after the check) | **Keep it: the model decides**, even if he asks a lot. | Sushant: "I'm okay with him asking questions a lot, so let's keep it the model decides." |
+| 2026-10-21 | Which answers become memories | The prompt now says "aboutSushant": true **only if his answer tells you something lasting about him, worth remembering**. | Sushant: "If it is something which is lasting about me, worth remembering, then only." |
+| 2026-10-21 | Naming things | Back to **"Try to name the actual thing."** (without "when it feels relevant"; still no examples). | Sushant: "go ahead and try to name the actual thing". |
+

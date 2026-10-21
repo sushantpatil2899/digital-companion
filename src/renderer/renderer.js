@@ -760,6 +760,8 @@ function render(now) {
     if (frame.board) {
       if (frame.board.style === 'bubble') C.drawBubble(ctx, frame.board, clock);
       else C.drawSign(ctx, frame.board, clock);
+    } else if (frame.speech && frame.answers) {
+      C.drawQuestion(ctx, frame.speech, frame.answers, frame.cursor ? { x: frame.cursor.x / SIZE, y: frame.cursor.y / SIZE } : null);
     } else if (frame.speech) {
       C.drawSpeech(ctx, frame.speech, clock);
     }
