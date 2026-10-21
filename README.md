@@ -131,6 +131,14 @@ Both run in llama.cpp's `llama-server`, in background processes listening on `12
 
 When he thinks, the few memories that fit best come to mind (how recent, how important and how relevant they are), and he may bring one up: "Amazon again? Third one this week!". Email is only remembered as "read emails", never the subjects, and private things are never stored. *Mind → Memories…* shows everything he remembers, with a × to make him forget something, and a button to write your notes. **Show his brain…** shows his last thought, what came to mind, when he last wrote his diary, and why he spoke or stayed quiet.
 
+**Light on your Mac.** His two models take about 11 GB of memory while they run, so they rest (stop, freeing the memory and the battery) when you've been away 15 minutes (*Mind → Rest the models after I'm away*: 5, 15, 30 or 60 minutes, or never), at night while he's asleep, and on battery below 20% (`restBattery` in `settings.json`; they come back at 25% or when you plug in). If his diary or weekly reflection is due, he finishes it first. When you're back they start again in a few seconds; meanwhile he behaves as he does without his mind. The Mind menu and **Show his brain…** say when and why they're resting, and the brain view shows how many seconds a thought takes and how much memory the models use.
+
+**Try it now** (in his menu) shows his memory and growth working without waiting for the evening or Sunday: *Write today's diary now*, *Count today towards our relationship now* (the rest of the day is counted when it's over) and *Reflect on this week now* (needs 3 days of diary this week; it counts as this week's reflection and can be undone in Personality…). It wakes resting models if needed.
+
+**Mind → Copy a report** puts a short report on your clipboard to paste into a message when something seems off: versions, how his models are doing, permissions, settings and recent errors. It never includes window titles, apps he saw, screen text, what he said or thought, his memories, your notes or your lists.
+
+**Welcome.** The first time he runs, a welcome window shows what he can do and lets you turn on each permission. After an update it shows once what's new. *Welcome and what's new…* in his menu opens it again.
+
 *Mind → Think and talk for himself* turns it all off (and stops the models); *Chirp when he talks* mutes him. Without the models (or before they've loaded) he behaves exactly as before.
 
 ## Running
@@ -184,7 +192,9 @@ src/
   main/mind/           his own mind: personality, event log, privacy gate, the think/decide
                        loop, memory (diary, facts, recall), growth (relationship, weekly
                        reflection), attention across windows and screens, reading the
-                       screen, llama-server engine, your sound clips
+                       screen, llama-server engine and when it rests, your sound clips
+  main/report.js       "Copy a report" (nothing private)
+  main/welcome.js      the welcome window's words and what's new in each version
   main/mac/            macOS-only: front app (lsappinfo), visible windows (CoreGraphics),
                        browser tabs (AppleScript), calendar (EventKit), window pictures
                        (screencapture) and their text (Vision, ocr.applescript)
@@ -196,6 +206,7 @@ src/
   renderer/chirp.js    his chirps (Web Audio)
   renderer/personality.*  the personality sliders, locks and growth history
   renderer/memories.*  the Memories window
+  renderer/welcome.*   the welcome / what's new window
 scripts/fetch-models.js  downloads llama-server and the models for `npm run dist`
 docs/mind/             the plan, decisions and research for his mind
 test/                  node:test tests for the simulation

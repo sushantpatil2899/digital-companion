@@ -39,6 +39,14 @@ const DEFAULTS = {
   readScreen: false,
   // Email and chat apps he may read anyway (he only sees their titles otherwise).
   screenAllow: { apps: [], sites: [] },
+  // His models rest (free about 11 GB of memory and save battery) after
+  // you've been away this many minutes (0 = never; Mind → Rest the models
+  // after I'm away), at night while he sleeps, and on battery below
+  // restBattery % (0 = never).
+  restAfterAway: 15,
+  restBattery: 20,
+  // The welcome window shows what's new since this version (src/main/welcome.js).
+  welcomeSeen: 0,
 };
 
 

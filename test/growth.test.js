@@ -205,8 +205,9 @@ test('the mind grows on Sunday evening: saves his personality, remembers insight
   });
   mind.personality = P.defaultPersonality();
   for (let i = 0; i < 6; i++) mind.log.items.push(ev('2026-10-24', 10 + i * 0.1, 'heart'));
-  const applied = await mind.maybeGrow();
+  const { applied, insights } = await mind.maybeGrow();
   assert.equal(applied.length, 1);
+  assert.deepEqual(insights, ['Sushant likes fetch']);
   assert.equal(saved.length, 2, 'once for the relationship, once for the reflection');
   assert.equal(saved[0].relationship.affection, 28);
   assert.equal(mind.personality.traits.extraversion.warmth, 92);
@@ -228,7 +229,7 @@ test('the mind grows on Sunday evening: saves his personality, remembers insight
   now = at('2026-11-01', 19);
   self = { ...self, away: true, awayFor: 1200 };
   memory.journal = {};
-  assert.equal(await mind.maybeGrow(), null);
+  assert.deepEqual(await mind.maybeGrow(), { note: 'not enough diary this week to reflect' });
   assert.match(mind.status().growth.note, /not enough diary/);
   const calls = engine.calls.length;
   await mind.maybeGrow();
