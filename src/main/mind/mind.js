@@ -264,7 +264,7 @@ class Mind {
    */
   startedWatching({ name, title }) {
     const what = title ? `"${title}" on ${name}` : name;
-    const text = `Sushant started watching ${what}. You go and sit in the corner of his screen with your back to him to watch it together, quietly.`;
+    const text = `Sushant started watching ${what}. Tell him in your own words what you two are watching today. Then you go and sit in the corner of his screen with your back to him to watch it together.`;
     this.log.add({ kind: 'interact', text: `You sat down to watch ${what} with Sushant.` });
     this.wake({ kind: 'watching', text, interactive: true, watching: true });
   }
