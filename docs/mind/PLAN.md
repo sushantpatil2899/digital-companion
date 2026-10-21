@@ -26,6 +26,11 @@ anything in this plan.
    - Work on the session branch, open a PR into
      `claude/desktop-companion-character-w5jvqm` and merge it.
    - After code changes run `graphify update .` (see `CLAUDE.md`).
+6. **The welcome window covers every change** (Sushant, 2026-10-21). Any
+   change that adds or changes what he does bumps `WELCOME_VERSION` in
+   `src/main/welcome.js`, adds a `WHATS_NEW` entry in plain words (shown once
+   after the update) and updates `WELCOME` (the first-run overview) if it
+   changed. A test checks every version has an entry.
 
 ## Vision
 
@@ -388,7 +393,7 @@ window rendered with history and locks; a simulated week through Gemma 12B
 Remaining before `done`: Sushant tries it on his Mac (growth shows after a
 day of use; the first reflection on a Sunday evening with 3+ diary days).
 
-### Phase 5: polish — status: `questions` (proposal below, asked 2026-10-20 while Sushant tests Phases 3 and 4)
+### Phase 5: polish — status: `in progress` (built and tested here; Sushant to try it on his Mac)
 
 Goal: make what's built pleasant to live with day to day: see results
 without waiting days, light on memory and battery, his lines more like him,
@@ -442,6 +447,29 @@ Testing: unit tests for each part (power rules with a fake clock and
 battery, style bank selection, report contents leaking nothing private,
 try-it-now paths with a fake model); the models stopping and starting in the
 app here; real-model check of the style bank.
+
+Answers (2026-10-21): 1 yes (in the main menu); 2 yes with 15 minutes,
+adjustable; 3 not now; 4 no bigger model; 5 yes; 6 yes, and every change
+must be covered by it; 7 no; 8 nothing to fix. Details in DECISIONS.md.
+
+Built:
+- `src/main/mind/rest.js`: why the models should rest (away, night while
+  asleep, low battery with a 5% margin) and what to do (start, stop, do the
+  diary/reflection first). `main.js` checks every second, stops and starts
+  the engine (now restartable), and shows the reason in the Mind menu and
+  the brain view. Settings `restAfterAway` (menu: 5 / 15 / 30 / 60 min /
+  Never) and `restBattery`.
+- Mind: `workDue()` / `doWork()` for the work before resting (a failed diary
+  isn't retried for an hour); `writeDiaryNow()`, `countDays({ today })`,
+  `reflectNow()` for *Try it now* (main menu); seconds per thought.
+- Growth: today can be counted early without double counting; reflection
+  timing by week, so a hand-started one counts as that week's.
+- Engine: restart-safe start/stop, memory used (`ps`), shown in the brain
+  view with seconds per thought.
+- `src/main/report.js`: *Mind → Copy a report* (nothing private).
+- `src/main/welcome.js` + welcome window: first-run overview with the
+  permission switches, What's new once after an update, *Welcome and
+  what's new…* in the menu.
 
 ## Later
 

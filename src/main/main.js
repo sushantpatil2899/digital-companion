@@ -1,8 +1,9 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session, systemPreferences, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session, systemPreferences, desktopCapturer, clipboard, dialog } = require('electron');
 const { Companion, TUNING } = require('./companion');
 const { ContextTracker } = require('./context');
 const { Settings } = require('./settings');
@@ -20,6 +21,9 @@ const { Memory, pruneEvents } = require('./mind/memory');
 const { Attention } = require('./mind/attention');
 const { Growth } = require('./mind/growth');
 const { ScreenReader, screenKey } = require('./mind/screen');
+const { REST, restReason, restPlan } = require('./mind/rest');
+const { buildReport } = require('./report');
+const { SWITCHES, welcomeFor } = require('./welcome');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
@@ -125,6 +129,12 @@ const attention = new Attention();
 let lastApps = null; // latest window list etc. from the app watcher
 let reader = null; // "Let him read my screen" (macOS)
 let attentionBusy = false;
+let rest = null; // why his models are resting: { kind, text, since }
+let restWanted = null; // the latest reason (for the battery hysteresis)
+let restWorking = false; // doing the diary / reflection before resting
+let awakeUntil = 0; // "Try it now" keeps the models awake until then
+let engineMB = null; // memory the models use (measured every 10 s)
+let welcomeWin = null;
 const IS_MAC = process.platform === 'darwin';
 
 // --------------------------------------------------------------- opt-in context (macOS)
@@ -282,7 +292,7 @@ function showBrain() {
   followYou(brainWin);
   brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
   const send = () => {
-    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? mind.status() : null });
+    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? { ...mind.status(), rest, memoryMB: engine && engine.running ? engineMB : null } : null });
   };
   brainWin.webContents.on('did-finish-load', send);
   brainTimer = setInterval(send, 1000);
@@ -361,6 +371,8 @@ function createWindow() {
     startLoop();
     startContext();
     startMind();
+    // First run: what he can do; after an update: what's new (once).
+    setTimeout(() => showWelcome(false), 2500);
   });
   win.on('closed', () => {
     win = null;
@@ -729,6 +741,7 @@ function buildMenu() {
   items.push({ label: 'Remind me…', click: showNotes });
   items.push({ label: 'Wellbeing', submenu: wellbeingMenu() });
   items.push({ label: 'Mind', submenu: mindMenu() });
+  items.push({ label: 'Try it now', submenu: tryMenu() });
   items.push({
     label: 'Brain',
     submenu: [
@@ -768,6 +781,7 @@ function buildMenu() {
       },
     ],
   });
+  items.push({ label: 'Welcome and what’s new…', click: () => showWelcome(true) });
   if (process.platform === 'darwin' || process.platform === 'win32') {
     items.push({
       label: 'Start at login',
@@ -783,7 +797,7 @@ function buildMenu() {
 function mindMenu() {
   const on = !!(settings && settings.get('mind'));
   return [
-    { label: engine ? `Mind: ${engine.status().split(' — ')[0]}` : 'Mind: off', enabled: false },
+    { label: !engine ? 'Mind: off' : rest ? `Mind: resting (${rest.text})` : `Mind: ${engine.status().split(' — ')[0]}`, enabled: false },
     { type: 'separator' },
     {
       label: 'Think and talk for himself',
@@ -804,12 +818,37 @@ function mindMenu() {
         refreshTrayMenu();
       },
     },
+    {
+      label: 'Rest the models after I’m away',
+      submenu: [5, 15, 30, 60, 0].map((min) => ({
+        label: min ? `${min} min` : 'Never',
+        type: 'radio',
+        checked: !!settings && settings.get('restAfterAway') === min,
+        click: () => {
+          settings.set('restAfterAway', min);
+          refreshTrayMenu();
+        },
+      })),
+    },
     { type: 'separator' },
     { label: 'Personality…', click: showPersonality },
     { label: 'Memories…', click: showMemories },
     { label: 'Open sounds folder…', click: () => sounds && shell.openPath(sounds.dir) },
     { label: 'Privacy blocklist… (settings.json)', click: () => settings && shell.openPath(settings.file) },
     { label: 'Show his memory folder…', click: () => shell.openPath(mindDir()) },
+    { type: 'separator' },
+    { label: 'Copy a report', click: copyReport },
+  ];
+}
+
+// "Try it now": see the diary, relationship and weekly reflection work right
+// away instead of waiting for the evening or Sunday.
+function tryMenu() {
+  const on = !!(settings && settings.get('mind')) && !!mind;
+  return [
+    { label: 'Write today’s diary now', enabled: on, click: () => tryNow('diary') },
+    { label: 'Count today towards our relationship now', enabled: !!mind && !!growth, click: () => tryNow('days') },
+    { label: 'Reflect on this week now', enabled: on && !!growth, click: () => tryNow('reflect') },
   ];
 }
 
@@ -976,9 +1015,12 @@ function startMind() {
     onSpeak: ({ text, action }) => companion.say(text, action),
     getBlocklist: () => settings.get('privacyBlock'),
   });
+  let ticks = 0;
   mindTimer = setInterval(() => {
     mind.tick();
     updateAttention();
+    updateRest();
+    if (++ticks % 10 === 0 && engine && engine.running) engine.memoryMB().then((mb) => (engineMB = mb));
   }, 1000);
   if (IS_MAC) {
     reader = new ScreenReader(require('./mac/screen-capture'), {
@@ -1075,8 +1117,205 @@ function applyMind(on) {
     engine.stop();
     engine = null;
     mind.engine = null;
+    rest = null;
   }
 }
+
+// --------------------------------------------------------------- resting the models (Phase 5)
+
+/**
+ * Every second: should his models rest (you're away, night while he
+ * sleeps, low battery)? His diary and reflection get done first; they start
+ * again when the reason is gone. See src/main/mind/rest.js.
+ */
+function updateRest() {
+  if (!engine || !mind || !mind.enabled || engine.files.missing.length) {
+    rest = null;
+    restWanted = null;
+    return;
+  }
+  const reason = restReason(
+    { ...companion.context, asleep: companion.state === 'sleep' },
+    { restAfterAway: settings.get('restAfterAway'), restBattery: settings.get('restBattery') },
+    restWanted,
+  );
+  restWanted = reason;
+  const workDue = !!reason && reason.kind !== 'battery' && !!mind.workDue();
+  const plan = restPlan({ reason, workDue, running: engine.running, busy: mind.thinking || mind.writingJournal || restWorking, forced: Date.now() < awakeUntil });
+  if (plan === 'start') {
+    engine
+      .start()
+      .catch((e) => console.error('Mind engine:', e.message))
+      .finally(refreshTrayMenu);
+  } else if (plan === 'stop') {
+    engine.stop();
+    engineMB = null;
+    refreshTrayMenu();
+  } else if (plan === 'work' && engine.ready) {
+    restWorking = true;
+    mind
+      .doWork()
+      .catch((e) => console.error('Mind work:', e.message))
+      .finally(() => (restWorking = false));
+  }
+  const resting = !!reason && !engine.running;
+  rest = resting ? { kind: reason.kind, text: reason.text, since: rest && rest.kind === reason.kind ? rest.since : Date.now() } : null;
+}
+
+// --------------------------------------------------------------- "Try it now", report, welcome (Phase 5)
+
+function tell(title, detail) {
+  dialog.showMessageBox({ type: 'info', title, message: title, detail, buttons: ['OK'] }).catch(() => {});
+}
+
+async function tryNow(kind) {
+  if (!mind) return;
+  if (kind === 'days') {
+    const d = mind.countDays({ today: true }) || {};
+    const parts = ['affection', 'trust', 'familiarity'].filter((m) => d[m]).map((m) => `${m} ${d[m] > 0 ? '+' : ''}${d[m]}`);
+    tell(
+      'Counted today so far',
+      parts.length
+        ? `${parts.join(', ')}.\n\nWhole points are in his personality now (Mind → Personality…); the rest is kept and added later. The rest of today is counted when the day is over.`
+        : 'Nothing new to count since the last time (or this week’s limit is reached).',
+    );
+    return;
+  }
+  if (!engine || !settings.get('mind')) {
+    tell('His mind is off', 'Turn on Mind → Think and talk for himself first.');
+    return;
+  }
+  awakeUntil = Date.now() + REST.forceFor;
+  if (!engine.ready) {
+    tell('Waking his models', 'They take a few seconds to start. The result shows up here when he’s done.');
+    await engine.start().catch(() => false);
+    if (!engine.ready) {
+      tell('His models didn’t start', engine.status());
+      return;
+    }
+  }
+  try {
+    if (kind === 'diary') {
+      const r = await mind.writeDiaryNow();
+      if (r.error) tell('He couldn’t write his diary', r.error);
+      else if (!r.length) tell('Nothing new to write', 'His diary already covers everything up to now. Read it in Mind → Memories….');
+      else {
+        const lines = r.map((d) => (d.error ? `${d.day}: couldn’t write it (${d.error})` : `${d.day}: ${d.lines} diary lines, ${d.facts} new facts about you, ${d.opinions} opinions`));
+        tell(r.every((d) => d.error) ? 'He couldn’t write his diary' : 'He wrote his diary', `${lines.join('\n')}\n\nRead it in Mind → Memories…. Anything that happens later today is added this evening.`);
+      }
+    } else if (kind === 'reflect') {
+      const r = await mind.reflectNow();
+      if (r.error) tell('He couldn’t reflect', r.error);
+      else if (r.note) tell('Not enough to reflect on yet', 'He needs at least 3 days with a diary entry in the last week. Try Write today’s diary now first, or wait a few days.');
+      else {
+        const changes = r.applied.length ? r.applied.map((c) => `${c.label} ${c.from} → ${c.to}: ${c.reason}`) : ['He didn’t change this time.'];
+        const learned = r.insights.map((i) => `Learned: ${i}`);
+        tell('He looked back on his week', `${[...changes, ...learned].join('\n')}\n\nThis counts as this week’s reflection. Undo it in Mind → Personality….`);
+      }
+    }
+  } finally {
+    // Back to the usual resting rules a minute after he's done.
+    awakeUntil = Date.now() + 60 * 1000;
+  }
+}
+
+async function copyReport() {
+  const memoryMB = engine && engine.running ? await engine.memoryMB() : null;
+  const text = buildReport({
+    now: Date.now(),
+    app: { version: app.getVersion(), electron: process.versions.electron, platform: process.platform, osRelease: os.release(), arch: process.arch, totalMemGB: Math.round(os.totalmem() / 2 ** 30) },
+    settings: settings.values,
+    engine: engine ? { state: engine.status(), ready: engine.ready, canDecide: engine.canDecide, files: engine.files, memoryMB } : null,
+    rest,
+    mind: mind ? mind.status() : null,
+    context: companion.context,
+    permissions: { screen: IS_MAC ? screenPermission() : 'n/a', apps: tracker.notes.apps, calendar: tracker.notes.calendar },
+    counts: memory
+      ? { facts: memory.facts.length, opinions: memory.opinions.length, diaryDays: Object.keys(memory.journal).length, growthWeeks: growth ? growth.history().length : 0, locked: ((personality && personality.locked) || []).length }
+      : {},
+  });
+  try {
+    await clipboard.writeText(text);
+  } catch (e) {
+    tell('Couldn’t copy the report', e.message);
+    return;
+  }
+  tell('Report copied', 'A short report about how he’s doing is on your clipboard: paste it into a message. Nothing private is in it (no window titles, screen text, memories or notes), and you can read it before sending.');
+}
+
+function welcomeData(info) {
+  const loginOk = process.platform === 'darwin' || process.platform === 'win32';
+  return {
+    ...info,
+    switches: SWITCHES.map(([key, label, help]) => ({
+      key,
+      label,
+      help,
+      on: key === 'openAtLogin' ? loginOk && app.getLoginItemSettings().openAtLogin : !!settings.get(key),
+      enabled: key === 'openAtLogin' ? loginOk : IS_MAC,
+    })),
+  };
+}
+
+/** The welcome window: on first run, once after an update (what's new), or from the menu. */
+function showWelcome(manual = false) {
+  const info = welcomeFor(settings.get('welcomeSeen'), { manual });
+  if (!info) return;
+  if (welcomeWin && !welcomeWin.isDestroyed()) {
+    welcomeWin.show();
+    welcomeWin.focus();
+    return;
+  }
+  welcomeWin = new BrowserWindow({
+    width: 460,
+    height: 640,
+    title: 'Welcome to Togepi',
+    resizable: true,
+    alwaysOnTop: true,
+    minimizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'welcome-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  followYou(welcomeWin);
+  welcomeWin.info = info;
+  welcomeWin.loadFile(path.join(__dirname, '..', 'renderer', 'welcome.html'));
+  welcomeWin.webContents.on('did-finish-load', sendWelcome);
+  welcomeWin.on('closed', () => {
+    settings.set('welcomeSeen', info.version);
+    welcomeWin = null;
+  });
+}
+
+function sendWelcome() {
+  if (welcomeWin && !welcomeWin.isDestroyed()) welcomeWin.webContents.send('welcome', welcomeData(welcomeWin.info));
+}
+
+ipcMain.on('welcome-set', (_e, key, on) => {
+  if (typeof on !== 'boolean') return;
+  if (key === 'watchApps') {
+    settings.set('watchApps', on);
+    applyWatchApps(on);
+  } else if (key === 'readScreen') {
+    applyReadScreen(on);
+  } else if (key === 'readCalendar') {
+    settings.set('readCalendar', on);
+    applyReadCalendar(on);
+  } else if (key === 'openAtLogin') {
+    if (process.platform === 'darwin' || process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: on });
+  } else {
+    return;
+  }
+  refreshTrayMenu();
+  sendWelcome();
+});
+
+ipcMain.on('welcome-done', () => {
+  if (welcomeWin && !welcomeWin.isDestroyed()) welcomeWin.close();
+});
 
 /** He chirps: one of your clips if there are any for his mood, otherwise a generated one. */
 function chirp(syllables) {

@@ -15,7 +15,7 @@
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 
 const START_TIMEOUT = 180 * 1000; // ms to load a model
 const REQUEST_TIMEOUT = 60 * 1000;
@@ -161,6 +161,13 @@ class Engine {
     this.voice = null;
     this.decider = null;
     this.state = this.files.missing.length ? 'not installed' : 'stopped';
+    this.run = 0; // each start/stop; a start that was stopped meanwhile leaves the state alone
+    this.starting = null;
+  }
+
+  /** Started or starting (not stopped, not resting). */
+  get running() {
+    return this.state === 'starting' || this.state === 'running' || this.state.startsWith('trouble');
   }
 
   get ready() {
@@ -176,12 +183,19 @@ class Engine {
     return this.ready && !!this.files.vision;
   }
 
-  async start() {
+  start() {
+    if (this.state === 'running' && this.ready) return Promise.resolve(true);
+    if (!this.starting) this.starting = this.startServers().finally(() => (this.starting = null));
+    return this.starting;
+  }
+
+  async startServers() {
     const f = this.files;
     if (f.missing.length) {
       this.state = `not installed (missing ${f.missing.join(', ')}; run npm run fetch-models)`;
       return false;
     }
+    const run = ++this.run;
     this.state = 'starting';
     this.stopLeftovers();
     const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...(f.vision ? ['--mmproj', f.vision] : []), ...((f.manifest.voice && f.manifest.voice.args) || [])];
@@ -191,6 +205,7 @@ class Engine {
     const started = Promise.allSettled([this.voice.start(), this.decider.start()]);
     this.savePids();
     const results = await started;
+    if (run !== this.run) return false; // stopped while loading
     this.savePids();
     const failed = results.map((r, i) => (r.status === 'rejected' ? `${['voice', 'decide'][i]}: ${r.reason.message}` : null)).filter(Boolean);
     this.state = failed.length ? `trouble: ${failed.join('; ')}` : 'running';
@@ -198,10 +213,24 @@ class Engine {
   }
 
   stop() {
+    this.run++;
     if (this.voice) this.voice.stop();
     if (this.decider) this.decider.stop();
     this.state = 'stopped';
     this.savePids();
+  }
+
+  /** Memory the servers use right now, in MB (resident size), or null. */
+  memoryMB() {
+    const pids = [this.voice, this.decider].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
+    if (!pids.length) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      execFile('ps', ['-o', 'rss=', '-p', pids.join(',')], { encoding: 'utf8' }, (err, out) => {
+        if (err) return resolve(null);
+        const kb = out.split('\n').map(Number).filter((n) => n > 0).reduce((a, b) => a + b, 0);
+        resolve(kb ? Math.round(kb / 1024) : null);
+      });
+    });
   }
 
   savePids() {

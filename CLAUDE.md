@@ -6,6 +6,11 @@ decision so far). Every phase starts with questions to Sushant; record his
 answers in DECISIONS.md and update the phase status in PLAN.md. Do not decide
 product behaviour on your own.
 
+Every change that adds or changes what Togepi does must also update the
+welcome window: bump `WELCOME_VERSION` in `src/main/welcome.js`, add a
+`WHATS_NEW` entry (and update `WELCOME` if the overview changed). Sushant
+asked for this on 2026-10-21; see PLAN.md, working agreement 6.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

@@ -280,18 +280,31 @@ class Mind {
    */
   async maybeWriteJournal() {
     if (!this.memory || !this.enabled || !this.engine || !this.engine.ready || this.writingJournal || this.thinking) return null;
+    const due = this.diaryDue();
+    return due ? this.writeOne(due) : null;
+  }
+
+  /** The diary day that's due now, or null. */
+  diaryDue() {
     const self = this.getSelf();
     const endOfDay = !!self.away && (self.awayFor || 0) >= MIND.endOfDayAway && (self.hour == null || self.hour >= MIND.endOfDayHour);
-    const events = this.eventsFile ? readEvents(this.eventsFile) : this.log.items;
-    const due = journalDue(events, this.memory, { now: this.now(), endOfDay });
-    if (!due) return null;
+    return journalDue(this.events(), this.memory, { now: this.now(), endOfDay });
+  }
+
+  events() {
+    return this.eventsFile ? readEvents(this.eventsFile) : this.log.items;
+  }
+
+  async writeOne(due) {
     this.writingJournal = true;
     try {
       const done = await writeDay(this.engine, this.memory, this.personality, due);
       this.lastJournal = done ? { day: due.day, at: this.now(), facts: done.facts.length, opinions: done.opinions.length } : { day: due.day, error: 'nothing usable' };
+      if (!done) this.journalFailed = { day: due.day, at: this.now() };
       return done;
     } catch (e) {
       this.lastJournal = { day: due.day, error: e.message };
+      this.journalFailed = { day: due.day, at: this.now() };
       return null;
     } finally {
       this.writingJournal = false;
@@ -299,20 +312,61 @@ class Mind {
   }
 
   /**
-   * Phase 4: count finished days towards your relationship (quietly), and
-   * when it's time, reflect on the week and grow a little (he notices).
+   * Phase 5: before the models rest, is there a diary or reflection to do?
+   * 'diary' | 'reflection' | null. Checked at most once a minute (it reads the
+   * event log); a diary that just failed isn't retried for an hour.
    */
+  workDue() {
+    if (!this.memory || !this.enabled) return null;
+    const t = this.now();
+    if (this.workCheck && t - this.workCheck.at < 60 * 1000) return this.workCheck.due;
+    let due = null;
+    const diary = this.diaryDue();
+    const failed = diary && this.journalFailed && this.journalFailed.day === diary.day && t - this.journalFailed.at < 3600 * 1000;
+    if (diary && !failed) due = 'diary';
+    else if (this.growth) {
+      const self = this.getSelf();
+      if (this.growth.reflectionDue({ away: !!self.away, awayFor: self.awayFor || 0 })) due = 'reflection';
+    }
+    this.workCheck = { at: t, due };
+    return due;
+  }
+
+  /** Do what's due (diary, then growth). */
+  async doWork() {
+    this.workCheck = null;
+    await this.maybeWriteJournal();
+    await this.maybeGrow();
+    this.workCheck = null;
+  }
+
+  /** Phase 4: count finished days towards your relationship (quietly), and reflect when it's time. */
   async maybeGrow() {
     if (!this.growth || !this.enabled) return null;
-    const events = this.eventsFile ? readEvents(this.eventsFile) : this.log.items;
-    const withDays = this.growth.applyDays(this.personality, events);
+    this.countDays();
+    const self = this.getSelf();
+    if (!this.memory || !this.engine || !this.engine.ready || this.writingJournal || this.thinking) return null;
+    if (!this.growth.reflectionDue({ away: !!self.away, awayFor: self.awayFor || 0 })) return null;
+    return this.reflectWeek();
+  }
+
+  /** Relationship points for finished days (and today so far with `today`). Returns what was added. */
+  countDays({ today = false } = {}) {
+    if (!this.growth) return null;
+    const withDays = this.growth.applyDays(this.personality, this.events(), { today });
     if (P.diff(this.personality, withDays).length) {
       this.personality = withDays;
       this.onPersonality(withDays);
     }
-    const self = this.getSelf();
-    if (!this.memory || !this.engine || !this.engine.ready || this.writingJournal || this.thinking) return null;
-    if (!this.growth.reflectionDue({ away: !!self.away, awayFor: self.awayFor || 0 })) return null;
+    return this.growth.lastDays;
+  }
+
+  /**
+   * Reflect on the week and grow a little (he notices when you're back).
+   * `manual` ("Try it now"): too little diary isn't recorded as a skipped week.
+   * Returns { applied, insights } or { note } or { error }.
+   */
+  async reflectWeek({ manual = false } = {}) {
     this.writingJournal = true; // one big job at a time
     try {
       const week = this.growth.week(weekOf(memoryDay(this.now())));
@@ -321,9 +375,9 @@ class Mind {
       const proposal = await reflect(this.engine, this.personality, this.memory, { now: this.now(), together });
       if (!proposal) {
         const note = 'not enough diary this week to reflect';
-        this.growth.skipReflection(note);
+        if (!manual) this.growth.skipReflection(note);
         this.lastGrowth = { at: this.now(), note };
-        return null;
+        return { note };
       }
       const { personality, applied } = this.growth.applyReflection(this.personality, proposal);
       this.memory.addFacts(proposal.insights.slice(0, 3).map((text) => ({ text, importance: 7 })));
@@ -333,13 +387,58 @@ class Mind {
         this.onPersonality(personality);
         this.grew(applied);
       }
-      return applied;
+      return { applied, insights: proposal.insights.slice(0, 3) };
     } catch (e) {
       this.lastGrowth = { at: this.now(), error: e.message };
-      return null;
+      return { error: e.message };
     } finally {
       this.writingJournal = false;
     }
+  }
+
+  // ------------------------------------------------------------ "Try it now" (Phase 5)
+
+  /** Why a big job can't run right now, or null. */
+  cantWork() {
+    if (!this.enabled) return 'his mind is off (Mind → Think and talk for himself)';
+    if (!this.engine || !this.engine.ready) return "his models aren't running yet";
+    if (this.writingJournal) return "he's busy writing already";
+    return null;
+  }
+
+  /** Wait (up to `ms`) for a think in progress to finish. */
+  async idle(ms = 120 * 1000) {
+    const until = Date.now() + ms;
+    while (this.thinking && Date.now() < until) await new Promise((r) => setTimeout(r, 250));
+  }
+
+  /** Write his diary now, today so far included (missed days first). Returns [{ day, lines } | { day, error }] or { error }. */
+  async writeDiaryNow() {
+    const why = this.cantWork();
+    if (why) return { error: why };
+    await this.idle();
+    const out = [];
+    for (let i = 0; i < 5; i++) {
+      const due = journalDue(this.events(), this.memory, { now: this.now(), endOfDay: true, minEvents: 1 });
+      if (!due) break;
+      const done = await this.writeOne(due);
+      if (!done) {
+        out.push({ day: due.day, error: (this.lastJournal && this.lastJournal.error) || 'nothing usable' });
+        break;
+      }
+      out.push({ day: due.day, lines: done.diary.length, facts: done.facts.length, opinions: done.opinions.length });
+    }
+    return out;
+  }
+
+  /** Reflect on this week now; it counts as this week's reflection. */
+  async reflectNow() {
+    if (!this.growth) return { error: 'growth is not set up' };
+    const why = this.cantWork();
+    if (why) return { error: why };
+    await this.idle();
+    this.countDays();
+    return this.reflectWeek({ manual: true });
   }
 
   /** After a reflection he may say he feels different (his own decision, like any thought). */
@@ -377,7 +476,9 @@ class Mind {
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
       const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
       this.lastLook = reading ? { app: reading.app, chars: reading.text ? reading.text.length : 0, picture: !!image, skipped: reading.skipped || null, at: reading.at } : null;
+      const started = this.now();
       const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: T.SCHEMA, image });
+      this.thinkTimes = [...(this.thinkTimes || []).slice(-9), (this.now() - started) / 1000];
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
       this.lastThought = { ...thought, trigger: trigger.kind, at: this.now() };
@@ -488,6 +589,8 @@ class Mind {
       recalled: this.lastRecalled.map((m) => m.text),
       journal: this.writingJournal ? 'writing…' : this.lastJournal,
       growth: this.lastGrowth,
+      // Seconds per thought (average of the last 10), for the brain view and the report.
+      speed: this.thinkTimes && this.thinkTimes.length ? { seconds: this.thinkTimes.reduce((x, y) => x + y, 0) / this.thinkTimes.length, n: this.thinkTimes.length } : null,
       lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
       thinking: this.thinking,
       lastThought: this.lastThought,

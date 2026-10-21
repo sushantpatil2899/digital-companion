@@ -90,7 +90,8 @@ class Growth {
   constructor(dir, now = () => Date.now()) {
     this.dir = dir;
     this.now = now;
-    this.state = { relationshipThrough: null, carry: { affection: 0, trust: 0, familiarity: 0 }, weeks: {}, baselines: {}, lastReflection: null };
+    this.state = { relationshipThrough: null, partial: null, carry: { affection: 0, trust: 0, familiarity: 0 }, weeks: {}, baselines: {}, lastReflection: null };
+    this.lastDays = { affection: 0, trust: 0, familiarity: 0 };
     this.load();
   }
 
@@ -132,52 +133,76 @@ class Growth {
 
   /**
    * Apply the relationship changes of every finished day not yet counted.
-   * Returns the new personality (or the same one if nothing changed).
+   * `today`: also count today so far ("Try it now"); the rest of the day is
+   * counted when it's over, without counting the same things twice.
+   * Returns the new personality (or the same one if nothing changed);
+   * `lastDays` has what was added ({ affection, trust, familiarity }).
    */
-  applyDays(personality, events) {
-    const today = dayString(this.now());
+  applyDays(personality, events, { today = false } = {}) {
+    const todayStr = dayString(this.now());
     const byDay = {};
     for (const e of events) {
       if (!e || !Number.isFinite(e.t)) continue;
       const day = dayString(e.t);
-      if (day >= today) continue;
+      if (day > todayStr || (day === todayStr && !today)) continue;
       if (this.state.relationshipThrough && day <= this.state.relationshipThrough) continue;
       (byDay[day] = byDay[day] || []).push(e);
     }
     const days = Object.keys(byDay).sort();
+    this.lastDays = { affection: 0, trust: 0, familiarity: 0 };
     if (!days.length) return personality;
     const next = P.normalize(personality);
     const locked = new Set(personality.locked || []);
     for (const day of days) {
       const w = this.week(weekOf(day));
-      const d = dayRelationship(byDay[day]);
+      const whole = dayRelationship(byDay[day]);
+      // Part of this day may have been counted already (by "Try it now").
+      const partial = this.state.partial && this.state.partial.day === day ? this.state.partial.sums : null;
       for (const metric of ['affection', 'trust', 'familiarity']) {
+        const change = whole[metric] - (partial ? partial[metric] : 0);
         const cap = GROWTH.weekCap.relationship;
         const used = w.relationship[metric];
-        const allowed = Math.max(-cap - used, Math.min(cap - used, d[metric]));
+        const allowed = round1(Math.max(-cap - used, Math.min(cap - used, change)));
         if (!allowed || locked.has(`relationship.${metric}`)) continue;
         w.relationship[metric] = round1(used + allowed);
+        this.lastDays[metric] = round1(this.lastDays[metric] + allowed);
         // Whole points go into personality.md; the rest waits for the next day.
         const total = this.state.carry[metric] + allowed;
-        const whole = Math.trunc(total);
-        this.state.carry[metric] = round1(total - whole);
-        if (whole) P.setScore(next, `relationship.${metric}`, P.getPath(next, `relationship.${metric}`) + whole);
+        const points = Math.trunc(total);
+        this.state.carry[metric] = round1(total - points);
+        if (points) P.setScore(next, `relationship.${metric}`, P.getPath(next, `relationship.${metric}`) + points);
       }
-      this.state.relationshipThrough = day;
+      if (day === todayStr) {
+        this.state.partial = { day, sums: whole };
+      } else {
+        this.state.relationshipThrough = day;
+        if (partial) this.state.partial = null;
+      }
     }
     this.save();
     return next;
   }
 
-  /** Is the weekly reflection due? Sunday evening while you're away, or a week has gone by. */
+  /** This week's reflection is done (or skipped). */
+  reflected(weekKey) {
+    const w = this.state.weeks[weekKey];
+    return !!(w && (w.reflectedAt || w.skipped));
+  }
+
+  /**
+   * Is the weekly reflection due? Sunday evening while you're away, unless
+   * this week's is done already (e.g. by "Try it now"); or last week's was
+   * missed (he wasn't running, or you never left).
+   */
   reflectionDue({ away = false, awayFor = 0 } = {}) {
     const now = this.now();
-    const last = this.state.lastReflection || 0;
-    if (now - last < 6.5 * DAY) return false;
+    const week = weekOf(dayString(now));
+    if (this.reflected(week)) return false;
     const d = new Date(now);
-    const sundayEvening = d.getDay() === 0 && d.getHours() >= GROWTH.reflectHour && away && awayFor >= GROWTH.reflectAway;
-    const overdue = last > 0 && now - last >= 8 * DAY;
-    return sundayEvening || overdue || (last === 0 && d.getDay() === 0 && d.getHours() >= GROWTH.reflectHour && away);
+    if (d.getDay() === 0 && d.getHours() >= GROWTH.reflectHour && away && awayFor >= GROWTH.reflectAway) return true;
+    const lastWeek = weekOf(dayString(dayStart(week) - DAY));
+    const last = this.state.lastReflection || 0;
+    return last > 0 && !this.reflected(lastWeek) && now - last >= 8 * DAY;
   }
 
   /**

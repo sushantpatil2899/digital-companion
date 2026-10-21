@@ -226,3 +226,24 @@ Answers:
 
 | Date | Question | Decision | Why |
 |---|---|---|---|
+| 2026-10-21 | 1. Try it now | **Yes**, in the main menu: diary now, relationship now, reflect now; a hand-started reflection counts as that week's. | Sushant: "I would love to have that right now in the main menu, but I'm not going to use that. I want it to take time." |
+| 2026-10-21 | 2. Lighter on memory and battery | **Yes**: rest after **15 min** away (not 30), changeable in the menu; at night while he sleeps; on battery below 20%. Diary and reflection finish first; they start again when you're back. | Sushant: "very important"; "instead of 30 plus, make it 15 plus minutes… give some kind of an option in the settings". |
+| 2026-10-21 | 3. Style bank | **Not now.** Not opposed, but his style is fine as it is. | Sushant: "right now it is working as fine… I'm right now not interested". |
+| 2026-10-21 | 4. Bigger model | **No.** Speed and memory are measured and shown instead; no "Lighter mind" switch (not asked for). | Sushant agreed. |
+| 2026-10-21 | 5. Copy a report | **Yes.** | Sushant: "that is very helpful". |
+| 2026-10-21 | 6. First-run welcome | **Yes**, and whenever something changes the welcome covers it (a What's new page after an update). | Sushant: "make sure that you make a note that whenever some changes have been made, that first run welcome window covers that." |
+| 2026-10-21 | 7. Chattiness / Shush | **No.** | Sushant: "No, I don't think so." |
+| 2026-10-21 | 8. Fixes | **None needed.** | Sushant: "right now, it's all going good." |
+
+**Phase 5 questions: all answered (2026-10-21).**
+
+## Phase 5 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-21 | Rest settings | `restAfterAway` (minutes, 0 = never; menu Mind → Rest the models after I'm away: 5 / 15 / 30 / 60 / Never) and `restBattery` (%, 0 = never; settings.json only) in settings.json. Night = 22:00-06:00, as in the brain view. On battery they come back at 25% (or when plugged in) so they don't flap around 20%. | Sushant asked for an option; battery wasn't asked to be adjustable, so it's only in the file. |
+| 2026-10-21 | Work before resting | If a diary or the weekly reflection is due while you're away or he sleeps, the models stay up (or start) to do it, then rest. Not on low battery: missed diary days are written later anyway. A diary that just failed isn't retried for an hour, so the models can rest. | "When you're away, the diary and reflection finish first." |
+| 2026-10-21 | Try it now while resting | Keeps the models awake for 10 minutes (whatever the reason), then the usual rules apply a minute after it's done. Results show in a small message. "Count today" counts today so far; the rest of the day is counted when it's over, without counting anything twice. | So it always works when you want it. |
+| 2026-10-21 | Reflection timing | Now by week: due Sunday evening unless that week's is done (by hand or skipped); caught up when last week's was missed. A hand-started reflection with too little diary isn't recorded as a skipped week. | Needed so a hand-started reflection counts as that week's. |
+| 2026-10-21 | Report contents | Versions, model files and status, memory used, resting, speed, last thought/diary/growth outcome (not their text), counts of memories, permissions, switches and numbers from settings (list sizes only), current hour/away/battery and error messages (scrubbed, 160 characters). Never: app names or titles he saw, screen text, what he said or thought, memories, notes, your lists. | "Nothing private" with enough to diagnose. |
+| 2026-10-21 | Welcome versions | `WELCOME_VERSION` = phase number (5 now) in `src/main/welcome.js`, with a What's new entry per version (a test checks every version has one). First run (or an install from before Phase 5) shows the full welcome; an update shows only what's new since the version you last saw; *Welcome and what's new…* in the menu opens it any time. | The rule for future changes (also in PLAN.md and CLAUDE.md). |

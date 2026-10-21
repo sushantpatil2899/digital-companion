@@ -129,7 +129,11 @@ function render(b) {
   if (b.game) rows.push(['Playing', `${b.game.kind === 'ttt' ? 'tic-tac-toe' : 'fetch'} (${b.game.step}, ${b.game.rounds} played)`]);
   const m = b.mind;
   if (m) {
-    rows.push(['Mind', m.enabled ? `${m.engine}${m.thinking ? ' · thinking…' : ''}` : 'off']);
+    rows.push(['Mind', !m.enabled ? 'off' : m.rest ? `resting: ${m.rest.text} (models stopped to save memory and battery)` : `${m.engine}${m.thinking ? ' · thinking…' : ''}`]);
+    const perf = [];
+    if (m.speed) perf.push(`${m.speed.seconds.toFixed(1)} s per thought`);
+    if (Number.isFinite(m.memoryMB)) perf.push(`models use about ${(m.memoryMB / 1024).toFixed(1)} GB`);
+    if (perf.length) rows.push(['Speed', perf.join(' · ')]);
     const v = m.view;
     const win = (w) => (!w ? '' : w.private ? 'something private' : `${w.app}${w.title ? `: "${w.title}"` : ''}${w.screen ? ` (screen ${w.screen})` : ''}`);
     if (v && (v.typing || v.cursorOn)) {
