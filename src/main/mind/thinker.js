@@ -189,7 +189,7 @@ function situationPrompt(s) {
   );
   if (s.canAsk) {
     lines.push(
-      'If you would rather ask Sushant something, also add "question": what you want to ask him, two short answers he can click (1-3 words each, with an emoji; never yes or no), and "aboutSushant": true only if his answer tells you something lasting about him, worth remembering.',
+      'If you would rather ask Sushant something, also add "question": what you want to ask him, two short answers he can click (1-3 words each, with an emoji; never yes or no, not even starting with yes or no), and "aboutSushant": true only if his answer tells you something lasting about him, worth remembering.',
     );
   }
   lines.push('Answer in JSON.');
