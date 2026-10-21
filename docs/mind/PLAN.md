@@ -476,6 +476,15 @@ Built:
 Sushant has more ideas for after Phase 5; they'll be planned the same way
 (questions first) once he shares them.
 
+Noted for the future (not scheduled; ask Sushant before starting):
+- Sign builds with a certificate made once on his Mac, so macOS permissions
+  (Screen Recording, Calendar, Automation) survive rebuilds. Today the app is
+  signed ad hoc and each rebuild counts as a new app (DECISIONS.md, Phase 5
+  feedback). Needs his password once; can't be tested in the Linux
+  container.
+- Togetic evolution (parked 2026-10-20).
+- Style bank of example lines (not now, 2026-10-21).
+
 ## Honest limits (agreed up front)
 
 - Small models sometimes say generic or wrong things; good comments need
