@@ -94,7 +94,7 @@ function render(b) {
 
   const c = b.context;
   const rows = [
-    ['Time', `${String(c.hour).padStart(2, '0')}:00${c.hour >= 22 || c.hour < 6 ? ' (night)' : ''}`],
+    ['Time', `${String(c.hour).padStart(2, '0')}:${String(c.minute || 0).padStart(2, '0')}${c.hour >= 22 || c.hour < 6 ? ' (night)' : ''}`],
     ['You', c.userAway ? `away for ${Math.round(c.awayFor / 60)} min` : 'here'],
     [
       'Battery',
