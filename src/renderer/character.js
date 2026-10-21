@@ -1511,8 +1511,72 @@ function drawSpeech(ctx, text, t) {
   ctx.restore();
 }
 
+// His question with two answer buttons along the bottom (left = answer 0).
+// The buttons sit at a fixed height so the main process can tell which one
+// you clicked: keep QUESTION in sync with HIT.question / HIT.answers in
+// src/main/companion.js (times the drawing scale, SIZE in renderer.js).
+// `hover`: the cursor in drawing coordinates, or null.
+const QUESTION = { w: 176, bottom: -136, btnTop: -159, btnBottom: -141, gap: 3 };
+
+function questionButton(i) {
+  const q = QUESTION;
+  const outer = q.w / 2 - 7;
+  return { x: i === 0 ? -outer : q.gap, y: q.btnTop, w: outer - q.gap, h: q.btnBottom - q.btnTop };
+}
+
+function drawQuestion(ctx, text, answers, hover) {
+  const q = QUESTION;
+  const w = q.w;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lines = wrapTwo(ctx, text, 12.5, 'bold ', w - 16);
+  const top = q.btnTop - 9 - lines.length * 14.5;
+  const h = q.bottom - top;
+  ctx.beginPath();
+  ctx.moveTo(-6, top + h);
+  ctx.lineTo(-w / 2 + 12, top + h);
+  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
+  ctx.arcTo(-w / 2, top, w / 2, top, 12);
+  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
+  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
+  ctx.lineTo(8, top + h);
+  ctx.lineTo(4, top + h + 9);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.fillStyle = PALETTE.outline;
+  lines.forEach((line, i) => {
+    fitFont(ctx, line, 12.5, 'bold ', w - 14);
+    ctx.fillText(line, 0, top + 11.5 + i * 14.5);
+  });
+  answers.forEach((a, i) => {
+    const b = questionButton(i);
+    const over = hover && hover.x >= b.x && hover.x <= b.x + b.w && hover.y >= b.y && hover.y <= b.y + b.h;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 8);
+    ctx.fillStyle = over ? '#ffd86b' : '#fff1c9';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = PALETTE.outline;
+    ctx.stroke();
+    let label = String(a);
+    fitFont(ctx, label, 10.5, 'bold ', b.w - 8);
+    while (label.length > 1 && ctx.measureText(label).width > b.w - 8) label = label.slice(0, -1);
+    if (label !== String(a)) label = `${label.trimEnd()}…`;
+    ctx.fillStyle = PALETTE.outline;
+    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 0.5);
+  });
+  ctx.restore();
+}
+
 window.Character = {
   drawSpeech,
+  drawQuestion,
   drawCharacter,
   defaultPose,
   drawHeart,

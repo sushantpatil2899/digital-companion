@@ -44,7 +44,7 @@ const ACTIVITY_MENU = [
 // The window is a small transparent square that travels around the screen.
 // The character's feet sit at (WIN_W / 2, WIN_H - FOOT_MARGIN) inside it.
 const WIN_W = 220;
-const WIN_H = 240; // tall enough for a sticky note held over his head
+const WIN_H = 256; // tall enough for a sticky note or a two-line question over his head
 const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
 // Fetch: the thrown ball gets its own little window so it can fly anywhere.
@@ -458,7 +458,7 @@ function tickOnce() {
   attention.cursorAt(cursor);
 
   // A press turns into a pick-up once the cursor moves; held still, it's petting.
-  if (press && companion.state !== 'grabbed') {
+  if (press && !press.onQuestion && companion.state !== 'grabbed') {
     const moved = Math.hypot(cursor.x - press.x, cursor.y - press.y);
     const held = (now - press.t) / 1000;
     if (moved > DRAG_THRESHOLD) companion.grab(press);
@@ -595,7 +595,8 @@ ipcMain.on('press', () => {
     ballPress = true;
     return;
   }
-  press = { x: p.x, y: p.y, t: Date.now() };
+  // On his question bubble a press is only ever a click (no pick-up or petting).
+  press = { x: p.x, y: p.y, t: Date.now(), onQuestion: /^(answer|question)/.test(companion.hitPart(p) || '') };
 });
 
 function releaseBall() {
@@ -612,6 +613,11 @@ ipcMain.on('release', () => {
   press = null;
   if (companion.state === 'grabbed') {
     companion.release();
+  } else if (at.onQuestion) {
+    // One of his question's answers (the bubble around them does nothing).
+    const part = companion.hitPart(at);
+    const i = part === 'answer0' ? 0 : part === 'answer1' ? 1 : -1;
+    if (i >= 0 && companion.answerQuestion(i) != null && mind) mind.answered(i);
   } else if (held < CLICK_MAX) {
     // The meeting sign's "Join" tag opens the call; his speech bubble goes
     // away when clicked; anywhere else is a pat.
@@ -1026,6 +1032,7 @@ function startMind() {
       busy: !!companion.board(),
     }),
     onSpeak: ({ text, action }) => companion.say(text, action),
+    onAsk: ({ text, answers, action }) => companion.ask(text, answers, action),
     getBlocklist: () => settings.get('privacyBlock'),
   });
   let ticks = 0;

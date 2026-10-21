@@ -56,6 +56,10 @@ const HIT = {
   signBottom: 128,
   signTop: 205,
   join: { left: -66, right: -12, bottom: 126, top: 162 },
+  // His question bubble and its two answer buttons (left = answer 0), from
+  // drawQuestion in src/renderer/character.js times the drawing scale.
+  question: { halfWidth: 101, bottom: 146, top: 228 },
+  answers: { inner: 3, outer: 93, bottom: 162, top: 183 },
 };
 
 // How each nudge is shown (see src/main/nudges.js for when).
@@ -82,7 +86,8 @@ const GAME_STATES = ['offerBall', 'watchBall', 'pickBall', 'offerGame', 'ttt'];
 const HELD_BALL = { x: 3, y: 64 };
 
 // How long a speech bubble with his own words stays up (s).
-const SPEECH = { base: 2.5, perWord: 0.35, max: 6 };
+// A question waits `question` s for you to click an answer.
+const SPEECH = { base: 2.5, perWord: 0.35, max: 6, question: 30 };
 
 // States with something held up over his head that you can click.
 const BOARD_STATES = ['sign', ...NUDGE_STATES, 'offerBall', 'offerGame'];
@@ -706,6 +711,8 @@ class Companion {
       this.emit('stayPutEnded');
     }
 
+    if (this.speech && this.speech.answers && this.time >= this.speech.until) this.questionTimedOut();
+
     this.updateScreen();
     this.updateBall(dt);
     switch (this.state) {
@@ -936,7 +943,11 @@ class Companion {
     return this.hitPart(point) != null;
   }
 
-  /** Which part of him the point is on: 'ball', 'join' (the sign's Join tag), 'sign', 'body' or null. */
+  /**
+   * Which part of him the point is on: 'ball', 'join' (the sign's Join tag),
+   * 'sign', 'answer0' / 'answer1' / 'question' (his question bubble),
+   * 'speech', 'body' or null.
+   */
   hitPart(point) {
     const sx = point.x - this.x;
     const sy = this.y - point.y; // height above his feet
@@ -945,6 +956,12 @@ class Companion {
       const j = HIT.join;
       if (this.state === 'sign' && this.meetingLink() && sx >= j.left && sx <= j.right && sy >= j.bottom && sy <= j.top) return 'join';
       if (Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'sign';
+    }
+    if (this.asking()) {
+      const a = HIT.answers;
+      if (sy >= a.bottom && sy <= a.top && Math.abs(sx) >= a.inner && Math.abs(sx) <= a.outer) return sx < 0 ? 'answer0' : 'answer1';
+      const q = HIT.question;
+      if (Math.abs(sx) <= q.halfWidth && sy >= q.bottom && sy <= q.top) return 'question';
     }
     if (this.speaking() && Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'speech';
     const dx = sx / HIT.rx;
@@ -967,6 +984,53 @@ class Companion {
     this.emit('speak');
     this.mindAction(action);
     return true;
+  }
+
+  /**
+   * Ask `text` with two answers to click (his own question, from
+   * src/main/mind). It stays up until you answer or SPEECH.question s pass.
+   * Returns false if he can't show it right now.
+   */
+  ask(text, answers, action = 'none') {
+    if (!text || !Array.isArray(answers) || answers.length !== 2 || this.board()) return false;
+    this.speech = { text: String(text), answers: answers.map(String), until: this.time + SPEECH.question };
+    this.emit('speak');
+    // He stands still so the answers don't walk away from your cursor (and
+    // doesn't hold up a game invite over his own question).
+    if (this.isGrounded() && ['walk', 'run'].includes(this.state)) {
+      this.vx = 0;
+      this.enter('idle', 3);
+    }
+    this.mindAction(action === 'askToPlay' ? 'none' : action);
+    return true;
+  }
+
+  /** Showing a question with answers right now. */
+  asking() {
+    return this.speaking() && !!this.speech.answers;
+  }
+
+  /** You clicked answer `i` of his question: it goes away and he nods. Returns the answer, or null. */
+  answerQuestion(i) {
+    if (!this.asking() || !this.speech.answers[i]) return null;
+    const answer = this.speech.answers[i];
+    this.speech = null;
+    this.reactToQuestion('nod', 1.2);
+    return answer;
+  }
+
+  /** Nobody answered his question in time: it goes away and he shrugs. */
+  questionTimedOut() {
+    this.speech = null;
+    this.reactToQuestion('confused', 2);
+  }
+
+  /** Nod or shrug, unless he's busy with something else (the curious look he asked with is fine). */
+  reactToQuestion(state, seconds) {
+    if (!this.isGrounded() || this.game || this.nudge) return;
+    if (!INTERRUPTIBLE.includes(this.state) && !['happy', 'curious', 'shy', 'wave'].includes(this.state)) return;
+    this.vx = 0;
+    this.enter(state, seconds);
   }
 
   /** Showing a speech bubble right now. */
@@ -1062,7 +1126,7 @@ class Companion {
     this.crossing = null;
     if (this.game && this.resumeGame()) return;
     const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
-      paused: this.paused,
+      paused: this.paused || this.asking(),
       cursorKnown: !!this.lastCursor,
       last: this.lastActivity,
       grumpiness: this.grumpiness,
@@ -1894,6 +1958,7 @@ class Companion {
       ball: this.ball.loose ? { x: this.ball.x - this.x, y: this.ball.y - this.y } : null,
       thinking: this.state === 'ttt' && !!this.game && !!this.game.ttt && this.game.ttt.myTurn,
       speech: this.speaking() ? this.speech.text : null,
+      answers: this.asking() ? this.speech.answers : null,
       time: this.time,
     };
   }

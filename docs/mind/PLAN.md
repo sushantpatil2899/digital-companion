@@ -471,10 +471,70 @@ Built:
   permission switches, What's new once after an update, *Welcome and
   what's new…* in the menu.
 
-## Later
+### Where it's going (Sushant, 2026-10-21)
 
-Sushant has more ideas for after Phase 5; they'll be planned the same way
-(questions first) once he shares them.
+After Phase 5 Sushant described what he wants Togepi to become. Each item
+becomes its own phase, planned questions first. Order proposed and accepted
+(Sushant went ahead with #1):
+
+1. **Questions with two answers** (Phase 6, below): sometimes he asks you
+   something and you click one of two answers (never yes/no).
+2. **Chat window**: a window to have a conversation with him.
+3. **Plug-in characters**: a standard character pack (required files for
+   looks, movement, personality; clearly separated basic and add-on parts)
+   so anyone can make their own character. Togepi becomes pack #1. Basic
+   packs are data only; custom code is an add-on (privacy).
+4. **Several characters** in one app, each with its own personality and
+   memory, isolated from each other, sharing one set of models. Whether
+   more than one can be on screen at once is open.
+5. **iPhone**: he hops to the iPhone when the Mac closes and back, with no
+   internet involved (direct Wi-Fi/Bluetooth after a one-time pairing).
+   iOS limits, explained to Sushant: no floating over other apps (closest:
+   Dynamic Island / Lock Screen Live Activity and widgets); no seeing other
+   apps, the screen or other apps' notifications; Health/Fitness, calendar,
+   Focus and motion are possible; on-device model (Apple's or a small
+   Gemma); background hopping only partly reliable. A separate Swift app,
+   built in Xcode on his Mac, needs the $99/year developer account.
+
+Also suggested (not yet decided): an offline lock on the Mac (block every
+connection except his own models, shown in the report and welcome);
+export/import of his mind (needed for the iPhone and several characters;
+also a backup); the signing certificate (needed to publish); later, talking
+to him out loud with local speech.
+
+### Phase 6: questions with two answers — status: `in progress` (built and tested here; Sushant to try it on his Mac)
+
+Goal: make him more interactive. Sometimes, instead of a line, he asks you
+something and shows two answers to click.
+
+Answers (2026-10-21, details in DECISIONS.md): the model decides when to
+ask, what to ask and what the answers are (no frequency rule, no topics, no
+examples; only "never yes or no"); a bubble with two buttons; 30 s to
+answer, two ignored in a row pause questions for an hour; he reacts to your
+pick; answering counts like a pat, ignoring costs nothing; the model marks
+whether your answer tells him about you, and if so it's saved as a memory;
+no setting; only the privacy blocklist is off limits. Also: his
+instructions lose the example topics, the "Toge!/Priii!" example and the
+"name the actual thing (examples)" pattern.
+
+Built:
+- `thinker.js`: optional `question` in the answer schema ({ text, two
+  answers of up to 18 characters, aboutSushant }), offered only when he may
+  ask; `cleanQuestion` (two different answers, no yes/no). Lines up to 60
+  characters so 8 words fit.
+- `mind.js`: asks instead of speaking when the model wrote a question;
+  waits 30 s (no other lines meanwhile); `answered(i)` logs your answer,
+  saves a memory if it's about you and wakes him to react (even right after
+  asking); two ignored in a row pause questions for an hour; never asks
+  anything that names something on your blocklist.
+- `companion.js` + renderer: the question bubble with two buttons (he
+  stands still while asking), nod on an answer, shrug after 30 s; presses on
+  the bubble are clicks only (no pick-up). His window is 16 px taller.
+- Growth: an answer counts like a pat (same daily cap).
+- Brain view: "Last asked" with the answers and your reaction; when
+  questions are paused.
+
+## Later
 
 Noted for the future (not scheduled; ask Sushant before starting):
 - Sign builds with a certificate made once on his Mac, so macOS permissions

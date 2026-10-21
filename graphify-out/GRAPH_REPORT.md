@@ -1,17 +1,15 @@
 # Graph Report - digital-companion  (2026-10-21)
 
 ## Corpus Check
-- 76 files · ~99,726 words
-- Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 2 file(s) not represented in the graph (top: (none) 1, .applescript 1)
+- cluster-only mode — file stats not available
 
 ## Summary
-- 1100 nodes · 2144 edges · 68 communities (59 shown, 9 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 183 edges (avg confidence: 0.86)
+- 1137 nodes · 2225 edges · 68 communities (60 shown, 8 thin omitted)
+- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 188 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3a55ab42`
+- Built from commit: `61d61334`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,12 +20,12 @@
 - Needs and mood (brain.js)
 - Electron main process setup
 - Preload bridges
-- BALL
+- Prompt text helpers (events, lines, questions)
 - Diary writing and mood faces
 - Companion tests
 - Front app and browser tab watcher
 - Model download script
-- Mind plan and decisions docs
+- Personality research notes
 - Build and run scripts
 - macOS JXA helper scripts
 - Brain debug view
@@ -36,7 +34,7 @@
 - Remind-me window
 - graphify usage rules
 - graphify skill registration
-- games.test.js
+- Ball and tic-tac-toe objects
 - mind.test.js
 - Menus and opt-in switches
 - Main loop and windows
@@ -49,10 +47,10 @@
 - Memory store (facts, opinions, diary)
 - Window capture and text recognition
 - Attention and screen reader
-- tictactoe.js
+- Decisions log
 - Calendar watcher and reader
 - Memory recall and event files
-- Event log
+- Mind plan
 - Personality editor window
 - Chirp synthesis
 - NudgeTracker
@@ -62,16 +60,16 @@
 - Settings file storage
 - App startup and brain saving
 - Mind startup and personality window
-- Screen layout and calling him over
+- Togepi personality spec
 - Memories window
 - Growth tests
 - Welcome window content and Phase 5 tests
 - Settings and app classification
 - Growth state, reflection and undo
 - Mind module wiring
-- applyWatchApps
+- Try it now, report and permissions in main
 - Brain tests
-- Privacy gate
+- Board and ball windows
 - Daily relationship rules and reflection timing
 - Growth timing and reflection
 - Context tests
@@ -83,44 +81,43 @@
 - Resting the models
 - Dev dependencies
 - Welcome window renderer
-- TicTacToe
 
 ## God Nodes (most connected - your core abstractions)
-1. `Companion` - 106 edges
-2. `MIND` - 44 edges
+1. `Companion` - 113 edges
+2. `MIND` - 49 edges
 3. `GROWTH` - 20 edges
 4. `MEMORY` - 19 edges
 5. `Engine` - 18 edges
-6. `ContextTracker` - 16 edges
-7. `NudgeTracker` - 16 edges
-8. `ellipse()` - 16 edges
-9. `startMind()` - 15 edges
-10. `Research: how to represent, store and grow a personality` - 15 edges
+6. `Togepi's mind: decisions log` - 17 edges
+7. `ContextTracker` - 16 edges
+8. `NudgeTracker` - 16 edges
+9. `ellipse()` - 16 edges
+10. `startMind()` - 15 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Making him your own` --references--> `zigzag()`  [INFERRED]
   README.md → src/renderer/character.js
+- `Phase 6: questions with two answers — status: `in progress` (built and tested here; Sushant to try it on his Mac)` --references--> `cleanQuestion()`  [INFERRED]
+  docs/mind/PLAN.md → src/main/mind/thinker.js
 - `Making him your own` --references--> `computePose()`  [INFERRED]
   README.md → src/renderer/renderer.js
 - `Making him your own` --references--> `scoreActivities()`  [INFERRED]
   README.md → src/main/brain.js
 - `Phase 4: personality growth — status: `in progress` (built and tested here; Sushant to try it on his Mac. Evolution parked.)` --references--> `temperament()`  [INFERRED]
   docs/mind/PLAN.md → src/main/mind/personality.js
-- `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `whyNotRead()`  [INFERRED]
-  docs/mind/PLAN.md → src/main/mind/screen.js
 
 ## Import Cycles
 - None detected.
 
-## Communities (68 total, 9 thin omitted)
+## Communities (68 total, 8 thin omitted)
 
 ### Community 0 - "Companion state machine and physics"
 Cohesion: 0.07
-Nodes (5): clamp(), Companion, rand(), hardThrow(), setup()
+Nodes (6): clamp(), Companion, rand(), hardThrow(), setup(), settled()
 
 ### Community 1 - "Togepi drawing code"
-Cohesion: 0.09
-Nodes (50): armAngle(), bagSide(), bellyShadow(), bodyPath(), drawApple(), drawArm(), drawBackpackBag(), drawBackpackStraps() (+42 more)
+Cohesion: 0.08
+Nodes (52): armAngle(), bagSide(), bellyShadow(), bodyPath(), drawApple(), drawArm(), drawBackpackBag(), drawBackpackStraps() (+44 more)
 
 ### Community 2 - "Companion constants and game config"
 Cohesion: 0.11
@@ -138,9 +135,9 @@ Nodes (30): ACTIVITY_MENU, { app, BrowserWindow, ipcMain, screen, Menu, Tray, na
 Cohesion: 0.13
 Nodes (8): electron, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }
 
-### Community 6 - "BALL"
-Cohesion: 0.15
-Nodes (3): BALL, inAnyDisplay(), screensLib
+### Community 6 - "Prompt text helpers (events, lines, questions)"
+Cohesion: 0.06
+Nodes (37): Phase 6: questions with two answers — status: `in progress` (built and tested here; Sushant to try it on his Mac), ago(), describeEvent(), fs, path, ACTIONS, BAND_WORDS, cleanLine() (+29 more)
 
 ### Community 7 - "Diary writing and mood faces"
 Cohesion: 0.09
@@ -158,9 +155,9 @@ Nodes (13): AppWatcher, browserTabs(), browserTabsScript(), { classifyApp, class
 Cohesion: 0.14
 Nodes (15): download(), ENGINE_ASSETS, ENGINE_DIR, { execFileSync }, fetchEngine(), fetchModels(), fs, mb() (+7 more)
 
-### Community 11 - "Mind plan and decisions docs"
-Cohesion: 0.04
-Nodes (43): General, Phase 1 feedback (Sushant tried it on his Mac, 2026-10-20), Phase 1 implementation decisions, Phase 1 questions, Phase 2 implementation decisions, Phase 2 questions, Phase 3 implementation decisions, Phase 3 questions (+35 more)
+### Community 11 - "Personality research notes"
+Cohesion: 0.13
+Nodes (15): 10. The "fast classifier" idea (GLiClass; see §11 for JEPA), 11. JEPA-style models (wrong guess: Sushant meant Jev, see §12), 12. Decision models: Jev and Laya (what Sushant meant, confirmed), 13. Test results (2026-10-20), 1. Summary, 2. Layers of a personality (the backbone), 3. Trait models compared, 4. Values and motives: Schwartz's 19 values (+7 more)
 
 ### Community 12 - "Build and run scripts"
 Cohesion: 0.14
@@ -186,25 +183,25 @@ Nodes (22): band(), clampScore(), clone(), defaultPersonality(), describe(), dif
 Cohesion: 0.60
 Nodes (4): add(), fmt(), setButtons(), text
 
-### Community 20 - "games.test.js"
-Cohesion: 0.16
-Nodes (14): GAME, assert, atHour(), { Ball, BALL }, bounds, brain, { Companion, GAME }, run() (+6 more)
+### Community 20 - "Ball and tic-tac-toe objects"
+Cohesion: 0.07
+Nodes (26): GAME, BALL, inAnyDisplay(), screensLib, bestMoves(), chooseMove(), completes(), freeSquares() (+18 more)
 
 ### Community 21 - "mind.test.js"
 Cohesion: 0.05
-Nodes (42): ago(), describeEvent(), fs, path, EXTS, fs, groupClips(), MOODS (+34 more)
+Nodes (31): EventLog, check(), lower(), MODEL_QUESTION, MONEY_APPS, PASSWORD_APPS, PASSWORD_BUNDLES, SENSITIVE_TITLE (+23 more)
 
 ### Community 22 - "Menus and opt-in switches"
 Cohesion: 0.25
-Nodes (11): buildMenu(), copyReport(), mindMenu(), playMenu(), refreshTrayMenu(), setNudge(), stayPutLabel(), tell() (+3 more)
+Nodes (11): applyReadScreen(), applyWatchApps(), buildMenu(), hideForPresenting(), mindMenu(), playMenu(), refreshTrayMenu(), setNudge() (+3 more)
 
 ### Community 23 - "Main loop and windows"
-Cohesion: 0.22
-Nodes (10): chirp(), closeBoard(), startLoop(), tick(), tickOnce(), updateBallWindow(), updateBoardWindow(), updateClickThrough() (+2 more)
+Cohesion: 0.14
+Nodes (13): boundsForPoint(), callHere(), chirp(), startLoop(), tick(), tickOnce(), updateBallWindow(), updateClickThrough() (+5 more)
 
 ### Community 24 - "Screen travel tests"
-Cohesion: 0.20
-Nodes (7): assert, { Companion }, companionOn(), LAYOUTS, screens, seeded(), test
+Cohesion: 0.15
+Nodes (13): link(), linksFrom(), makeScreens(), overlap(), route(), toScreen(), assert, { Companion } (+5 more)
 
 ### Community 25 - "Mind decision loop and big jobs"
 Cohesion: 0.10
@@ -232,11 +229,11 @@ Nodes (9): run(), capture(), fs, ocr(), OCR_SCRIPT, os, path, picture() (+1 more
 
 ### Community 32 - "Attention and screen reader"
 Cohesion: 0.06
-Nodes (36): Phase 1: his own voice — status: `done` (merged; tried and accepted by Sushant on 2026-10-20), Phase 2: memory — status: `done` (merged; tried and accepted by Sushant on 2026-10-20: "improved a lot"), Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac), Phase 4: personality growth — status: `in progress` (built and tested here; Sushant to try it on his Mac. Evolution parked.), Phases, ATTENTION, contains(), own() (+28 more)
+Nodes (37): Phase 1: his own voice — status: `done` (merged; tried and accepted by Sushant on 2026-10-20), Phase 2: memory — status: `done` (merged; tried and accepted by Sushant on 2026-10-20: "improved a lot"), Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac), Phase 4: personality growth — status: `in progress` (built and tested here; Sushant to try it on his Mac. Evolution parked.), Phases, Where it's going (Sushant, 2026-10-21), ATTENTION, contains() (+29 more)
 
-### Community 33 - "tictactoe.js"
-Cohesion: 0.49
-Nodes (8): bestMoves(), chooseMove(), completes(), freeSquares(), LINES, minimax(), other(), winner()
+### Community 33 - "Decisions log"
+Cohesion: 0.12
+Nodes (17): General, Phase 1 feedback (Sushant tried it on his Mac, 2026-10-20), Phase 1 implementation decisions, Phase 1 questions, Phase 2 implementation decisions, Phase 2 questions, Phase 3 implementation decisions, Phase 3 questions (+9 more)
 
 ### Community 34 - "Calendar watcher and reader"
 Cohesion: 0.19
@@ -244,7 +241,11 @@ Nodes (9): CalendarWatcher, findMeetingLink(), MEETING_LINKS, MESSAGES, parseCal
 
 ### Community 35 - "Memory recall and event files"
 Cohesion: 0.10
-Nodes (20): dayStart(), fs, path, read(), readEvents(), relevance(), { similar }, STOP (+12 more)
+Nodes (21): dayStart(), fs, path, pruneEvents(), read(), readEvents(), relevance(), { similar } (+13 more)
+
+### Community 36 - "Mind plan"
+Cohesion: 0.25
+Nodes (8): Architecture (as built in Phase 1), Ground rules (apply to every phase), Honest limits (agreed up front), Later, Target machine, Togepi's mind: plan, Vision, Working agreement (read first)
 
 ### Community 37 - "Personality editor window"
 Cohesion: 0.20
@@ -267,16 +268,16 @@ Cohesion: 0.28
 Nodes (8): clockTime(), dayString(), minutesOf(), NUDGE_DEFAULTS, pastBedtime(), PRIORITY, say(), TEXT
 
 ### Community 44 - "App startup and brain saving"
-Cohesion: 0.17
-Nodes (13): allDisplays(), applyReadCalendar(), boundsForPoint(), brainFile(), callHere(), createBallWindow(), createWindow(), loadBrain() (+5 more)
+Cohesion: 0.29
+Nodes (8): allDisplays(), applyReadCalendar(), brainFile(), createWindow(), loadBrain(), saveBrain(), startContext(), stopLoop()
 
 ### Community 45 - "Mind startup and personality window"
-Cohesion: 0.33
-Nodes (9): applyMind(), eventsFile(), mindDir(), personalityFile(), sendPersonality(), showPersonality(), startMind(), updatePersonality() (+1 more)
+Cohesion: 0.39
+Nodes (8): applyMind(), eventsFile(), mindDir(), personalityFile(), sendPersonality(), showPersonality(), startMind(), updatePersonality()
 
-### Community 46 - "Screen layout and calling him over"
-Cohesion: 0.48
-Nodes (6): link(), linksFrom(), makeScreens(), overlap(), route(), toScreen()
+### Community 46 - "Togepi personality spec"
+Cohesion: 0.33
+Nodes (6): Growth limits (per weekly reflection, Phase 4), Relationship with Sushant (starts at "just met"), Togepi's starting personality (draft for Sushant's review), Traits (0–100), Values (0–100), Who Togepi is (sources)
 
 ### Community 47 - "Memories window"
 Cohesion: 0.83
@@ -298,17 +299,17 @@ Nodes (20): summarize(), classifyApp(), classifyUrl(), DEFAULTS, fs, LIST_KEYS, 
 Cohesion: 0.17
 Nodes (11): INTERACTIONS, { EventLog }, { INTERACTIONS }, P, privacy, REACTIONS, { readEvents, journalDue, MEMORY, dayString: memoryDay }, { reflect } (+3 more)
 
-### Community 53 - "applyWatchApps"
+### Community 53 - "Try it now, report and permissions in main"
 Cohesion: 0.33
-Nodes (7): applyReadScreen(), applyWatchApps(), canReadScreen(), hideForPresenting(), screenPermission(), showAfterPresenting(), updateAttention()
+Nodes (7): canReadScreen(), copyReport(), screenPermission(), tell(), tryMenu(), tryNow(), updateAttention()
 
 ### Community 54 - "Brain tests"
 Cohesion: 0.22
 Nodes (9): assert, bounds, brain, { Companion }, grounded(), meetingSetup(), seeded(), test (+1 more)
 
-### Community 55 - "Privacy gate"
-Cohesion: 0.24
-Nodes (9): check(), lower(), MODEL_QUESTION, MONEY_APPS, PASSWORD_APPS, PASSWORD_BUNDLES, SENSITIVE_TITLE, SENSITIVE_URL (+1 more)
+### Community 55 - "Board and ball windows"
+Cohesion: 0.40
+Nodes (5): closeBoard(), createBallWindow(), openBoard(), overlayWindow(), updateBoardWindow()
 
 ### Community 56 - "Daily relationship rules and reflection timing"
 Cohesion: 0.18
@@ -319,8 +320,8 @@ Cohesion: 0.31
 Nodes (8): { dayString, dayStart }, { GROWTH }, P, reflect(), schema(), T, userPrompt(), weekDiary()
 
 ### Community 58 - "Context tests"
-Cohesion: 0.16
-Nodes (9): assert, clock(), c, { ContextTracker }, inMeetingTracker(), test, assert, { px } (+1 more)
+Cohesion: 0.24
+Nodes (6): assert, clock(), c, { ContextTracker }, inMeetingTracker(), test
 
 ### Community 59 - "macOS app permissions (Info.plist)"
 Cohesion: 0.20
@@ -352,22 +353,22 @@ Nodes (3): devDependencies, electron, electron-builder
 
 ## Knowledge Gaps
 - **1 isolated node(s):** `electron-builder`
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 468 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **9 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 490 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Companion` connect `Companion state machine and physics` to `Companion constants and game config`, `Electron main process setup`, `BALL`, `NudgeTracker`, `Companion tests`, `Nudge tests`, `App startup and brain saving`, `games.test.js`, `mind.test.js`, `Brain tests`, `Screen travel tests`?**
-  _High betweenness centrality (0.234) - this node is a cross-community bridge._
+- **Why does `Companion` connect `Companion state machine and physics` to `Companion constants and game config`, `Electron main process setup`, `Prompt text helpers (events, lines, questions)`, `NudgeTracker`, `Companion tests`, `Nudge tests`, `App startup and brain saving`, `Ball and tic-tac-toe objects`, `mind.test.js`, `Brain tests`, `Screen travel tests`?**
+  _High betweenness centrality (0.209) - this node is a cross-community bridge._
 - **What connects `electron-builder` to the rest of the system?**
   _1 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Companion state machine and physics` be split into smaller, more focused modules?**
-  _Cohesion score 0.07324561403508772 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07049504950495049 - nodes in this community are weakly interconnected._
 - **Why does `Making him your own` connect `Needs and mood (brain.js)` to `Togepi drawing code`, `Desktop Companion`, `Diary writing and mood faces`?**
-  _High betweenness centrality (0.139) - this node is a cross-community bridge._
+  _High betweenness centrality (0.145) - this node is a cross-community bridge._
 - **Should `Togepi drawing code` be split into smaller, more focused modules?**
-  _Cohesion score 0.08590441621294616 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08305084745762711 - nodes in this community are weakly interconnected._
 - **Should `Companion constants and game config` be split into smaller, more focused modules?**
   _Cohesion score 0.1111111111111111 - nodes in this community are weakly interconnected._
 - **Should `Electron main process setup` be split into smaller, more focused modules?**

@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 5;
+const WELCOME_VERSION = 6;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -27,7 +27,7 @@ const WELCOME = [
   },
   {
     title: 'My own mind',
-    text: 'I think for myself with models that run on your Mac (nothing leaves it) and sometimes say something short, with a chirp. Show his brain… (under Brain) shows what I’m thinking and why I spoke or kept quiet.',
+    text: 'I think for myself with models that run on your Mac (nothing leaves it) and sometimes say something short, with a chirp. Sometimes I ask you something instead: click one of my two answers. Show his brain… (under Brain) shows what I’m thinking and why I spoke or kept quiet.',
   },
   {
     title: 'Memory and growing up',
@@ -57,6 +57,15 @@ const WHATS_NEW = [
       'Try it now (in my menu) writes today’s diary, counts today towards our relationship or makes me reflect on the week, right away.',
       'Mind → Copy a report copies a short report about how I’m doing, with nothing private in it.',
       'Show his brain… shows how many seconds a thought takes and how much memory my models use.',
+    ],
+  },
+  {
+    version: 6,
+    title: 'I ask you things',
+    items: [
+      'Sometimes I ask you a question instead of saying something: click one of my two answers. If you don’t, I shrug after 30 seconds (that’s fine).',
+      'I remember answers that tell me about you (Mind → Memories), and answering makes me happy like a pat.',
+      'I come up with my own things to say now, without examples to copy, and my lines can be a little longer.',
     ],
   },
 ];

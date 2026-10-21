@@ -150,13 +150,17 @@ function render(b) {
     if (m.recalled && m.recalled.length) rows.push(['Remembered', m.recalled.join(' · ')]);
     if (m.journal) rows.push(['Diary', m.journal === 'writing…' ? 'writing…' : m.journal.error ? `${m.journal.day}: couldn't write (${m.journal.error})` : `wrote ${m.journal.day} (${m.journal.facts} new facts, ${m.journal.opinions} opinions)`]);
     if (m.growth) rows.push(['Growth', m.growth.error ? `reflection failed (${m.growth.error})` : m.growth.note || `reflected: ${m.growth.changes} changes, ${m.growth.insights} insights`]);
-    if (m.lastSaid) rows.push(['Last said', `"${m.lastSaid.text}"${m.lastSaid.reaction ? ` → ${m.lastSaid.reaction}` : ''}`]);
+    if (m.lastSaid) {
+      const ls = m.lastSaid;
+      rows.push([ls.answers ? 'Last asked' : 'Last said', `"${ls.text}"${ls.answers ? ` [${ls.answers.join(' | ')}]` : ''}${ls.reaction ? ` → ${ls.reaction}` : ''}`]);
+    }
+    if (m.askPausedMin) rows.push(['Questions', `paused for ${m.askPausedMin} min (you ignored two in a row)`]);
     const t = m.lastThought;
     if (t && t.error) rows.push(['Last thought', `(failed: ${t.error})`]);
     else if (t) rows.push(['Last thought', `"${t.thought}" (woke up for: ${t.trigger})`]);
     const d = m.lastDecision;
     if (d) {
-      const said = d.rail ? `stayed quiet: ${d.rail}` : d.urge >= d.threshold ? 'spoke' : 'stayed quiet: not worth saying';
+      const said = d.rail ? `stayed quiet: ${d.rail}` : d.urge >= d.threshold ? (d.asked ? 'asked a question' : 'spoke') : 'stayed quiet: not worth saying';
       rows.push(['Decision', `urge ${d.urge.toFixed(2)} vs bar ${d.threshold.toFixed(2)} → ${said}`]);
     }
   }

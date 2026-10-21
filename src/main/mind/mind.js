@@ -42,6 +42,9 @@ const MIND = {
   journalCheckEvery: 600, // s between checks whether his diary is due
   endOfDayHour: 18, // from this hour, being away for a while ends his day
   endOfDayAway: 600, // s away
+  questionWait: 30, // s he waits for you to click an answer to his question
+  questionPauseAfter: 2, // questions ignored in a row…
+  questionPause: 3600, // …and he stops asking for this long (s)
   privacyThreshold: 0.5, // decision model's "this is sensitive" probability that blocks (tested: normal pages ≈ 0.01, sensitive ≥ 0.69)
 };
 
@@ -70,6 +73,7 @@ class Mind {
    * @param {EventLog} [opts.log]
    * @param {() => object} opts.getSelf { band, needs, state, hour, quiet, away, asleep, busy }
    * @param {(s: {text, action, band}) => void} opts.onSpeak
+   * @param {(q: {text, answers, action, band}) => void} [opts.onAsk] show a question with two answers
    * @param {() => object} [opts.getBlocklist] { apps, sites, words }
    * @param {() => number} [opts.now] ms epoch
    * @param {() => number} [opts.rng]
@@ -86,6 +90,7 @@ class Mind {
     this.log = opts.log || new EventLog({ now: this.now });
     this.getSelf = opts.getSelf;
     this.onSpeak = opts.onSpeak;
+    this.onAsk = opts.onAsk || null;
     this.getBlocklist = opts.getBlocklist || (() => ({}));
     this.enabled = true;
     this.thinking = false;
@@ -95,6 +100,8 @@ class Mind {
     this.nextHeartbeat = this.now() + this.heartbeatDelay();
     this.awaiting = null; // { entry, until } the line whose reaction we're waiting for
     this.ignoredStreak = 0;
+    this.questionsIgnored = 0; // in a row
+    this.askPausedUntil = -Infinity;
     this.lastObservation = null;
     this.privacyCache = new Map();
     this.lastThought = null; // for the brain view
@@ -218,12 +225,36 @@ class Mind {
   /** How you reacted to what he just said: 'clicked' | 'petted' | 'threw'. */
   reacted(kind) {
     const a = this.awaiting;
-    if (!a) return;
+    // A question waits for one of its answers.
+    if (!a || a.question) return;
     this.awaiting = null;
     const words = { clicked: 'clicked the bubble', petted: 'petted you', threw: 'threw you' };
     a.entry.reaction = words[kind] || kind;
     this.ignoredStreak = 0;
     this.log.add({ kind: 'reaction', to: a.entry.text, reaction: a.entry.reaction });
+  }
+
+  /**
+   * You clicked answer `i` (0 or 1) of the question he's waiting on. He
+   * remembers it if he said the answer tells him about you, and it wakes him
+   * to react. Returns false if there's no such question (any more).
+   */
+  answered(i) {
+    const a = this.awaiting;
+    if (!a || !a.question || ![0, 1].includes(i)) return false;
+    this.awaiting = null;
+    const q = a.entry;
+    const answer = q.answers[i];
+    q.reaction = `answered "${answer}"`;
+    this.ignoredStreak = 0;
+    this.questionsIgnored = 0;
+    this.log.add({ kind: 'reaction', to: q.text, reaction: q.reaction });
+    if (q.aboutSushant && this.memory) this.memory.addFacts([{ text: `Sushant picked "${answer}" when asked "${q.text}"`, importance: 6 }]);
+    // He reacts even if you answered within seconds of the question.
+    const text = `Sushant answered your question "${q.text}" with "${answer}".`;
+    this.log.add({ kind: 'interact', text });
+    this.wake({ kind: 'interact', text, interactive: true, answered: true });
+    return true;
   }
 
   /** You changed his personality in the editor: he notices. */
@@ -262,10 +293,21 @@ class Mind {
       }
     }
     if (this.awaiting && t >= this.awaiting.until) {
-      this.awaiting.entry.reaction = 'ignored it';
-      this.log.add({ kind: 'reaction', to: this.awaiting.entry.text, reaction: 'ignored it' });
-      if (!this.awaiting.interactive) this.ignoredStreak = Math.min(3, this.ignoredStreak + 1);
+      const a = this.awaiting;
       this.awaiting = null;
+      if (a.question) {
+        // Ignoring a question costs nothing, but after a few he stops asking for a while.
+        a.entry.reaction = 'ignored the question';
+        this.log.add({ kind: 'reaction', to: a.entry.text, reaction: a.entry.reaction });
+        if (++this.questionsIgnored >= MIND.questionPauseAfter) {
+          this.questionsIgnored = 0;
+          this.askPausedUntil = t + MIND.questionPause * 1000;
+        }
+      } else {
+        a.entry.reaction = 'ignored it';
+        this.log.add({ kind: 'reaction', to: a.entry.text, reaction: 'ignored it' });
+        if (!a.interactive) this.ignoredStreak = Math.min(3, this.ignoredStreak + 1);
+      }
     }
     if (t >= this.nextHeartbeat) {
       this.nextHeartbeat = t + this.heartbeatDelay();
@@ -471,13 +513,14 @@ class Mind {
       const screen = this.log.last(['observe']);
       const reading = screen && !screen.private && this.reading && this.reading.app === screen.app ? this.reading : null;
       const memories = this.recall(trigger, screen, reading);
-      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t });
+      const canAsk = this.canAsk();
+      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
       const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
       this.lastLook = reading ? { app: reading.app, chars: reading.text ? reading.text.length : 0, picture: !!image, skipped: reading.skipped || null, at: reading.at } : null;
       const started = this.now();
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: T.SCHEMA, image });
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: canAsk ? T.SCHEMA_WITH_QUESTION : T.SCHEMA, image });
       this.thinkTimes = [...(this.thinkTimes || []).slice(-9), (this.now() - started) / 1000];
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
@@ -528,20 +571,28 @@ class Mind {
     if (self.away) return 'you are away';
     if (self.asleep) return 'asleep';
     if (self.busy) return 'busy showing something';
+    if (this.awaiting && this.awaiting.question) return 'waiting for your answer';
     const since = (this.now() - this.lastSpokeAt) / 1000;
-    if (since < (trigger.interactive ? MIND.gapInteractive : MIND.gapUnprompted)) return 'spoke too recently';
+    if (!trigger.answered && since < (trigger.interactive ? MIND.gapInteractive : MIND.gapUnprompted)) return 'spoke too recently';
     return null;
   }
 
   async decide(thought, trigger) {
     const th = this.threshold(trigger);
     const rail = this.blockedBy(trigger) || this.stale(trigger);
-    const wants = thought.urge >= th && thought.lines.length > 0;
-    this.lastDecision = { urge: thought.urge, threshold: th, rail, at: this.now() };
+    // He wrote a question and may ask one: he asks instead of saying a line.
+    const question = thought.question && this.canAsk() && !this.mentionsBlocked([thought.question.text, ...thought.question.answers]) ? thought.question : null;
+    const wants = thought.urge >= th && (thought.lines.length > 0 || !!question);
+    this.lastDecision = { urge: thought.urge, threshold: th, rail, asked: !!question, at: this.now() };
     if (!wants || rail) {
       this.log.add({ kind: 'silent', thought: thought.thought, urge: thought.urge, why: rail || 'not worth saying' });
       return;
     }
+    if (question && this.onAsk) {
+      this.ask(question, thought.action, trigger, thought);
+      return;
+    }
+    if (!thought.lines.length) return;
     const text = await this.pickLine(thought, trigger);
     // The world may have changed while choosing (you joined a meeting, moved on…).
     if (this.blockedBy(trigger) || this.stale(trigger)) return;
@@ -570,6 +621,31 @@ class Mind {
     }
   }
 
+  /** He may ask a question now (not while he's stopped asking for a while). */
+  canAsk() {
+    return !!this.onAsk && this.now() >= this.askPausedUntil;
+  }
+
+  /** Text that names something on your privacy blocklist (apps, sites, words). */
+  mentionsBlocked(texts) {
+    const b = this.getBlocklist() || {};
+    const all = texts.join(' ').toLowerCase();
+    return [...(b.apps || []), ...(b.sites || []), ...(b.words || [])].some((x) => x && all.includes(String(x).toLowerCase()));
+  }
+
+  /** Ask `q` ({ text, answers, aboutSushant }) and wait for you to click an answer. */
+  ask(q, action, trigger, thought = null) {
+    this.lastSpokeAt = this.now();
+    const entry = this.log.add({ kind: 'said', text: q.text, answers: q.answers, aboutSushant: q.aboutSushant, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null });
+    this.awaiting = { entry, until: this.now() + MIND.questionWait * 1000, interactive: !!trigger.interactive, question: true };
+    const shown = this.onAsk({ text: q.text, answers: q.answers, action: action || 'none', band: this.getSelf().band });
+    // He couldn't hold it up (busy with something else): nothing to wait for.
+    if (shown === false) {
+      this.awaiting = null;
+      entry.reaction = "couldn't show it";
+    }
+  }
+
   speak({ text, action }, trigger, thought = null) {
     this.lastSpokeAt = this.now();
     const entry = this.log.add({ kind: 'said', text, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null });
@@ -591,7 +667,8 @@ class Mind {
       growth: this.lastGrowth,
       // Seconds per thought (average of the last 10), for the brain view and the report.
       speed: this.thinkTimes && this.thinkTimes.length ? { seconds: this.thinkTimes.reduce((x, y) => x + y, 0) / this.thinkTimes.length, n: this.thinkTimes.length } : null,
-      lastSaid: said ? { text: said.text, reaction: said.reaction || null } : null,
+      lastSaid: said ? { text: said.text, answers: said.answers || null, reaction: said.reaction || null } : null,
+      askPausedMin: this.askPausedUntil > this.now() ? Math.ceil((this.askPausedUntil - this.now()) / 60000) : 0,
       thinking: this.thinking,
       lastThought: this.lastThought,
       lastDecision: this.lastDecision,

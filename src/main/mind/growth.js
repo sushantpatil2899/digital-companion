@@ -75,6 +75,9 @@ function dayRelationship(events) {
   const clicked = events.filter((e) => e.kind === 'reaction' && /clicked|petted/.test(e.reaction || '')).length;
   const ignored = events.filter((e) => e.kind === 'reaction' && e.reaction === 'ignored it').length;
   perKey['reply:affection'] = Math.min(1.5, clicked * 0.3) - Math.min(1, ignored * 0.1);
+  // Answering one of his questions counts like a pat; ignoring one costs nothing.
+  const answered = events.filter((e) => e.kind === 'reaction' && /^answered /.test(e.reaction || '')).length;
+  if (answered) perKey['answer:affection'] = Math.min(RULES.heart[0][2], answered * RULES.heart[0][1]);
   for (const [k, v] of Object.entries(perKey)) sums[k.split(':')[1]] += v;
   // Familiarity: a day spent together (he was around while you used the Mac).
   if (events.length >= 10) sums.familiarity += 1;

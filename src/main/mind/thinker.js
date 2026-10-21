@@ -3,8 +3,9 @@
 // Builds the prompt for one "think" step and checks what comes back.
 // The language model gets his personality, how he feels, what's going on,
 // his own recent decisions and how you reacted, and answers with a private
-// thought, how much he wants to speak, up to four lines he could say and an
-// action. Whether he actually speaks is decided in mind.js.
+// thought, how much he wants to speak, up to three lines he could say and an
+// action, and sometimes a question for you with two answers to click. Whether
+// he actually speaks (or asks) is decided in mind.js.
 // No Electron imports, so it can be unit tested.
 
 const P = require('./personality');
@@ -12,6 +13,7 @@ const { describeEvent } = require('./events');
 
 const MAX_WORDS = 8;
 const MAX_LINES = 3; // fewer candidates = a quicker answer
+const MAX_ANSWER = 18; // characters per answer button
 
 // Things he can do along with (or instead of) speaking.
 const ACTIONS = ['none', 'wave', 'happy', 'jump', 'curious', 'shy', 'sad', 'lookAround', 'askToPlay'];
@@ -22,11 +24,24 @@ const SCHEMA = {
   properties: {
     thought: { type: 'string', maxLength: 90 },
     urge: { type: 'integer', minimum: 0, maximum: 10 },
-    lines: { type: 'array', items: { type: 'string', maxLength: 50 }, minItems: 1, maxItems: MAX_LINES },
+    lines: { type: 'array', items: { type: 'string', maxLength: 60 }, minItems: 1, maxItems: MAX_LINES },
     action: { type: 'string', enum: ACTIONS },
   },
   required: ['thought', 'urge', 'lines', 'action'],
 };
+
+// The same, with a question he may add if he wants to ask instead (optional:
+// the model decides whether to write it).
+const QUESTION = {
+  type: 'object',
+  properties: {
+    text: { type: 'string', maxLength: 60 },
+    answers: { type: 'array', items: { type: 'string', maxLength: MAX_ANSWER }, minItems: 2, maxItems: 2 },
+    aboutSushant: { type: 'boolean' },
+  },
+  required: ['text', 'answers', 'aboutSushant'],
+};
+const SCHEMA_WITH_QUESTION = { ...SCHEMA, properties: { ...SCHEMA.properties, question: QUESTION } };
 
 const BAND_WORDS = {
   cheerful: 'cheerful and bubbly',
@@ -101,10 +116,10 @@ function systemPrompt(personality, notes = '') {
   return [
     "You are the inner voice of Togepi, a baby Pokémon who lives on Sushant's computer screen as his companion.",
     personality.self,
-    'You talk like a baby, but you understand what Sushant does on his computer (job hunting, coding, emails, videos, games) and you have feelings and opinions about it.',
-    'When you think or talk about what he is doing, name the actual thing (the company, the email subject, the video, the code), in your own baby words.',
+    'You talk like a baby, but you understand what Sushant does on his computer and you have feelings and opinions about it.',
+    'When it feels relevant, try to name the actual thing.',
     'He often uses several windows and screens at once; the one he is looking at matters most.',
-    'If what he is reading has to do with what he told you about himself (his skills, his goals), notice it.',
+    'If what he is reading has to do with what he told you about himself, notice it.',
     '',
     'Your personality (only what stands out):',
     traits,
@@ -114,7 +129,6 @@ function systemPrompt(personality, notes = '') {
     '',
     'How you talk:',
     `- At most ${MAX_WORDS} words, one short sentence. Simple, cute baby words.`,
-    '- Sometimes add a Togepi sound like "Toge!" or "Priii!".',
     '- Talk to Sushant directly. Never mention being an AI, a model, a program or a prompt.',
     '- Never repeat something you said recently.',
     '- You may stay quiet. Only say something when you, with your personality, really would.',
@@ -171,8 +185,14 @@ function situationPrompt(s) {
     '- 0-3: nothing worth saying. Most moments are like this, especially when nothing new happened, or you spoke recently and Sushant ignored it.',
     '- 4-6: you would like to say something.',
     '- 7-10: you really must: Sushant just played with you, or something big happened.',
-    `Then write up to ${MAX_LINES} different lines you might say, and pick an action (${ACTIONS.join(', ')}). Answer in JSON.`,
+    `Then write up to ${MAX_LINES} different lines you might say, and pick an action (${ACTIONS.join(', ')}).`,
   );
+  if (s.canAsk) {
+    lines.push(
+      'If you would rather ask Sushant something, also add "question": what you want to ask him, two short answers he can click (1-3 words each, with an emoji; never yes or no), and "aboutSushant": true if his answer tells you something about him.',
+    );
+  }
+  lines.push('Answer in JSON.');
   return lines.join('\n');
 }
 
@@ -216,6 +236,30 @@ function cleanLine(line, recent = []) {
   return s;
 }
 
+// Answers that are just yes or no (he must offer something more interesting).
+const YES_NO = /^(yes|yeah|yep|yup|yess+|no|nope|nah|sure|ok|okay|maybe|not really|of course)$/i;
+
+/**
+ * A question ready to show, or null: the question checked like a line, two
+ * different short answers that aren't yes or no.
+ */
+function cleanQuestion(q, recent = []) {
+  if (!q || typeof q !== 'object' || !Array.isArray(q.answers) || q.answers.length !== 2) return null;
+  const text = cleanLine(q.text, recent);
+  if (!text) return null;
+  const answers = [];
+  for (const a of q.answers) {
+    if (typeof a !== 'string' || GARBLED.test(a) || FORBIDDEN.test(a)) return null;
+    const s = a.replace(/\s+/g, ' ').replace(/^["'“”‘’\s]+|["'“”‘’\s.!]+$/g, '').trim().slice(0, MAX_ANSWER);
+    // Without emoji and punctuation, for comparing.
+    const bare = norm(s);
+    if (!s || YES_NO.test(bare)) return null;
+    if (answers.length && (answers[0].toLowerCase() === s.toLowerCase() || (bare && norm(answers[0]) === bare))) return null;
+    answers.push(s);
+  }
+  return { text, answers, aboutSushant: q.aboutSushant === true };
+}
+
 /** Parse and check the model's JSON answer. Returns null if it's unusable. */
 function parseThought(text, recent = []) {
   let o;
@@ -233,12 +277,29 @@ function parseThought(text, recent = []) {
   }
   // The model answers 0..10; the mind works with 0..1.
   const urge = Number(o.urge) / 10;
-  return {
+  const out = {
     thought: typeof o.thought === 'string' ? o.thought.slice(0, 200) : '',
     urge: Number.isFinite(urge) ? Math.max(0, Math.min(1, urge)) : 0,
     lines,
     action: ACTIONS.includes(o.action) ? o.action : 'none',
   };
+  const question = o.question ? cleanQuestion(o.question, recent) : null;
+  if (question) out.question = question;
+  return out;
 }
 
-module.exports = { MAX_WORDS, ACTIONS, SCHEMA, systemPrompt, situationPrompt, describeView, cleanLine, parseThought, similar, needsWords };
+module.exports = {
+  MAX_WORDS,
+  MAX_ANSWER,
+  ACTIONS,
+  SCHEMA,
+  SCHEMA_WITH_QUESTION,
+  systemPrompt,
+  situationPrompt,
+  describeView,
+  cleanLine,
+  cleanQuestion,
+  parseThought,
+  similar,
+  needsWords,
+};
