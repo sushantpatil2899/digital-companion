@@ -62,18 +62,18 @@ const ASKING = {
 
 // ------------------------------------------------------------------ prompt
 
-test('his instructions give no example topics or sounds, only to name the thing when relevant', () => {
+test('his instructions give no example topics or sounds, only to try to name the thing', () => {
   const sys = T.systemPrompt(P.defaultPersonality());
   assert.doesNotMatch(sys, /job hunting|coding|emails|videos|games/);
   assert.doesNotMatch(sys, /Toge!|Priii/);
   assert.doesNotMatch(sys, /\(the company|\(his skills/);
-  assert.match(sys, /When it feels relevant, try to name the actual thing\./);
+  assert.match(sys, /Try to name the actual thing\./);
   assert.match(sys, /At most 8 words, one short sentence/);
 });
 
 test('he is told he may ask (never yes or no) only when he can, and the question is optional', () => {
   const s = { trigger: { text: 'Hi.' }, self: { hour: 10 }, events: [], now: Date.now() };
-  assert.match(T.situationPrompt({ ...s, canAsk: true }), /"question".*never yes or no.*"aboutSushant"/s);
+  assert.match(T.situationPrompt({ ...s, canAsk: true }), /"question".*never yes or no.*"aboutSushant": true only if his answer tells you something lasting about him, worth remembering/s);
   assert.doesNotMatch(T.situationPrompt(s), /question/);
   assert.ok(T.SCHEMA_WITH_QUESTION.properties.question);
   assert.ok(!T.SCHEMA_WITH_QUESTION.required.includes('question'));

@@ -309,4 +309,8 @@ Answers:
 | 2026-10-21 | While a question is up | He stands still and says nothing else until you answer or 30 s pass; petting him doesn't count as an answer; a press on the bubble is only a click (no pick-up). | So the buttons don't walk away and his bubble isn't replaced. |
 | 2026-10-21 | Memory text | `Sushant picked "<answer>" when asked "<question>"` (importance 6). | Plain, and the diary and recall can use it. |
 | 2026-10-21 | Relationship | An answer adds what a pat adds (affection 0.6, same daily cap of 3); an ignored question adds nothing and doesn't make him quieter. | "Counts a little like a pat; ignoring costs nothing." |
+| 2026-10-21 | Real-model check (Gemma 4 12B, 12 situations) | He asked in 8 of 12 (ramen search: "Is it tasty?" So yummy! 🍜 / Too spicy! 🔥; Netflix: "Fun movie?" Action! 💥 / Funny! 😂); never yes/no. But every question was marked as about Sushant, and on a LinkedIn job page he didn't name the job. | Checked before merging. |
+| 2026-10-21 | How often (after the check) | **Keep it: the model decides**, even if he asks a lot. | Sushant: "I'm okay with him asking questions a lot, so let's keep it the model decides." |
+| 2026-10-21 | Which answers become memories | The prompt now says "aboutSushant": true **only if his answer tells you something lasting about him, worth remembering**. | Sushant: "If it is something which is lasting about me, worth remembering, then only." |
+| 2026-10-21 | Naming things | Back to **"Try to name the actual thing."** (without "when it feels relevant"; still no examples). | Sushant: "go ahead and try to name the actual thing". |
 
