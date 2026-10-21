@@ -85,6 +85,8 @@ test('a question needs two different answers that are not yes or no', () => {
   assert.deepEqual(T.cleanQuestion(ASKING.question), { text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], aboutSushant: true });
   assert.equal(T.cleanQuestion({ text: 'Done?', answers: ['Yes!', '👎 No'] }), null);
   assert.equal(T.cleanQuestion({ text: 'Done?', answers: ['Sure', 'Nope'] }), null);
+  assert.equal(T.cleanQuestion({ text: 'For me?', answers: ['Yes, my friend! 💖', 'Just for fun! 🎨'] }), null);
+  assert.ok(T.cleanQuestion({ text: 'Which?', answers: ['Nothing yet 🌱', 'Noodles! 🍜'] })); // starts with "no…" but isn't "no"
   assert.equal(T.cleanQuestion({ text: 'Which?', answers: ['🍕 Pizza', 'pizza'] }), null);
   assert.equal(T.cleanQuestion({ text: 'Which?', answers: ['Only one'] }), null);
   assert.equal(T.cleanQuestion({ text: 'Are you an AI fan?', answers: ['A', 'B'] }), null);

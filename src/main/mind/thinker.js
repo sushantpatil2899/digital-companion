@@ -236,8 +236,9 @@ function cleanLine(line, recent = []) {
   return s;
 }
 
-// Answers that are just yes or no (he must offer something more interesting).
+// Answers that are, or start with, yes or no (he must offer something more interesting).
 const YES_NO = /^(yes|yeah|yep|yup|yess+|no|nope|nah|sure|ok|okay|maybe|not really|of course)$/i;
+const YES_NO_START = /^(yes|yeah|yep|yup|yess+|no|nope|nah)\b/i;
 
 /**
  * A question ready to show, or null: the question checked like a line, two
@@ -253,7 +254,7 @@ function cleanQuestion(q, recent = []) {
     const s = a.replace(/\s+/g, ' ').replace(/^["'“”‘’\s]+|["'“”‘’\s.!]+$/g, '').trim().slice(0, MAX_ANSWER);
     // Without emoji and punctuation, for comparing.
     const bare = norm(s);
-    if (!s || YES_NO.test(bare)) return null;
+    if (!s || YES_NO.test(bare) || YES_NO_START.test(bare)) return null;
     if (answers.length && (answers[0].toLowerCase() === s.toLowerCase() || (bare && norm(answers[0]) === bare))) return null;
     answers.push(s);
   }
