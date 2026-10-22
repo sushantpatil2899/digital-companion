@@ -21,7 +21,7 @@ function empty(text) {
   return p;
 }
 
-function list(el, items, none) {
+function list(el, items, none, starred = new Set()) {
   el.textContent = '';
   if (!items.length) {
     el.appendChild(empty(none));
@@ -30,7 +30,7 @@ function list(el, items, none) {
   for (const it of items) {
     const li = document.createElement('li');
     const text = document.createElement('span');
-    text.textContent = it.text;
+    text.textContent = `${starred.has(it.text) ? '⭐ ' : ''}${it.text}`;
     if (it.date) {
       const when = document.createElement('span');
       when.className = 'when';
@@ -44,8 +44,23 @@ function list(el, items, none) {
 
 window.memories.onLoad((m) => {
   $('notes').textContent = m.notes || 'Nothing yet. Use "Tell him about you…" to add your goals, your resume or what you like.';
-  list($('facts'), [...m.facts].reverse(), 'Nothing yet. He learns about you from what you do, and writes it down at the end of the day.');
+  list($('facts'), [...m.facts].reverse(), 'Nothing yet. He learns about you from what you do, and writes it down at the end of the day.', new Set(m.core || []));
   list($('opinions'), [...m.opinions].reverse(), 'No opinions yet.');
+  const w = $('weeks');
+  w.textContent = '';
+  if (!(m.weeks || []).length) w.appendChild(empty('No weeks yet. He sums up his week on Sunday evening, with his weekly reflection.'));
+  for (const wk of m.weeks || []) {
+    const div = document.createElement('div');
+    div.className = 'day';
+    const h = document.createElement('h3');
+    h.textContent = `Week of ${wk.week}`;
+    h.appendChild(forgetButton(wk.id, 'Forget this week'));
+    div.appendChild(h);
+    const p = document.createElement('p');
+    p.textContent = wk.text;
+    div.appendChild(p);
+    w.appendChild(div);
+  }
   const j = $('journal');
   j.textContent = '';
   const days = m.journal.filter((d) => d.lines.length);

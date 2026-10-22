@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 10;
+const WELCOME_VERSION = 11;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -100,6 +100,15 @@ const WHATS_NEW = [
     version: 10,
     title: 'My voice is my personality',
     items: ['How I talk now comes only from my personality: who I am, my sliders and how well we know each other. Change them in Mind → Personality… and my voice changes too.'],
+  },
+  {
+    version: 11,
+    title: 'I remember better',
+    items: [
+      'The 12 most important things I know about you are always on my mind now (⭐ in Mind → Memories…).',
+      'Every Sunday I sum up my week in a few sentences, so I remember it for months. Read them under His weeks in Mind → Memories….',
+      'I think a little faster: I don’t re-read who I am every time.',
+    ],
   },
 ];
 

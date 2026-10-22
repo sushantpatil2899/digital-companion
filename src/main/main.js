@@ -1636,7 +1636,7 @@ ipcMain.on('personality-reset', () => {
 ipcMain.on('personality-open-file', () => shell.showItemInFolder(personalityFile()));
 
 function sendMemories() {
-  if (memoriesWin && !memoriesWin.isDestroyed() && memory) memoriesWin.webContents.send('memories', memory.all());
+  if (memoriesWin && !memoriesWin.isDestroyed() && memory) memoriesWin.webContents.send('memories', { ...memory.all(), core: mind ? mind.coreFacts : [] });
 }
 
 function showMemories() {
@@ -1672,7 +1672,10 @@ function showMemories() {
 }
 
 ipcMain.on('memory-forget', (_e, id) => {
-  if (memory && typeof id === 'string' && memory.forget(id)) sendMemories();
+  if (memory && typeof id === 'string' && memory.forget(id)) {
+    if (mind) mind.refreshCore();
+    sendMemories();
+  }
 });
 ipcMain.on('memory-open-folder', () => shell.openPath(mindDir()));
 ipcMain.on('memory-edit-notes', () => shell.openPath(path.join(mindDir(), 'about-sushant.md')));

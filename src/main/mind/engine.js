@@ -198,7 +198,10 @@ class Engine {
     const run = ++this.run;
     this.state = 'starting';
     this.stopLeftovers();
-    const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', ...(f.vision ? ['--mmproj', f.vision] : []), ...((f.manifest.voice && f.manifest.voice.args) || [])];
+    // --swa-full: keep the whole cache for Gemma's sliding-window layers, so
+    // the unchanged start of his prompt (who he is) is reused between calls
+    // instead of read again (measured: 487 of ~700 tokens reused vs 215).
+    const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', '--swa-full', ...(f.vision ? ['--mmproj', f.vision] : []), ...((f.manifest.voice && f.manifest.voice.args) || [])];
     const decideArgs = ['-m', f.decide, '-c', '4096', '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
     this.voice = new Server('voice', voiceArgs, f.server);
     this.decider = new Server('decide', decideArgs, f.server);

@@ -19,7 +19,7 @@ const T = require('./thinker');
 const privacy = require('./privacy');
 const { EventLog } = require('./events');
 const { readEvents, journalDue, MEMORY, dayString: memoryDay } = require('./memory');
-const { writeDay } = require('./journal');
+const { writeDay, writeWeek } = require('./journal');
 const { reflect } = require('./reflect');
 const { weekOf } = require('./growth');
 
@@ -132,6 +132,13 @@ class Mind {
     this.lastChatAt = -Infinity;
     this.ownAnswersFile = opts.ownAnswersFile || null;
     this.ownAnswers = this.readJson(this.ownAnswersFile, []);
+    this.coreFacts = []; // the most important facts about you, in every prompt
+    this.refreshCore();
+  }
+
+  /** Pick his core again (after his diary, or when you make him forget something). */
+  refreshCore() {
+    this.coreFacts = this.memory && this.memory.core ? this.memory.core() : [];
   }
 
   readJson(file, fallback) {
@@ -354,7 +361,7 @@ class Mind {
     const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
     const user = T.chatPrompt({ self, view: this.view, memories, answering: question, text, now: t });
     try {
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { chat: true }), user, schema: T.CHAT_SCHEMA, history });
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { chat: true, core: this.coreFacts }), user, schema: T.CHAT_SCHEMA, history });
       const r = T.parseReply(raw);
       if (!r) return { error: "he couldn't find the words" };
       this.lastSpokeAt = this.now();
@@ -467,6 +474,7 @@ class Mind {
     this.writingJournal = true;
     try {
       const done = await writeDay(this.engine, this.memory, this.personality, due);
+      if (done) this.refreshCore();
       this.lastJournal = done ? { day: due.day, at: this.now(), facts: done.facts.length, opinions: done.opinions.length } : { day: due.day, error: 'nothing usable' };
       if (!done) this.journalFailed = { day: due.day, at: this.now() };
       return done;
@@ -537,7 +545,15 @@ class Mind {
   async reflectWeek({ manual = false } = {}) {
     this.writingJournal = true; // one big job at a time
     try {
-      const week = this.growth.week(weekOf(memoryDay(this.now())));
+      const weekKey = weekOf(memoryDay(this.now()));
+      // First, sum up the week from his diary (kept as a memory that fades slowly).
+      try {
+        const summary = await writeWeek(this.engine, this.memory, this.personality, weekKey);
+        if (summary) this.lastWeek = { week: weekKey, at: this.now() };
+      } catch {
+        // the reflection still goes ahead
+      }
+      const week = this.growth.week(weekKey);
       const r = week.relationship;
       const together = ['affection', 'trust', 'familiarity'].filter((m) => r[m]).map((m) => `${m} ${r[m] > 0 ? 'grew' : 'fell'} by ${Math.abs(r[m])}`).join(', ');
       const proposal = await reflect(this.engine, this.personality, this.memory, { now: this.now(), together });
@@ -650,7 +666,7 @@ class Mind {
       const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
       this.lastLook = reading ? { app: reading.app, chars: reading.text ? reading.text.length : 0, picture: !!image, skipped: reading.skipped || null, at: reading.at } : null;
       const started = this.now();
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes), user, schema: canAsk ? T.SCHEMA_WITH_QUESTION : T.SCHEMA, image });
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { core: this.coreFacts }), user, schema: canAsk ? T.SCHEMA_WITH_QUESTION : T.SCHEMA, image });
       this.thinkTimes = [...(this.thinkTimes || []).slice(-9), (this.now() - started) / 1000];
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
@@ -674,7 +690,7 @@ class Mind {
       screen && !screen.private ? `${screen.app} ${screen.title || ''} ${screen.site || ''}` : '',
       reading && reading.text ? reading.text.slice(0, 300) : '',
     ].join(' ');
-    this.lastRecalled = this.memory.recall(query);
+    this.lastRecalled = this.memory.recall(query, MEMORY.recall, this.coreFacts);
     return this.lastRecalled;
   }
 

@@ -20,7 +20,8 @@ const MEMORY = {
   keepEventsDays: 90,
   maxFacts: 80, // least important, oldest go first beyond this
   maxOpinions: 40,
-  recall: 5, // memories in each prompt
+  recall: 5, // memories in each prompt (besides his core)
+  core: 12, // the most important facts about you, in every prompt (refreshed after each diary)
   journalHalfLife: 7, // days: how fast diary memories fade from mind
   factHalfLife: 60, // facts and opinions fade much more slowly
   notesChars: 1200, // your own notes, put into every prompt
@@ -130,6 +131,7 @@ class Memory {
     this.facts = [];
     this.opinions = [];
     this.journal = {}; // day -> { lines: [{text, date, importance}], until: ms }
+    this.weeks = {}; // Monday 'YYYY-MM-DD' -> { text, date, importance }: his summary of that week
     this.load();
   }
 
@@ -166,6 +168,31 @@ class Memory {
       const until = text.match(/<!--\s*until\s+(\d+)\s*-->/);
       this.journal[day] = { lines: parseItems(text.split('\n'), day), until: until ? Number(until[1]) : dayStart(day) + DAY };
     }
+    this.weeks = {};
+    const weeks = read(this.file('weeks.md'));
+    for (const [, week, text] of (weeks || '').matchAll(/^## Week of (\d{4}-\d{2}-\d{2})\s*\n+([\s\S]*?)(?=\n## |\s*$)/gm)) {
+      if (text.trim()) this.weeks[week] = { text: text.trim(), date: week, importance: 7 };
+    }
+  }
+
+  saveWeeks() {
+    if (!this.dir) return;
+    const keys = Object.keys(this.weeks).sort();
+    write(this.file('weeks.md'), ['# My weeks', '', ...keys.flatMap((k) => [`## Week of ${k}`, '', this.weeks[k].text, ''])].join('\n'));
+  }
+
+  /** His summary of the week starting Monday `week`. */
+  setWeek(week, text, importance = 7) {
+    this.weeks[week] = { text: String(text).trim(), date: week, importance };
+    this.saveWeeks();
+  }
+
+  /** The most important facts about you (newest first among equals): his core, in every prompt. */
+  core(n = MEMORY.core) {
+    return [...this.facts]
+      .sort((a, b) => b.importance - a.importance || String(b.date).localeCompare(String(a.date)))
+      .slice(0, n)
+      .map((f) => f.text);
   }
 
   saveAbout() {
@@ -256,6 +283,10 @@ class Memory {
         .sort()
         .reverse()
         .map((day) => ({ day, id: `day:${day}`, lines: this.journal[day].lines.map((l) => l.text) })),
+      weeks: Object.keys(this.weeks)
+        .sort()
+        .reverse()
+        .map((week) => ({ week, id: `week:${week}`, text: this.weeks[week].text })),
     };
   }
 
@@ -272,6 +303,11 @@ class Memory {
       this.saveMe();
       return true;
     }
+    if (kind === 'week' && this.weeks[key]) {
+      delete this.weeks[key];
+      this.saveWeeks();
+      return true;
+    }
     if (kind === 'day' && this.journal[key]) {
       // Keep "until" so the forgotten day isn't written again.
       this.journal[key].lines = [];
@@ -284,14 +320,18 @@ class Memory {
   /**
    * The memories that fit `query` best right now: [{ kind, text, date, score }].
    * Score = recency + importance + relevance, each 0..1 (equal weights).
+   * `exclude`: texts already in his prompt (his core).
    */
-  recall(query, n = MEMORY.recall) {
+  recall(query, n = MEMORY.recall, exclude = []) {
     const now = this.now();
+    const skip = new Set(exclude);
     const cands = [
       ...this.facts.map((f) => ({ ...f, kind: 'fact' })),
       ...this.opinions.map((o) => ({ ...o, kind: 'opinion' })),
       ...Object.values(this.journal).flatMap((j) => j.lines.map((l) => ({ ...l, kind: 'journal' }))),
-    ];
+      // Weekly summaries fade slowly, like facts.
+      ...Object.values(this.weeks).map((w) => ({ ...w, kind: 'week' })),
+    ].filter((c) => !skip.has(c.text));
     const scored = cands.map((c) => {
       const age = c.date ? Math.max(0, (now - dayStart(c.date)) / DAY) : 30;
       const half = c.kind === 'journal' ? MEMORY.journalHalfLife : MEMORY.factHalfLife;

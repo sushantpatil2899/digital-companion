@@ -623,6 +623,23 @@ the relationship). Kept: length limits (8 words for bubbles, 1-3 sentences
 in chat), never mention being an AI, don't repeat, may stay quiet, act like
 his personality. Welcome version 10.
 
+### Memory and speed (2026-10-22)
+
+Sushant asked whether all memories could go into every prompt. Not as
+they grow (4,096-token window; the diary alone grows ~60 tokens a day),
+so, agreed:
+1. **Core**: the 12 most important facts (importance, newest first among
+   equals) in message 1 under "What you know best about Sushant", picked
+   again after each diary (and when you forget something), so message 1
+   stays the same all day; left out of the per-moment recall.
+2. Still the 5 best-matching memories per thought.
+3. **Weekly summary**: on Sunday, with the reflection, 3-4 sentences about
+   the week from his diary (`weeks.md`, *His weeks* in Memories), recalled
+   like a fact (two-month half-life).
+4. `--swa-full` on the voice model so the unchanged start of his prompt is
+   reused (487 of ~700 tokens instead of 215; prompt time here 24 s → 11 s).
+Welcome version 11.
+
 ## Later
 
 Noted for the future (not scheduled; ask Sushant before starting):

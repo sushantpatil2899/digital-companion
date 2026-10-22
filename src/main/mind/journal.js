@@ -8,6 +8,9 @@
 // No Electron imports, so it can be unit tested.
 
 const T = require('./thinker');
+const { dayString, dayStart } = require('./memory');
+
+const DAY = 24 * 3600 * 1000;
 
 const MAIL_SITES = ['mail.google.com', 'outlook.live.com', 'outlook.office.com', 'outlook.office365.com', 'mail.yahoo.com', 'mail.proton.me', 'icloud.com', 'fastmail.com'];
 const MAIL_APPS = ['mail', 'microsoft outlook', 'outlook', 'spark', 'airmail', 'mimestream', 'superhuman', 'thunderbird'];
@@ -168,4 +171,45 @@ async function writeDay(engine, memory, personality, due) {
   return { day: due.day, diary, facts: newFacts.map((f) => f.text), opinions: newOpinions.map((x) => x.text) };
 }
 
-module.exports = { writeDay, dayDigest, isMail, SCHEMA, IMPORTANCE };
+// His summary of a week (written on Sunday with his weekly reflection).
+const WEEK_SCHEMA = {
+  type: 'object',
+  properties: { summary: { type: 'string', maxLength: 500 } },
+  required: ['summary'],
+};
+
+/**
+ * Sum up the week starting Monday `week` from his diary, in 3-4 sentences,
+ * and keep it as a memory. Returns the summary, or null (no diary that week,
+ * already summed up, or nothing usable).
+ */
+async function writeWeek(engine, memory, personality, week) {
+  if (memory.weeks[week]) return null;
+  const days = Array.from({ length: 7 }, (_, i) => dayString(dayStart(week) + i * DAY + 12 * 3600 * 1000));
+  const diary = days.filter((d) => memory.journal[d] && memory.journal[d].lines.length).flatMap((d) => [`${d}:`, ...memory.journal[d].lines.map((l) => `- ${l.text}`)]);
+  if (!diary.length) return null;
+  const raw = await engine.think({
+    system: `${T.systemPrompt(personality)}\n\nRight now you are writing in your own diary, not talking to Sushant.`,
+    user: [
+      `The week that started on ${week} is over. Here is your diary for it:`,
+      '',
+      ...diary,
+      '',
+      'Answer in JSON:',
+      '- summary: 3 to 4 short sentences about your week, in your own voice ("I", "Sushant"): the main things that happened and how you feel about them.',
+    ].join('\n'),
+    schema: WEEK_SCHEMA,
+  });
+  let o;
+  try {
+    o = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const summary = typeof o.summary === 'string' ? o.summary.replace(/\s+/g, ' ').trim() : '';
+  if (!summary || /https?:\/\//i.test(summary)) return null;
+  memory.setWeek(week, summary);
+  return summary;
+}
+
+module.exports = { writeDay, writeWeek, dayDigest, isMail, SCHEMA, IMPORTANCE };
