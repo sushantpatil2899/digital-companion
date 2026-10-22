@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { Watching, WATCH, watchingIn, showTitle } = require('../src/main/mind/watching');
+const { Watching, WATCH, watchingIn, needsGuess, guessState, showTitle } = require('../src/main/mind/watching');
 const { ContextTracker } = require('../src/main/context');
 const { NudgeTracker } = require('../src/main/nudges');
 const { Mind } = require('../src/main/mind/mind');
@@ -214,3 +214,61 @@ test('he follows what you watch to another screen', () => {
   assert.equal(c.screenIndex, 1);
   assert.equal(c.state, 'backView');
 });
+
+test('Hotstar and other services count too', () => {
+  assert.equal(watchingIn(chrome('https://www.hotstar.com/in/shows/greys-anatomy/1260020811/the-sound-of-silence/1260084567/watch')).name, 'Hotstar');
+  assert.equal(watchingIn(chrome('https://www.jiohotstar.com/shows/greys-anatomy/1260020811/s1/1260084567/watch')).name, 'Hotstar');
+  assert.equal(watchingIn(chrome('https://www.hotstar.com/in/home')), null);
+  assert.equal(watchingIn(chrome('https://www.peacocktv.com/watch/playback/vod/GMO_123')).name, 'Peacock');
+  assert.equal(watchingIn(chrome('https://www.paramountplus.com/shows/video/abc123/')).name, 'Paramount+');
+  assert.equal(watchingIn(chrome('https://www.sonyliv.com/shows/scam-1992-1700000084/the-big-bull-1000094435')).name, 'SonyLIV');
+  assert.equal(watchingIn(chrome('https://www.zee5.com/tv-shows/details/kumkum/0-6-123/episode-1/0-1-456')).name, 'ZEE5');
+  assert.equal(watchingIn(chrome('https://www.twitch.tv/shroud')).name, 'Twitch');
+  assert.equal(watchingIn(chrome('https://www.twitch.tv/directory')), null);
+});
+
+test("YouTube is recognised by its title when the browser doesn't tell him the address", () => {
+  assert.deepEqual(watchingIn({ app: 'Firefox', title: 'Funny cats compilation - YouTube' }), { name: 'YouTube', youtube: true });
+  assert.equal(watchingIn({ app: 'Firefox', title: 'Lofi radio – YouTube — Mozilla Firefox' }).name, 'YouTube');
+  assert.equal(showTitle('Lofi radio – YouTube — Mozilla Firefox', 'YouTube'), 'Lofi radio');
+  assert.equal(watchingIn({ app: 'Firefox', title: 'YouTube' }), null); // the home page
+  assert.equal(watchingIn({ app: 'Code', title: 'notes - YouTube' }), null); // not a browser
+});
+
+test('other pages are judged by the decision model, once per page', () => {
+  const firefox = { app: 'Firefox', title: "Grey's Anatomy - Watch Online | JioHotstar" };
+  assert.equal(needsGuess(firefox), "Firefox|Grey's Anatomy - Watch Online | JioHotstar");
+  assert.match(guessState(firefox), /App: Firefox\. Window title: Grey's Anatomy/);
+  const unknown = chrome('https://www.someflix.example/title/123', 'Some Show S1E2');
+  assert.equal(needsGuess(unknown), 'someflix.example/title/123|Some Show S1E2');
+  assert.match(guessState(unknown), /Address: someflix\.example\/title\/123/);
+  assert.deepEqual(watchingIn(unknown, { video: true }), { name: 'someflix.example', youtube: false });
+  assert.equal(watchingIn(unknown, { video: false }), null);
+  // Known pages, other apps and private windows need no model.
+  assert.equal(needsGuess(chrome('https://www.netflix.com/watch/1')), null);
+  assert.equal(needsGuess({ app: 'Code', title: 'mind.js' }), null);
+  assert.equal(needsGuess({ ...unknown, private: true }), null);
+});
+
+test('a quick look elsewhere does not reset the wait, and the brain view says why', () => {
+  let t = 0;
+  const w = new Watching(() => t);
+  const yt = chrome('https://www.youtube.com/watch?v=x', 'Lofi - YouTube');
+  w.update(yt);
+  t += 60 * 1000;
+  w.update(yt);
+  assert.equal(w.check, 'YouTube for 60 s (he joins at 120 s)');
+  t += 5 * 1000;
+  w.update({ app: 'Messages', title: 'Mom' });
+  assert.equal(w.check, "Messages isn't a video page or player");
+  t += 5 * 1000;
+  w.update(yt);
+  t += 50 * 1000;
+  assert.equal(w.update(yt), 'start'); // 120 s since it began, despite the look away
+  assert.equal(w.check, 'watching YouTube');
+  assert.equal(new Watching().update(null), null);
+  const ff = new Watching();
+  ff.update({ app: 'Firefox', title: 'Some page' });
+  assert.match(ff.check, /Firefox doesn't show him the tab's address; waiting for the decision model/);
+});
+

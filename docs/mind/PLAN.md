@@ -573,6 +573,20 @@ Built:
 - Brain view and report show that you're watching (the report doesn't name
   what).
 
+Feedback (2026-10-22, Sushant tried both phases): questions were fun but too
+frequent when answered (his reaction to an answer could be another
+question); watching didn't start on Hotstar (not on the list) or on YouTube
+(most likely a browser that doesn't tell us the tab's address). Fixed:
+- Questions: his reaction to your answer is never a question; one question
+  per thing you're doing (not again until a new window, page or video, or
+  with app watching off something new you do with him).
+- Watching: Hotstar/JioHotstar, Peacock, Paramount+, SonyLIV, ZEE5, Twitch
+  added; YouTube recognised by its title; any other page (and tabs whose
+  address the browser doesn't give) judged once per page by the decision
+  model from title and address (11/11 right on test pages); a quick look
+  elsewhere no longer resets the wait; a *Watching check* row in the brain
+  view says why it is or isn't on. Welcome version 8.
+
 ## Later
 
 Noted for the future (not scheduled; ask Sushant before starting):

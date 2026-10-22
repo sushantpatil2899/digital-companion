@@ -102,6 +102,7 @@ class Mind {
     this.ignoredStreak = 0;
     this.questionsIgnored = 0; // in a row
     this.askPausedUntil = -Infinity;
+    this.askedAbout = undefined; // what you were doing (see currentThing) when he last asked
     this.lastObservation = null;
     this.privacyCache = new Map();
     this.lastThought = null; // for the brain view
@@ -252,7 +253,7 @@ class Mind {
     if (q.aboutSushant && this.memory) this.memory.addFacts([{ text: `Sushant picked "${answer}" when asked "${q.text}"`, importance: 6 }]);
     // He reacts even if you answered within seconds of the question.
     const text = `Sushant answered your question "${q.text}" with "${answer}".`;
-    this.log.add({ kind: 'interact', text });
+    this.log.add({ kind: 'interact', text, answer: true });
     this.wake({ kind: 'interact', text, interactive: true, answered: true });
     return true;
   }
@@ -534,7 +535,9 @@ class Mind {
       const reading = screen && !screen.private && this.reading && this.reading.app === screen.app ? this.reading : null;
       const memories = this.recall(trigger, screen, reading);
       // No questions while you watch something together.
-      const canAsk = this.canAsk() && !self.watching;
+      // No questions while you watch something together, and his reaction
+      // to your answer is never another question.
+      const canAsk = this.canAsk() && !self.watching && !trigger.answered;
       const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
@@ -604,7 +607,7 @@ class Mind {
     const th = this.threshold(trigger);
     const rail = this.blockedBy(trigger) || this.stale(trigger);
     // He wrote a question and may ask one: he asks instead of saying a line.
-    const question = thought.question && this.canAsk() && !this.getSelf().watching && !this.mentionsBlocked([thought.question.text, ...thought.question.answers]) ? thought.question : null;
+    const question = thought.question && this.canAsk() && !trigger.answered && !this.getSelf().watching && !this.mentionsBlocked([thought.question.text, ...thought.question.answers]) ? thought.question : null;
     // Starting to watch something together: he always says something about it.
     const wants = (thought.urge >= th || !!trigger.watching) && (thought.lines.length > 0 || !!question);
     this.lastDecision = { urge: thought.urge, threshold: th, rail, asked: !!question, at: this.now() };
@@ -645,9 +648,27 @@ class Mind {
     }
   }
 
-  /** He may ask a question now (not while he's stopped asking for a while). */
+  /** He may ask a question now (not about the same thing twice, not while he's stopped asking for a while). */
   canAsk() {
+    // One question per thing you're doing: after asking, not again until
+    // you've moved on to something else (a new window, page or video).
+    if (this.askedAbout !== undefined && this.currentThing() === this.askedAbout) return false;
     return !!this.onAsk && this.now() >= this.askPausedUntil;
+  }
+
+  /**
+   * What you're doing right now, as a log entry: the latest thing on your
+   * screen, or (with app watching off) the latest thing you did with him
+   * other than answering him.
+   */
+  currentThing() {
+    const seen = this.log.last(['observe']);
+    if (seen) return seen;
+    for (let i = this.log.items.length - 1; i >= 0; i--) {
+      const e = this.log.items[i];
+      if (e.kind === 'interact' && !e.answer) return e;
+    }
+    return null;
   }
 
   /** Text that names something on your privacy blocklist (apps, sites, words). */
@@ -660,6 +681,7 @@ class Mind {
   /** Ask `q` ({ text, answers, aboutSushant }) and wait for you to click an answer. */
   ask(q, action, trigger, thought = null) {
     this.lastSpokeAt = this.now();
+    this.askedAbout = this.currentThing();
     const entry = this.log.add({ kind: 'said', text: q.text, answers: q.answers, aboutSushant: q.aboutSushant, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null });
     this.awaiting = { entry, until: this.now() + MIND.questionWait * 1000, interactive: !!trigger.interactive, question: true };
     const shown = this.onAsk({ text: q.text, answers: q.answers, action: action || 'none', band: this.getSelf().band });

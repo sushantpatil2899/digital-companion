@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 7;
+const WELCOME_VERSION = 8;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -75,6 +75,15 @@ const WHATS_NEW = [
       'When you watch something (Netflix, YouTube, Prime Video, Disney+, Hulu, Max, Apple TV, Crunchyroll, VLC, IINA, QuickTime), I say something about it and sit in the bottom-right corner of that screen with my back to you, watching too.',
       'I start after 30 seconds (2 minutes on YouTube) and get up a minute after you stop.',
       'While we watch I’m quiet (no chirps), and water, stretch and eye breaks wait until we’re done.',
+    ],
+  },
+  {
+    version: 8,
+    title: 'Fewer questions, more to watch',
+    items: [
+      'I ask one question about what you’re doing, then wait until you’ve moved on to something else. When you answer, I just react.',
+      'I join you on Hotstar, Peacock, Paramount+, SonyLIV, ZEE5 and Twitch too, and on any other site where you’re watching something (I work it out from the page).',
+      'It works in Firefox and other browsers now. Show his brain… has a Watching check that says why I have or haven’t joined you.',
     ],
   },
 ];

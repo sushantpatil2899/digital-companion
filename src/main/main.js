@@ -22,7 +22,7 @@ const { Attention } = require('./mind/attention');
 const { Growth } = require('./mind/growth');
 const { ScreenReader, screenKey } = require('./mind/screen');
 const { REST, restReason, restPlan } = require('./mind/rest');
-const { Watching, WATCH } = require('./mind/watching');
+const { Watching, WATCH, GUESS_QUESTION, GUESS_YES, needsGuess, guessState } = require('./mind/watching');
 const privacy = require('./mind/privacy');
 const { buildReport } = require('./report');
 const { SWITCHES, welcomeFor } = require('./welcome');
@@ -132,6 +132,8 @@ let lastApps = null; // latest window list etc. from the app watcher
 let reader = null; // "Let him read my screen" (macOS)
 let attentionBusy = false;
 const watcher = new Watching(); // watching a movie or video together
+const watchGuesses = new Map(); // page -> { video } (the decision model's answers for pages not on the list)
+let watchGuessing = false;
 let rest = null; // why his models are resting: { kind, text, since }
 let restWanted = null; // the latest reason (for the battery hysteresis)
 let restWorking = false; // doing the diary / reflection before resting
@@ -295,7 +297,7 @@ function showBrain() {
   followYou(brainWin);
   brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
   const send = () => {
-    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? { ...mind.status(), rest, memoryMB: engine && engine.running ? engineMB : null } : null });
+    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? { ...mind.status(), rest, memoryMB: engine && engine.running ? engineMB : null, watchCheck: watcher.check } : null });
   };
   brainWin.webContents.on('did-finish-load', send);
   brainTimer = setInterval(send, 1000);
@@ -1129,7 +1131,7 @@ function updateWatching() {
   const a = lastApps && lastApps.frontApp ? attention.current : null;
   const blocked = !!a && (a.private || privacy.check({ app: a.app, title: a.title, url: a.url }, settings.get('privacyBlock')).blocked);
   const before = watcher.current;
-  const event = watcher.update(blocked ? null : a);
+  const event = watcher.update(blocked ? null : a, blocked ? null : watchGuess(a));
   const w = watcher.current;
   if (event === 'start') {
     startWatching(w).catch((e) => console.error('Watching:', e.message));
@@ -1140,6 +1142,32 @@ function updateWatching() {
   } else if (w && w.screen && before && before.screen !== w.screen) {
     companion.watchOn(w.screen - 1);
   }
+}
+
+/**
+ * The decision model's answer for a page not on the watching list (or a tab
+ * whose address the browser doesn't tell us), asked once per page; null until
+ * it has answered (or when the models are resting).
+ */
+function watchGuess(a) {
+  const key = needsGuess(a);
+  if (!key) return null;
+  if (watchGuesses.has(key)) return watchGuesses.get(key);
+  if (!watchGuessing && engine && engine.canDecide) {
+    watchGuessing = true;
+    engine
+      .decide(guessState(a), { watching: GUESS_QUESTION })
+      .then((ans) => {
+        const p = ans && ans.watching && ans.watching.probabilities;
+        watchGuesses.set(key, { video: !!p && Number(p.A) >= GUESS_YES });
+        if (watchGuesses.size > 300) watchGuesses.delete(watchGuesses.keys().next().value);
+      })
+      .catch(() => {})
+      .finally(() => {
+        watchGuessing = false;
+      });
+  }
+  return null;
 }
 
 async function startWatching(w) {
