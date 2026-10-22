@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 8;
+const WELCOME_VERSION = 9;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -85,6 +85,11 @@ const WHATS_NEW = [
       'I join you on Hotstar, Peacock, Paramount+, SonyLIV, ZEE5 and Twitch too, and on any other site where you’re watching something (I work it out from the page).',
       'It works in Firefox and other browsers now. Show his brain… has a Watching check that says why I have or haven’t joined you.',
     ],
+  },
+  {
+    version: 9,
+    title: 'Quicker to join you',
+    items: ['When you watch something (YouTube too), I join you after 30 seconds and get up 30 seconds after you stop.'],
   },
 ];
 

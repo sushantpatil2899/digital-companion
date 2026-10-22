@@ -554,8 +554,8 @@ say something.
 
 Built:
 - `src/main/mind/watching.js`: what counts (sites by address, player apps),
-  the show's name from the title, start after 30 s (YouTube 2 min), stop
-  after 60 s elsewhere; not for private windows or anything on the
+  the show's name from the title, start after 30 s, stop after 30 s
+  elsewhere (both changed on 2026-10-22; were YouTube 2 min and 60 s); not for private windows or anything on the
   blocklist.
 - `main.js`: checks every second; at the start a forced look at the window
   with a picture (if *Let him read my screen* is on), then his line; no

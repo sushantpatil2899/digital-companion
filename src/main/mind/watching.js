@@ -5,9 +5,9 @@
 // on and sits in its bottom-right corner with his back to you, watching too,
 // quiet, until you stop. Only real playback counts: the playback pages of
 // streaming sites (by their address) and video player apps, not browsing.
-// It starts once you've stayed on it a little while (YouTube longer, so a
-// short clip doesn't count) and ends once you've been somewhere else for a
-// minute. A paused video can't be told apart from a playing one.
+// It starts once you've stayed on it 30 s and ends once you've been
+// somewhere else for 30 s (Sushant, 2026-10-22: YouTube no longer waits
+// longer). A paused video can't be told apart from a playing one.
 //
 // Sites not on the list (and browsers that can't tell us the tab's address,
 // like Firefox) are judged by the decision model from the tab's title and
@@ -17,8 +17,7 @@
 
 const WATCH = {
   start: 30, // s on a playback page or player before it counts
-  startYouTube: 120, // s on YouTube (short clips don't count)
-  stopAfter: 60, // s somewhere else before it's over
+  stopAfter: 30, // s somewhere else before it's over
   gap: 15, // s away from it (a quick look elsewhere) that don't reset the wait before it starts
   maxIdle: 3 * 3600, // s without mouse or keyboard while watching before you count as away
 };
@@ -26,7 +25,7 @@ const WATCH = {
 // Playback pages, by address (host and path, without "www.").
 const SITES = [
   { name: 'Netflix', re: /^netflix\.com\/watch\//i },
-  { name: 'YouTube', re: /^(m\.)?youtube\.com\/(watch|live\/)|^youtu\.be\//i, youtube: true },
+  { name: 'YouTube', re: /^(m\.)?youtube\.com\/(watch|live\/)|^youtu\.be\//i },
   { name: 'Prime Video', re: /^primevideo\.com\/(.*\/)?detail\/|^amazon\.[a-z.]+\/gp\/video\/detail\//i },
   { name: 'Disney+', re: /^disneyplus\.com\/(.*\/)?(video|play)\//i },
   { name: 'Hulu', re: /^hulu\.com\/watch\//i },
@@ -85,25 +84,25 @@ function known(w) {
   if (w.url) {
     const u = urlPart(w.url);
     const site = SITES.find((s) => s.re.test(u));
-    if (site) return { name: site.name, youtube: !!site.youtube };
+    if (site) return { name: site.name };
   }
   const app = APPS[String(w.app || '').toLowerCase()];
-  if (app) return { name: app, youtube: false };
+  if (app) return { name: app };
   // A browser that didn't tell us the address: YouTube says so in its title.
-  if (!w.url && BROWSER.test(w.app || '') && /\s[-–—]\s*YouTube\s*$/i.test(withoutBrowser(w.title))) return { name: 'YouTube', youtube: true };
+  if (!w.url && BROWSER.test(w.app || '') && /\s[-–—]\s*YouTube\s*$/i.test(withoutBrowser(w.title))) return { name: 'YouTube' };
   return null;
 }
 
 /**
  * What you're watching in window `w` ({ app, title, url }), or null:
- * { name: 'Netflix', youtube: false }. `guess`: the decision model's answer
+ * { name: 'Netflix' }. `guess`: the decision model's answer
  * for this page ({ video: true/false }), if it was asked.
  */
 function watchingIn(w, guess = null) {
   if (!w || w.private) return null;
   const k = known(w);
   if (k) return k;
-  if (guess && guess.video) return { name: hostOf(w.url) || w.app, youtube: false };
+  if (guess && guess.video) return { name: hostOf(w.url) || w.app };
   return null;
 }
 
@@ -177,7 +176,7 @@ class Watching {
     }
     if (!this.candidate || this.candidate.name !== m.name) this.candidate = { name: m.name, since: t, lastSeen: t };
     this.candidate.lastSeen = t;
-    const wait = m.youtube ? WATCH.startYouTube : WATCH.start;
+    const wait = WATCH.start;
     const waited = t - this.candidate.since;
     if (waited < wait * 1000) {
       this.check = `${m.name} for ${Math.round(waited / 1000)} s (he joins at ${wait} s)`;
