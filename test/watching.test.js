@@ -15,9 +15,9 @@ const { Companion } = require('../src/main/companion');
 const chrome = (url, title = 'Netflix', screen = null) => ({ app: 'Google Chrome', title, url, screen });
 
 test('only playback pages and video players count as watching, not browsing', () => {
-  assert.deepEqual(watchingIn(chrome('https://www.netflix.com/watch/81234?trackId=1')), { name: 'Netflix', youtube: false });
+  assert.deepEqual(watchingIn(chrome('https://www.netflix.com/watch/81234?trackId=1')), { name: 'Netflix' });
   assert.equal(watchingIn(chrome('https://www.netflix.com/browse')), null);
-  assert.deepEqual(watchingIn(chrome('https://www.youtube.com/watch?v=abc')), { name: 'YouTube', youtube: true });
+  assert.deepEqual(watchingIn(chrome('https://www.youtube.com/watch?v=abc')), { name: 'YouTube' });
   assert.equal(watchingIn(chrome('https://www.youtube.com/')), null);
   assert.equal(watchingIn(chrome('https://www.youtube.com/results?search_query=cats')), null);
   assert.equal(watchingIn(chrome('https://www.primevideo.com/region/eu/detail/0ABC/')).name, 'Prime Video');
@@ -40,7 +40,7 @@ test("the show's name comes from the title when it says more than the site", () 
   assert.equal(showTitle('Movie.mkv', 'VLC'), 'Movie.mkv');
 });
 
-test('it starts after 30 s (YouTube after 2 min) and ends a minute after you leave', () => {
+test('it starts after 30 s (YouTube too) and ends 30 s after you leave', () => {
   let t = 0;
   const w = new Watching(() => t);
   const netflix = chrome('https://www.netflix.com/watch/1', 'Netflix', 2);
@@ -63,12 +63,12 @@ test('it starts after 30 s (YouTube after 2 min) and ends a minute after you lea
   assert.equal(w.update(null), 'stop');
   assert.equal(w.current, null);
 
-  // YouTube needs longer, so a short clip doesn't count.
+  // YouTube waits just as long.
   const yt = chrome('https://www.youtube.com/watch?v=x', 'Cat does a flip - YouTube');
   assert.equal(w.update(yt), null);
-  t += 60 * 1000;
+  t += (WATCH.start - 1) * 1000;
   assert.equal(w.update(yt), null);
-  t += (WATCH.startYouTube - 60) * 1000;
+  t += 1000;
   assert.equal(w.update(yt), 'start');
   assert.equal(w.current.title, 'Cat does a flip');
 });
@@ -228,7 +228,7 @@ test('Hotstar and other services count too', () => {
 });
 
 test("YouTube is recognised by its title when the browser doesn't tell him the address", () => {
-  assert.deepEqual(watchingIn({ app: 'Firefox', title: 'Funny cats compilation - YouTube' }), { name: 'YouTube', youtube: true });
+  assert.deepEqual(watchingIn({ app: 'Firefox', title: 'Funny cats compilation - YouTube' }), { name: 'YouTube' });
   assert.equal(watchingIn({ app: 'Firefox', title: 'Lofi radio – YouTube — Mozilla Firefox' }).name, 'YouTube');
   assert.equal(showTitle('Lofi radio – YouTube — Mozilla Firefox', 'YouTube'), 'Lofi radio');
   assert.equal(watchingIn({ app: 'Firefox', title: 'YouTube' }), null); // the home page
@@ -242,7 +242,7 @@ test('other pages are judged by the decision model, once per page', () => {
   const unknown = chrome('https://www.someflix.example/title/123', 'Some Show S1E2');
   assert.equal(needsGuess(unknown), 'someflix.example/title/123|Some Show S1E2');
   assert.match(guessState(unknown), /Address: someflix\.example\/title\/123/);
-  assert.deepEqual(watchingIn(unknown, { video: true }), { name: 'someflix.example', youtube: false });
+  assert.deepEqual(watchingIn(unknown, { video: true }), { name: 'someflix.example' });
   assert.equal(watchingIn(unknown, { video: false }), null);
   // Known pages, other apps and private windows need no model.
   assert.equal(needsGuess(chrome('https://www.netflix.com/watch/1')), null);
@@ -255,16 +255,16 @@ test('a quick look elsewhere does not reset the wait, and the brain view says wh
   const w = new Watching(() => t);
   const yt = chrome('https://www.youtube.com/watch?v=x', 'Lofi - YouTube');
   w.update(yt);
-  t += 60 * 1000;
+  t += 15 * 1000;
   w.update(yt);
-  assert.equal(w.check, 'YouTube for 60 s (he joins at 120 s)');
+  assert.equal(w.check, 'YouTube for 15 s (he joins at 30 s)');
   t += 5 * 1000;
   w.update({ app: 'Messages', title: 'Mom' });
   assert.equal(w.check, "Messages isn't a video page or player");
   t += 5 * 1000;
   w.update(yt);
-  t += 50 * 1000;
-  assert.equal(w.update(yt), 'start'); // 120 s since it began, despite the look away
+  t += 5 * 1000;
+  assert.equal(w.update(yt), 'start'); // 30 s since it began, despite the look away
   assert.equal(w.check, 'watching YouTube');
   assert.equal(new Watching().update(null), null);
   const ff = new Watching();

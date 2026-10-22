@@ -82,6 +82,8 @@ function describeEvent(e, now) {
     case 'said':
       if (e.answers) return `${when}: you asked "${e.text}" (answers: "${e.answers.join('" or "')}")${e.reaction ? ` (Sushant ${e.reaction})` : ''}`;
       return `${when}: you said "${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`;
+    case 'chat':
+      return `${when}: in the chat, ${e.from === 'you' ? `Sushant wrote "${e.text}"` : `you replied "${e.text}"`}`;
     case 'silent':
       return `${when}: you thought "${e.thought}" but stayed quiet`;
     case 'changed':

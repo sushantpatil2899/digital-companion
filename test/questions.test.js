@@ -219,8 +219,9 @@ test('his question bubble shows two answers you can click, and he stands still',
   assert.deepEqual(s.answers, ['🍵 Tea', '☕ Coffee']);
   const midY = (HIT.answers.bottom + HIT.answers.top) / 2;
   assert.equal(c.hitPart(at(c, -40, midY)), 'answer0');
-  assert.equal(c.hitPart(at(c, 40, midY)), 'answer1');
-  assert.equal(c.hitPart(at(c, 0, midY)), 'question'); // the gap between them
+  assert.equal(c.hitPart(at(c, 30, midY)), 'answer1');
+  assert.equal(c.hitPart(at(c, 90, midY)), 'answerOwn');
+  assert.equal(c.hitPart(at(c, -14.5, midY)), 'question'); // the gap between them
   assert.equal(c.hitPart(at(c, 0, HIT.question.top - 5)), 'question');
   assert.equal(c.answerQuestion(1), '☕ Coffee');
   assert.equal(c.snapshot().speech, null);
@@ -252,8 +253,14 @@ test('the answer buttons the main process checks match the ones drawn', () => {
   const near = (a, b) => assert.ok(Math.abs(a - b) <= 1.5, `${a} vs ${b}`);
   near(HIT.answers.bottom, -q.btnBottom * size);
   near(HIT.answers.top, -q.btnTop * size);
-  near(HIT.answers.inner, q.gap * size);
-  near(HIT.answers.outer, (q.w / 2 - 7) * size);
+  // Same layout as questionButton() in character.js.
+  const outer = q.w / 2 - 7;
+  const each = (2 * outer - q.own - 2 * q.gap) / 2;
+  const nearRange = (r, [l, rr]) => (near(r[0], l * size), near(r[1], rr * size));
+  nearRange(HIT.answers.a0, [-outer, -outer + each]);
+  nearRange(HIT.answers.a1, [-outer + each + q.gap, -outer + 2 * each + q.gap]);
+  nearRange(HIT.answers.own, [outer - q.own, outer]);
+  assert.ok((q.w / 2) * size + 2 < 110, 'fits in his 220 px window (with its outline)');
   near(HIT.question.halfWidth, (q.w / 2) * size);
   // Two lines of question still fit in his window (256 px, feet 18 px up).
   const top = (-q.btnTop + 9 + 2 * 14.5) * size;
@@ -311,5 +318,31 @@ test('with app watching off, something new you do with him counts as moving on (
   assert.equal(mind.canAsk(), false);
   mind.log.add({ kind: 'interact', text: 'Sushant threw you!' });
   assert.equal(mind.canAsk(), true);
+});
+
+test('the ✏️ button keeps his question up while you type your own answer', () => {
+  const c = settled();
+  c.ask('Tea or coffee?', ['🍵 Tea', '☕ Coffee']);
+  c.holdQuestion(600);
+  for (let i = 0; i < 60 * 20; i++) c.update(1 / 20); // a minute
+  assert.ok(c.asking());
+  assert.equal(c.closeQuestion(), true);
+  assert.equal(c.asking(), false);
+  assert.equal(c.state, 'nod');
+});
+
+test('while waiting for an answer he starts no games or wandering, and answering always clears the question', () => {
+  const c = settled();
+  c.ask('Tea or coffee?', ['🍵 Tea', '☕ Coffee']);
+  for (let i = 0; i < 25 * 20; i++) c.update(1 / 20);
+  assert.ok(c.asking());
+  assert.ok(['idle', 'nod', 'curious'].includes(c.state), c.state);
+  assert.equal(c.game, null);
+  // Even if something covered it (a reminder), answering clears it.
+  c.speech.until = c.time + 600;
+  c.enter('offerBall', 5);
+  assert.equal(c.asking(), false);
+  assert.equal(c.closeQuestion(), true);
+  assert.equal(c.speech, null);
 });
 

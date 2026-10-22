@@ -138,6 +138,9 @@ let rest = null; // why his models are resting: { kind, text, since }
 let restWanted = null; // the latest reason (for the battery hysteresis)
 let restWorking = false; // doing the diary / reflection before resting
 let awakeUntil = 0; // "Try it now" keeps the models awake until then
+let chatWin = null; // the chat window (Phase 8)
+let chatState = { busy: false, status: '', question: null }; // question: his, while you type your own answer
+let lastBodyClick = 0; // for double-clicking him (opens the chat)
 let engineMB = null; // memory the models use (measured every 10 s)
 let welcomeWin = null;
 const IS_MAC = process.platform === 'darwin';
@@ -619,10 +622,11 @@ ipcMain.on('release', () => {
   if (companion.state === 'grabbed') {
     companion.release();
   } else if (at.onQuestion) {
-    // One of his question's answers (the bubble around them does nothing).
+    // One of his question's answers, or ✏️ to type your own (the bubble around them does nothing).
     const part = companion.hitPart(at);
     const i = part === 'answer0' ? 0 : part === 'answer1' ? 1 : -1;
     if (i >= 0 && companion.answerQuestion(i) != null && mind) mind.answered(i);
+    else if (part === 'answerOwn') answerInOwnWords();
   } else if (held < CLICK_MAX) {
     // The meeting sign's "Join" tag opens the call; his speech bubble goes
     // away when clicked; anywhere else is a pat.
@@ -636,6 +640,13 @@ ipcMain.on('release', () => {
       shell.openExternal(link).catch(() => {});
     } else {
       companion.pat();
+      // Double-click: open the chat.
+      if (part === 'body' && Date.now() - lastBodyClick < DOUBLE_CLICK) {
+        lastBodyClick = 0;
+        showChat();
+      } else if (part === 'body') {
+        lastBodyClick = Date.now();
+      }
     }
   }
   // Otherwise it was a long pet; he stays happy for a moment on his own.
@@ -762,6 +773,7 @@ function buildMenu() {
       },
     },
   ];
+  items.push({ label: 'Chat with Togepi…', click: () => showChat() });
   items.push({ label: 'Remind me…', click: showNotes });
   items.push({ label: 'Wellbeing', submenu: wellbeingMenu() });
   items.push({ label: 'Mind', submenu: mindMenu() });
@@ -1024,6 +1036,8 @@ function startMind() {
       sendPersonality();
     },
     eventsFile: eventsFile(),
+    chatFile: path.join(mindDir(), 'chat.json'),
+    ownAnswersFile: path.join(mindDir(), 'own-answers.json'),
     log: new EventLog({ file: eventsFile() }),
     getSelf: () => ({
       band: companion.moodBand(),
@@ -1180,6 +1194,113 @@ async function startWatching(w) {
   }
   if (watcher.current) mind.startedWatching(w);
 }
+
+// --------------------------------------------------------------- chat (Phase 8)
+
+const DOUBLE_CLICK = 450; // ms between two clicks on him that open the chat
+
+function showChat() {
+  if (chatWin && !chatWin.isDestroyed()) {
+    sendChat();
+    chatWin.show();
+    chatWin.focus();
+    return;
+  }
+  chatWin = new BrowserWindow({
+    width: 380,
+    height: 540,
+    title: 'Chat with Togepi',
+    resizable: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'chat-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  followYou(chatWin);
+  chatWin.loadFile(path.join(__dirname, '..', 'renderer', 'chat.html'));
+  chatWin.webContents.on('did-finish-load', sendChat);
+  chatWin.on('closed', () => {
+    chatWin = null;
+    // Closed without writing an answer: his question waits its usual 30 s from now.
+    if (chatState.question && mind && mind.pendingQuestion()) {
+      mind.awaiting.until = Date.now() + 30 * 1000;
+      if (companion.asking()) companion.speech.until = companion.time + 30;
+    }
+    chatState.question = null;
+  });
+}
+
+function sendChat() {
+  if (!chatWin || chatWin.isDestroyed()) return;
+  chatWin.webContents.send('chat', {
+    messages: mind ? mind.todaysChat().map((m) => ({ from: m.from, text: m.text })) : [],
+    question: chatState.question,
+    busy: chatState.busy,
+    status: chatState.status,
+  });
+}
+
+/** ✏️ on his question: type your own answer in the chat; the question waits meanwhile. */
+function answerInOwnWords() {
+  const q = mind && mind.pendingQuestion();
+  if (!q) return;
+  mind.holdQuestion(600);
+  companion.holdQuestion(600);
+  chatState.question = q;
+  showChat();
+}
+
+/** Wait (up to `ms`) for his voice model to be ready. */
+async function voiceReady(ms = 90 * 1000) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (engine && engine.ready) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return !!(engine && engine.ready);
+}
+
+ipcMain.on('chat-send', async (_e, text) => {
+  if (typeof text !== 'string' || !text.trim() || chatState.busy) return;
+  if (!mind || !engine || !settings.get('mind')) {
+    chatState.status = 'His mind is off: turn on Mind → Think and talk for himself.';
+    sendChat();
+    return;
+  }
+  const answering = !!chatState.question && !!mind.pendingQuestion();
+  chatState.busy = true;
+  // Chatting keeps his models awake (and wakes them if they were resting).
+  awakeUntil = Math.max(awakeUntil, Date.now() + REST.forceFor);
+  if (companion.state === 'sleep') companion.pat();
+  if (!engine.ready) {
+    chatState.status = 'Waking up his mind… (a few seconds)';
+    sendChat();
+    if (!(await voiceReady())) {
+      chatState.busy = false;
+      chatState.status = `His mind didn't start: ${engine.status()}`;
+      sendChat();
+      return;
+    }
+  }
+  chatState.status = 'Togepi is thinking…';
+  sendChat();
+  // (Your message shows right away.)
+  const reply = mind.chat(text, { answering });
+  sendChat();
+  const r = await reply;
+  if (answering) {
+    chatState.question = null;
+    companion.closeQuestion();
+  }
+  chatState.busy = false;
+  chatState.status = r.error ? `He couldn't answer: ${r.error}` : '';
+  sendChat();
+  // His reply in his bubble too (with a chirp), except in meetings and while you watch something.
+  if (!r.error && !companion.context.quiet && !watcher.current) companion.say(r.reply, r.action);
+});
 
 /** Turn "Let him read my screen" on or off (it needs app watching and Screen Recording permission). */
 function applyReadScreen(on) {

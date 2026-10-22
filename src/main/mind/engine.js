@@ -264,10 +264,11 @@ class Engine {
   }
 
   /**
-   * One think step: returns the model's JSON answer as text. `image`: a
+   * One think step: returns the model's JSON answer as text. `history`:
+   * earlier turns of a conversation ({ role, content }). `image`: a
    * base64 JPEG he looks at too (only if canSee).
    */
-  async think({ system, user, schema, image = null }) {
+  async think({ system, user, schema, image = null, history = [] }) {
     if (!this.ready) throw new Error('voice model not running');
     const withImage = !!image && this.canSee;
     // The model's own chat format, then plain completion constrained to the
@@ -276,6 +277,8 @@ class Engine {
     const t = await fetchJson(`${this.voice.url}/apply-template`, {
       messages: [
         { role: 'system', content: system },
+        // Earlier turns of a conversation (the chat window).
+        ...history.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user', content: withImage ? `${IMAGE_SLOT}\nThis is a picture of the window Sushant is looking at.\n\n${user}` : user },
       ],
       chat_template_kwargs: { enable_thinking: false },

@@ -43,6 +43,17 @@ const QUESTION = {
 };
 const SCHEMA_WITH_QUESTION = { ...SCHEMA, properties: { ...SCHEMA.properties, question: QUESTION } };
 
+// Chat window (Phase 8): his reply to what Sushant wrote, and an action.
+const MAX_REPLY = 240; // characters
+const CHAT_SCHEMA = {
+  type: 'object',
+  properties: {
+    reply: { type: 'string', maxLength: MAX_REPLY },
+    action: { type: 'string', enum: ACTIONS.filter((a) => a !== 'askToPlay') },
+  },
+  required: ['reply', 'action'],
+};
+
 const BAND_WORDS = {
   cheerful: 'cheerful and bubbly',
   content: 'content',
@@ -108,8 +119,11 @@ function needsWords(n) {
   return out.join(', ');
 }
 
-/** `notes`: what Sushant wrote about himself in about-sushant.md (Phase 2). */
-function systemPrompt(personality, notes = '') {
+/**
+ * `notes`: what Sushant wrote about himself in about-sushant.md (Phase 2).
+ * `chat`: for the chat window, where he answers what Sushant writes.
+ */
+function systemPrompt(personality, notes = '', { chat = false } = {}) {
   const traits = P.describe(personality)
     .map((t) => `- ${t}`)
     .join('\n');
@@ -128,10 +142,12 @@ function systemPrompt(personality, notes = '') {
     ...(notes ? ['', 'What Sushant told you about himself:', notes] : []),
     '',
     'How you talk:',
-    `- At most ${MAX_WORDS} words, one short sentence. Simple, cute baby words.`,
+    ...(chat
+      ? ['- Sushant is chatting with you in a chat window. Answer what he wrote.', '- One to three short sentences. Simple, cute baby words.']
+      : [`- At most ${MAX_WORDS} words, one short sentence. Simple, cute baby words.`]),
     '- Talk to Sushant directly. Never mention being an AI, a model, a program or a prompt.',
     '- Never repeat something you said recently.',
-    '- You may stay quiet. Only say something when you, with your personality, really would.',
+    ...(chat ? [] : ['- You may stay quiet. Only say something when you, with your personality, really would.']),
     '- Act like your personality, even when it is not polite.',
   ].join('\n');
 }
@@ -164,7 +180,7 @@ function situationPrompt(s) {
   if (rd && rd.text) lines.push(`Text on the window he's looking at (part of it):\n«${rd.text}»`);
   if (rd && rd.picture) lines.push('You can also see a picture of that window.');
   if (rd && rd.skipped === 'email or chat') lines.push("(That window is his email or chat: you don't read those.)");
-  const happened = (s.events || []).filter((e) => ['observe', 'interact', 'changed'].includes(e.kind));
+  const happened = (s.events || []).filter((e) => ['observe', 'interact', 'changed', 'chat'].includes(e.kind));
   const decided = (s.events || []).filter((e) => ['said', 'silent'].includes(e.kind));
   if (happened.length) {
     lines.push('', 'What happened recently (oldest first):');
@@ -191,6 +207,11 @@ function situationPrompt(s) {
     lines.push(
       'If you would rather ask Sushant something, also add "question": what you want to ask him, two short answers he can click (1-3 words each, with an emoji; never yes or no, not even starting with yes or no), and "aboutSushant": true only if his answer tells you something lasting about him, worth remembering.',
     );
+    // What he wrote himself when neither answer fit: offer answers he'd really pick.
+    if (s.ownAnswers && s.ownAnswers.length) {
+      lines.push('When neither of your answers fit, Sushant wrote his own:');
+      for (const o of s.ownAnswers) lines.push(`- You asked "${o.question}" ("${o.offered.join('" or "')}"); he wrote: "${o.answer}"`);
+    }
   }
   lines.push('Answer in JSON.');
   return lines.join('\n');
@@ -261,6 +282,56 @@ function cleanQuestion(q, recent = []) {
   return { text, answers, aboutSushant: q.aboutSushant === true };
 }
 
+/**
+ * The message for one chat reply: how he feels, what Sushant is doing, what
+ * he remembers, the question he's answering (if any) and what Sushant wrote.
+ * Earlier messages of today's chat go before it, as the conversation.
+ */
+function chatPrompt(s) {
+  const lines = [];
+  const self = s.self || {};
+  const feel = [BAND_WORDS[self.band] || 'content', needsWords(self.needs)].filter(Boolean).join(', ');
+  lines.push(`(It's ${partOfDay(self.hour != null ? self.hour : 12)}. You feel ${feel}.)`);
+  if (s.view && (s.view.typing || s.view.cursorOn)) lines.push(...describeView(s.view).map((l) => `(${l})`));
+  if (s.memories && s.memories.length) {
+    lines.push('(Things you remember, bring one up only if it really fits:)');
+    for (const m of s.memories) lines.push(`(- ${m.date ? `${daysAgo(m.date, s.now)}: ` : ''}${m.text})`);
+  }
+  if (s.answering) lines.push(`(You had asked him "${s.answering.text}" with the answers "${s.answering.answers.join('" or "')}". Neither fit, so he wrote his own answer:)`);
+  lines.push(`Sushant: ${s.text}`);
+  lines.push('(Reply to him in JSON.)');
+  return lines.join('\n');
+}
+
+/**
+ * His chat reply, checked: at most three sentences, nothing he must never
+ * say, no *stage directions* (his body acts things out). Null if unusable.
+ */
+function cleanReply(text) {
+  if (typeof text !== 'string' || GARBLED.test(text)) return null;
+  let s = text
+    .replace(/\*[^*]{1,40}\*/g, ' ')
+    .replace(/\*/g, '')
+    .replace(/[\r\n]+/g, ' ').replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/\s+/g, ' ').trim();
+  if (!s || FORBIDDEN.test(s)) return null;
+  const sentences = s.match(/[^.!?…]+[.!?…]*/g) || [s];
+  s = sentences.slice(0, 3).join('').trim();
+  return s.slice(0, MAX_REPLY);
+}
+
+/** Parse the model's chat answer: { reply, action } or null. */
+function parseReply(text) {
+  let o;
+  try {
+    o = typeof text === 'string' ? JSON.parse(text) : text;
+  } catch {
+    return null;
+  }
+  const reply = o && cleanReply(o.reply);
+  if (!reply) return null;
+  return { reply, action: ACTIONS.includes(o.action) && o.action !== 'askToPlay' ? o.action : 'none' };
+}
+
 /** Parse and check the model's JSON answer. Returns null if it's unusable. */
 function parseThought(text, recent = []) {
   let o;
@@ -295,7 +366,11 @@ module.exports = {
   ACTIONS,
   SCHEMA,
   SCHEMA_WITH_QUESTION,
+  CHAT_SCHEMA,
   systemPrompt,
+  chatPrompt,
+  parseReply,
+  cleanReply,
   situationPrompt,
   describeView,
   cleanLine,

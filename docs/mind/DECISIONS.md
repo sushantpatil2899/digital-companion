@@ -357,4 +357,45 @@ Answers:
 | 2026-10-22 | Too many questions when he answers | Cause: answering wakes him to react, and the reaction could be another question. Now (no numbers): **his reaction to your answer is never a question**, and **one question per thing you're doing**: after asking, not again until you've moved on to a new window, page or video (with app watching off: something new you do with him, not answering). The model still decides whether to ask. | Sushant: "the questions are really fun but it becomes annoying… without making it specific to any number restricting too many questions would be better". Chose 1 and 2. |
 | 2026-10-22 | Watching didn't start on Hotstar | Cause: Hotstar wasn't on the list. **Option b**: Hotstar/JioHotstar, Peacock, Paramount+, SonyLIV, ZEE5 and Twitch added, and any page not on the list is judged by the decision model ("Is Sushant watching a movie, a TV series, a show, a video or a live stream in this window right now?", yes at ≥ 0.6) from its title and address, once per page. Test pages: 11/11 right (Hotstar 0.98, Tubi 0.97, ESPN live 0.95; Google search 0.01, LinkedIn job 0.00, Grey's Anatomy on Wikipedia 0.28, Netflix home 0.08). | Sushant chose option b. |
 | 2026-10-22 | Watching didn't start on YouTube | The whole chain works here with a Netflix tab (in the app, end to end), so the most likely cause is a browser that doesn't tell Togepi the tab's address (only Chrome, Arc, Brave, Edge and Safari do; Firefox can't). Now YouTube is also recognised by its title, other tabs without an address go to the decision model, a quick look elsewhere (under 15 s) doesn't reset the wait, and the brain view has a **Watching check** row saying why it is or isn't on (e.g. "YouTube for 60 s (he joins at 120 s)"). | So it works in any browser, and the reason is visible if it doesn't. |
+| 2026-10-22 | Watching timers | **Both 30 s**: he joins after 30 s on a video (YouTube too, instead of 2 min) and gets up 30 s after you've left it (instead of 1 min). Supersedes the Phase 7 timing. | Sushant: "It worked for youtube… lets keep both as 30 sec." To ship with the next changes. |
+
+## Phase 8 questions (chat window)
+
+Asked 2026-10-22.
+
+1. How to open it?
+2. How does he write?
+3. What does he know?
+4. Memory: where do chats go, how long does the window keep them?
+5. His reply in his speech bubble too?
+6. Who starts a chat?
+7. Does chatting count for the relationship?
+8. While he's thinking?
+
+Answers:
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-22 | 1. Opening | *Chat with Togepi…* in his menu, and double-clicking him (a single click is still a pat). | Agreed. |
+| 2026-10-22 | 2. How he writes | Baby talk, one to three short sentences per reply. | Agreed. |
+| 2026-10-22 | 3. What he knows | His personality, memories, your notes and what you're doing now, same privacy rules. | Agreed. |
+| 2026-10-22 | 4. Memory | The chat goes into his day and the diary keeps what matters; the window shows today's chat and starts fresh the next day. | Agreed. |
+| 2026-10-22 | 5. Bubble | His reply also in his speech bubble with a chirp; only in the window in meetings and while watching together. | Agreed. |
+| 2026-10-22 | 6. Who starts | Only you, by opening it. | Agreed. |
+| 2026-10-22 | 7. Relationship | Counts like a pat, once per conversation. | Agreed. |
+| 2026-10-22 | 8. Thinking | "Togepi is thinking…" while he writes (about 5-10 s on the Mac). | Agreed. |
+| 2026-10-22 | Addition: your own answer to his questions | A ✏️ button next to his two answers opens the chat with his question; what you write is your answer. He reacts to it in the chat (and his bubble), it counts like a clicked answer, it's remembered if it's about you, and your last few written answers are shown to him when he writes new answer choices, so he offers answers you'd really pick. | Sushant: "if I wish to reply but not from those 2 choices there must be some click option where I can type my answer which then it should use to learn the right phrasing of options." |
+
+**Phase 8 questions: all answered (2026-10-22).**
+
+## Phase 8 implementation decisions
+
+| Date | Question | Decision | Why |
+|---|---|---|---|
+| 2026-10-22 | A conversation | Messages less than 10 minutes apart; the first message of each counts like a pat. | "Once per conversation." |
+| 2026-10-22 | Context of a reply | The last 16 messages of today's chat as the conversation, plus how he feels, the windows you're using, memories that fit your message and your notes. | So he follows the conversation. |
+| 2026-10-22 | Resting models | Sending a message wakes them (like Try it now, 10 minutes); the window says "Waking up his mind…". | You're there and want an answer. |
+| 2026-10-22 | Learning from your answers | The last 20 written answers are kept (`own-answers.json`); the last 3 go into his prompt when he may ask, as what you wrote when neither answer fit. They are your answers, not examples written by us. | Sushant's addition; consistent with "no patterns from us". |
+| 2026-10-22 | ✏️ and the question | While the chat is open for your answer the question stays up (up to 10 minutes); closing the window without answering gives it the usual 30 s again. | So it doesn't disappear while you type. |
+| 2026-10-22 | Real-model check (Gemma 4 12B, through the real mind code) | "hey Togepi, how are you?" → "Togepi happy! I feel all sparkly and bubbly today! What are we doing, Sushant?"; "I have an interview with Google tomorrow, I'm nervous" → "Oh no! Don't be scared, Sushant! You are super-duper smart and you can do it!"; "what should I eat for dinner?" → "Ramen! Ramen is yummy-yum! It will make your tummy happy for the big Google quest!" (remembers the conversation and that you love ramen); own answer "neither, I need to study tonight" → "Study? So many big words on the screen! Togepi hop!". About 40 s each on the dev container's CPU. *Stage directions* like "\*wiggles\*" are removed from replies (his body acts things out). | Checked before merging. |
 

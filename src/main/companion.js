@@ -56,10 +56,11 @@ const HIT = {
   signBottom: 128,
   signTop: 205,
   join: { left: -66, right: -12, bottom: 126, top: 162 },
-  // His question bubble and its two answer buttons (left = answer 0), from
-  // drawQuestion in src/renderer/character.js times the drawing scale.
-  question: { halfWidth: 101, bottom: 146, top: 228 },
-  answers: { inner: 3, outer: 93, bottom: 162, top: 183 },
+  // His question bubble, its two answer buttons and the ✏️ button (type your
+  // own answer), from questionButton() in src/renderer/character.js times
+  // the drawing scale (x ranges, left to right).
+  question: { halfWidth: 107, bottom: 146, top: 228 },
+  answers: { bottom: 162, top: 183, a0: [-99, -16], a1: [-13, 70], own: [74, 99] },
 };
 
 // How each nudge is shown (see src/main/nudges.js for when).
@@ -951,7 +952,7 @@ class Companion {
 
   /**
    * Which part of him the point is on: 'ball', 'join' (the sign's Join tag),
-   * 'sign', 'answer0' / 'answer1' / 'question' (his question bubble),
+   * 'sign', 'answer0' / 'answer1' / 'answerOwn' / 'question' (his question bubble),
    * 'speech', 'body' or null.
    */
   hitPart(point) {
@@ -965,7 +966,12 @@ class Companion {
     }
     if (this.asking()) {
       const a = HIT.answers;
-      if (sy >= a.bottom && sy <= a.top && Math.abs(sx) >= a.inner && Math.abs(sx) <= a.outer) return sx < 0 ? 'answer0' : 'answer1';
+      const inside = ([l, r]) => sx >= l && sx <= r;
+      if (sy >= a.bottom && sy <= a.top) {
+        if (inside(a.a0)) return 'answer0';
+        if (inside(a.a1)) return 'answer1';
+        if (inside(a.own)) return 'answerOwn';
+      }
       const q = HIT.question;
       if (Math.abs(sx) <= q.halfWidth && sy >= q.bottom && sy <= q.top) return 'question';
     }
@@ -1075,6 +1081,19 @@ class Companion {
     return answer;
   }
 
+  /** You're typing your own answer (chat window): the question stays up meanwhile (up to `seconds`). */
+  holdQuestion(seconds = 600) {
+    if (this.speech && this.speech.answers) this.speech.until = Math.max(this.speech.until, this.time + seconds);
+  }
+
+  /** You answered his question in your own words: it goes away and he nods. */
+  closeQuestion() {
+    if (!this.speech || !this.speech.answers) return false;
+    this.speech = null;
+    this.reactToQuestion('nod', 1.2);
+    return true;
+  }
+
   /** Nobody answered his question in time: it goes away and he shrugs. */
   questionTimedOut() {
     this.speech = null;
@@ -1182,6 +1201,11 @@ class Companion {
     if (this.route && this.continueRoute()) return;
     this.crossing = null;
     if (this.game && this.resumeGame()) return;
+    // Waiting for your answer to his question: he stays where he is (no games or wandering).
+    if (this.speech && this.speech.answers && this.time < this.speech.until) {
+      this.enter('idle', 2);
+      return;
+    }
     if (this.watching) {
       this.goWatch();
       return;
