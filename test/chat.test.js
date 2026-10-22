@@ -45,7 +45,7 @@ function makeMind(reply, { dir = null, clock } = {}) {
 
 const flush = () => new Promise((r) => setImmediate(r));
 
-test('in the chat he answers in baby talk, up to three short sentences', () => {
+test('in the chat he answers in up to three short sentences', () => {
   const sys = T.systemPrompt(P.defaultPersonality(), '', { chat: true });
   assert.match(sys, /chatting with you in a chat window/);
   assert.match(sys, /One to three short sentences/);

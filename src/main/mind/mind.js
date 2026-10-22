@@ -741,7 +741,7 @@ class Mind {
       criteria[keys[i]] = l;
     });
     const traits = P.describe(this.personality, 6).join(', ');
-    const state = `Togepi is a baby Pokémon companion on Sushant's screen. He is ${traits}. ${trigger.text} He is thinking: "${thought.thought}"`;
+    const state = `Togepi is Sushant's companion on his screen. He is ${traits}. ${trigger.text} He is thinking: "${thought.thought}"`;
     try {
       const a = await this.engine.decide(state, {
         line: { type: 'choice', instructions: 'Which line would Togepi most likely say right now?', criteria },
