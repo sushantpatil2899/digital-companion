@@ -135,6 +135,7 @@ function render(b) {
     if (m.speed) perf.push(`${m.speed.seconds.toFixed(1)} s per thought`);
     if (Number.isFinite(m.memoryMB)) perf.push(`models use about ${(m.memoryMB / 1024).toFixed(1)} GB`);
     if (perf.length) rows.push(['Speed', perf.join(' · ')]);
+    if (m.watchCheck) rows.push(['Watching check', m.watchCheck]);
     const v = m.view;
     const win = (w) => (!w ? '' : w.private ? 'something private' : `${w.app}${w.title ? `: "${w.title}"` : ''}${w.screen ? ` (screen ${w.screen})` : ''}`);
     if (v && (v.typing || v.cursorOn)) {

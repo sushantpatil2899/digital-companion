@@ -148,6 +148,7 @@ test('ignoring a question costs nothing, but after two in a row he stops asking 
   const eng = engine(() => ({ ...ASKING, question: { ...ASKING.question, text: `Question number ${++n}?` } }));
   const { mind, asked, advance } = makeMind(eng);
   for (let i = 0; i < 2; i++) {
+    mind.log.add({ kind: 'observe', app: 'Code', title: `file${i}.js` }); // something new each time
     mind.interact('Sushant petted you.');
     await flush();
     advance(MIND.questionWait + 1);
@@ -160,6 +161,7 @@ test('ignoring a question costs nothing, but after two in a row he stops asking 
   assert.equal(mind.status().askPausedMin, 60);
   // Meanwhile he isn't offered the question and says his line instead.
   advance(10);
+  mind.log.add({ kind: 'observe', app: 'Code', title: 'file2.js' });
   mind.interact('Sushant petted you.');
   await flush();
   assert.equal(eng.calls.at(-1).schema, T.SCHEMA);
@@ -258,3 +260,56 @@ test('the answer buttons the main process checks match the ones drawn', () => {
   near(HIT.question.top, top);
   assert.ok(top < 256 - 18);
 });
+
+test('his reaction to your answer is never another question', async () => {
+  const eng = engine(ASKING);
+  const { mind, asked, spoken } = makeMind(eng);
+  mind.log.add({ kind: 'observe', app: 'Code', title: 'a.js' });
+  mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(asked.length, 1);
+  mind.log.add({ kind: 'observe', app: 'Code', title: 'b.js' }); // even after moving on
+  mind.answered(0);
+  await flush();
+  assert.equal(eng.calls.at(-1).schema, T.SCHEMA);
+  assert.doesNotMatch(eng.calls.at(-1).user, /never yes or no/);
+  assert.equal(asked.length, 1);
+  assert.deepEqual(spoken.map((s) => s.text), ['Sip sip!']);
+});
+
+test('one question per thing you do: not again until you move on to something else', async () => {
+  let n = 0;
+  const eng = engine(() => ({ ...ASKING, question: { ...ASKING.question, text: `Question number ${++n}?` } }));
+  const { mind, asked, advance } = makeMind(eng);
+  mind.log.add({ kind: 'observe', app: 'Google Chrome', title: 'Ramen near me' });
+  mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(asked.length, 1);
+  mind.answered(0);
+  await flush();
+  // Still on the same page: he may talk, but no new question is offered.
+  advance(120);
+  mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(asked.length, 1);
+  assert.equal(mind.canAsk(), false);
+  // Somewhere new: he may ask again (if he wants to).
+  mind.log.add({ kind: 'observe', app: 'Spotify', title: 'Blinding Lights' });
+  assert.equal(mind.canAsk(), true);
+  advance(120);
+  mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(asked.length, 2);
+});
+
+test('with app watching off, something new you do with him counts as moving on (not answering him)', async () => {
+  const { mind } = makeMind(engine(ASKING));
+  mind.interact('Sushant petted you.');
+  await flush();
+  assert.equal(mind.canAsk(), false);
+  mind.answered(1);
+  assert.equal(mind.canAsk(), false);
+  mind.log.add({ kind: 'interact', text: 'Sushant threw you!' });
+  assert.equal(mind.canAsk(), true);
+});
+
