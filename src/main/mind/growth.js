@@ -41,6 +41,7 @@ const RULES = {
   tttYouWin: [['affection', 0.5, 2]],
   tttDraw: [['affection', 0.5, 2]],
   gotBall: [['affection', 0.3, 2]],
+  chatted: [['affection', 0.6, 3]], // like a pat, once per conversation
   gaveUp: [['affection', -0.4, -1.5]],
   welcomeBack: [['trust', 0.5, 1.5]],
   waterDone: [['trust', 0.3, 1]],

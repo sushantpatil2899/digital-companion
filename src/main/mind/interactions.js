@@ -21,6 +21,7 @@ const INTERACTIONS = {
   tttIWin: 'You beat Sushant at tic-tac-toe!',
   tttDraw: 'Your tic-tac-toe game with Sushant was a draw.',
   gotBall: 'You fetched the ball Sushant threw.',
+  chatted: 'Sushant chatted with you in the chat window.',
 };
 
 module.exports = { INTERACTIONS };

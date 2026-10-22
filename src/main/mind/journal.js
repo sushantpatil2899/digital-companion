@@ -45,6 +45,7 @@ function dayDigest(events) {
   let mail = 0;
   const together = new Map(); // interaction text -> count
   const said = [];
+  const chat = [];
   let silent = 0;
   for (const e of events) {
     if (e.kind === 'observe') {
@@ -61,6 +62,8 @@ function dayDigest(events) {
       together.set(e.text, (together.get(e.text) || 0) + 1);
     } else if (e.kind === 'said') {
       said.push(`${e.answers ? 'asked ' : ''}"${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`);
+    } else if (e.kind === 'chat') {
+      chat.push(`${e.from === 'you' ? 'Sushant' : 'You'}: ${e.text}`);
     } else if (e.kind === 'silent') {
       silent++;
     }
@@ -77,6 +80,10 @@ function dayDigest(events) {
   if (together.size) {
     lines.push('', 'What you and Sushant did together:');
     for (const [text, n] of together) lines.push(`- ${text}${n > 1 ? ` (${n} times)` : ''}`);
+  }
+  if (chat.length) {
+    lines.push('', 'What you and Sushant wrote in the chat:');
+    for (const c of chat.slice(-16)) lines.push(`- ${c}`);
   }
   if (said.length || silent) {
     lines.push('', 'What you said today:');

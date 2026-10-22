@@ -27,7 +27,7 @@ const WELCOME = [
   },
   {
     title: 'My own mind',
-    text: 'I think for myself with models that run on your Mac (nothing leaves it) and sometimes say something short, with a chirp. Sometimes I ask you something instead: click one of my two answers. Show his brain… (under Brain) shows what I’m thinking and why I spoke or kept quiet.',
+    text: 'I think for myself with models that run on your Mac (nothing leaves it) and sometimes say something short, with a chirp. Sometimes I ask you something instead: click one of my two answers, or ✏️ to write your own. Double-click me (or Chat with Togepi… in my menu) to chat. Show his brain… (under Brain) shows what I’m thinking and why I spoke or kept quiet.',
   },
   {
     title: 'Memory and growing up',
@@ -88,8 +88,13 @@ const WHATS_NEW = [
   },
   {
     version: 9,
-    title: 'Quicker to join you',
-    items: ['When you watch something (YouTube too), I join you after 30 seconds and get up 30 seconds after you stop.'],
+    title: 'Let’s chat!',
+    items: [
+      'Double-click me (or Chat with Togepi… in my menu) to chat with me. I answer in a few seconds, in my own words, and my reply pops up over my head too.',
+      'The chat shows today’s conversation and starts fresh tomorrow; what matters goes into my diary.',
+      'When neither of my two answers fits, click ✏️ and write your own. I remember it and use it to offer better answers next time.',
+      'When you watch something (YouTube too), I join you after 30 seconds and get up 30 seconds after you stop.',
+    ],
   },
 ];
 

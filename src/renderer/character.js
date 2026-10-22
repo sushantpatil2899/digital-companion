@@ -1511,17 +1511,23 @@ function drawSpeech(ctx, text, t) {
   ctx.restore();
 }
 
-// His question with two answer buttons along the bottom (left = answer 0).
-// The buttons sit at a fixed height so the main process can tell which one
-// you clicked: keep QUESTION in sync with HIT.question / HIT.answers in
-// src/main/companion.js (times the drawing scale, SIZE in renderer.js).
+// His question with two answer buttons along the bottom (left = answer 0)
+// and a small ✏️ button on the right (type your own answer). The buttons sit
+// at a fixed height so the main process can tell which one you clicked: keep
+// QUESTION in sync with HIT.question / HIT.answers in src/main/companion.js
+// (times the drawing scale, SIZE in renderer.js).
 // `hover`: the cursor in drawing coordinates, or null.
-const QUESTION = { w: 176, bottom: -136, btnTop: -159, btnBottom: -141, gap: 3 };
+const QUESTION = { w: 186, bottom: -136, btnTop: -159, btnBottom: -141, gap: 3, own: 22 };
 
+/** Button `i` (0, 1, or 'own'): { x, y, w, h } in drawing coordinates. */
 function questionButton(i) {
   const q = QUESTION;
   const outer = q.w / 2 - 7;
-  return { x: i === 0 ? -outer : q.gap, y: q.btnTop, w: outer - q.gap, h: q.btnBottom - q.btnTop };
+  const y = q.btnTop;
+  const h = q.btnBottom - q.btnTop;
+  if (i === 'own') return { x: outer - q.own, y, w: q.own, h };
+  const each = (2 * outer - q.own - 2 * q.gap) / 2;
+  return { x: i === 0 ? -outer : -outer + each + q.gap, y, w: each, h };
 }
 
 function drawQuestion(ctx, text, answers, hover) {
@@ -1571,6 +1577,19 @@ function drawQuestion(ctx, text, answers, hover) {
     ctx.fillStyle = PALETTE.outline;
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 0.5);
   });
+  // ✏️: neither answer fits, type your own.
+  const o = questionButton('own');
+  const overOwn = hover && hover.x >= o.x && hover.x <= o.x + o.w && hover.y >= o.y && hover.y <= o.y + o.h;
+  ctx.beginPath();
+  ctx.roundRect(o.x, o.y, o.w, o.h, 8);
+  ctx.fillStyle = overOwn ? '#cfe3f7' : '#eaf2fb';
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = PALETTE.outline;
+  ctx.stroke();
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = PALETTE.outline;
+  ctx.fillText('✏️', o.x + o.w / 2, o.y + o.h / 2 + 0.5);
   ctx.restore();
 }
 

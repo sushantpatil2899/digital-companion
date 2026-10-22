@@ -480,7 +480,7 @@ becomes its own phase, planned questions first. Order proposed and accepted
 1. **Questions with two answers** (Phase 6, below): sometimes he asks you
    something and you click one of two answers (never yes/no).
    (Added after it: **watching together**, Phase 7.)
-2. **Chat window**: a window to have a conversation with him.
+2. **Chat window** (Phase 8): a window to have a conversation with him.
 3. **Plug-in characters**: a standard character pack (required files for
    looks, movement, personality; clearly separated basic and add-on parts)
    so anyone can make their own character. Togepi becomes pack #1. Basic
@@ -586,6 +586,34 @@ question); watching didn't start on Hotstar (not on the list) or on YouTube
   model from title and address (11/11 right on test pages); a quick look
   elsewhere no longer resets the wait; a *Watching check* row in the brain
   view says why it is or isn't on. Welcome version 8.
+
+### Phase 8: chat window — status: `in progress` (built and tested here; Sushant to try it on his Mac)
+
+Answers (2026-10-22, details in DECISIONS.md): all eight suggestions
+agreed, plus Sushant's addition: a ✏️ on his questions to type your own
+answer, which he uses to learn better answer choices.
+
+Built:
+- `src/renderer/chat.html` / `chat.js` / `src/chat-preload.js`: the chat
+  window (today's messages, "Togepi is thinking…", your own answer to a
+  question). Opened from *Chat with Togepi…* in his menu or by
+  double-clicking him.
+- `thinker.js`: a chat version of his instructions (answer what he wrote,
+  one to three short sentences, baby words), `chatPrompt` (feelings, what
+  you're doing, memories, the question you're answering, your message),
+  `CHAT_SCHEMA` / `parseReply`. `engine.think` takes earlier turns
+  (`history`) for the conversation.
+- `mind.js`: `chat(text, { answering })` with today's chat in `chat.json`
+  (fresh each day), chat lines in his log (his thoughts and diary see
+  them), counts like a pat once per conversation (10 min apart);
+  `answeredOwn` (memory if it's about you, kept in `own-answers.json`, the
+  last 3 shown to him when he may ask).
+- `main.js`: the window, double-click, ✏️ (the question waits while you
+  write), wakes his models if they're resting, his reply in his bubble
+  with a chirp except in meetings and while watching.
+- Companion and renderer: ✏️ button in the question bubble (bubble 16 px
+  wider).
+- Watching timers both 30 s (Sushant, 2026-10-22). Welcome version 9.
 
 ## Later
 

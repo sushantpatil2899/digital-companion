@@ -13,6 +13,7 @@
 // See docs/mind/research/personality.md §9 and docs/mind/DECISIONS.md.
 // No Electron imports, so it can be unit tested.
 
+const fs = require('fs');
 const P = require('./personality');
 const T = require('./thinker');
 const privacy = require('./privacy');
@@ -44,6 +45,10 @@ const MIND = {
   endOfDayAway: 600, // s away
   questionWait: 30, // s he waits for you to click an answer to his question
   questionPauseAfter: 2, // questions ignored in a row…
+  conversationGap: 10 * 60, // s between chat messages that start a new conversation
+  chatHistory: 16, // earlier chat messages in each chat prompt
+  ownAnswersKept: 20, // answers you wrote yourself, kept to learn from
+  ownAnswersShown: 3, // of them, in his prompt when he may ask
   questionPause: 3600, // …and he stops asking for this long (s)
   privacyThreshold: 0.5, // decision model's "this is sensitive" probability that blocks (tested: normal pages ≈ 0.01, sensitive ≥ 0.69)
 };
@@ -81,6 +86,8 @@ class Mind {
    * @param {string} [opts.eventsFile]  events.jsonl, read when his diary is due
    * @param {object} [opts.growth]      personality growth (growth.js), Phase 4
    * @param {(p: object) => void} [opts.onPersonality] his personality grew: save and show it
+   * @param {string} [opts.chatFile]    today's chat (chat.json), Phase 8
+   * @param {string} [opts.ownAnswersFile] answers you typed yourself (own-answers.json)
    */
   constructor(opts) {
     this.engine = opts.engine || null;
@@ -120,6 +127,29 @@ class Mind {
     this.view = null; // windows in use (Phase 3)
     this.reading = null; // what he last read on the window you're looking at
     this.lastLook = null;
+    this.chatFile = opts.chatFile || null;
+    this.chatLog = this.readJson(this.chatFile, { day: null, messages: [] }); // today's chat
+    this.lastChatAt = -Infinity;
+    this.ownAnswersFile = opts.ownAnswersFile || null;
+    this.ownAnswers = this.readJson(this.ownAnswersFile, []);
+  }
+
+  readJson(file, fallback) {
+    if (!file) return fallback;
+    try {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      return fallback;
+    }
+  }
+
+  writeJson(file, data) {
+    if (!file) return;
+    try {
+      fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch {
+      // not worth failing a chat over
+    }
   }
 
   heartbeatDelay() {
@@ -276,6 +306,81 @@ class Mind {
     const text = `Sushant stopped watching ${what}. You get up from your spot in the corner.`;
     this.log.add({ kind: 'interact', text: `You and Sushant stopped watching ${what}.` });
     this.wake({ kind: 'watching', text, interactive: true });
+  }
+
+  // ------------------------------------------------------------ chat (Phase 8)
+
+  /** Today's chat messages ([{ from: 'you'|'him', text, at }]); a new day starts empty. */
+  todaysChat() {
+    const day = memoryDay(this.now());
+    if (this.chatLog.day !== day) this.chatLog = { day, messages: [] };
+    return this.chatLog.messages;
+  }
+
+  /** The question he's waiting on an answer to, or null: { text, answers }. */
+  pendingQuestion() {
+    const a = this.awaiting;
+    return a && a.question ? { text: a.entry.text, answers: a.entry.answers } : null;
+  }
+
+  /** You're writing your own answer to his question: it waits (up to `seconds`). */
+  holdQuestion(seconds = 600) {
+    if (this.awaiting && this.awaiting.question) this.awaiting.until = Math.max(this.awaiting.until, this.now() + seconds * 1000);
+  }
+
+  /**
+   * You wrote `text` in the chat window. Returns { reply, action } or
+   * { error }. `answering`: it's your own answer to the question he's waiting
+   * on (neither of his answers fit); he remembers it like a clicked answer
+   * and learns from it for his next answers.
+   */
+  async chat(text, { answering = false } = {}) {
+    text = String(text || '').trim().slice(0, 1000);
+    if (!text) return { error: 'nothing to send' };
+    if (!this.engine || !this.engine.ready) return { error: 'his mind is not running' };
+    const t = this.now();
+    const messages = this.todaysChat();
+    const history = messages.slice(-MIND.chatHistory).map((m) => ({ role: m.from === 'you' ? 'user' : 'assistant', content: m.text }));
+    // Once per conversation it counts like a pat.
+    if (t - this.lastChatAt > MIND.conversationGap * 1000) this.log.add({ kind: 'interact', text: INTERACTIONS.chatted });
+    this.lastChatAt = t;
+    const question = answering ? this.pendingQuestion() : null;
+    if (question) this.answeredOwn(text);
+    messages.push({ from: 'you', text, at: t });
+    this.log.add({ kind: 'chat', from: 'you', text });
+    this.writeJson(this.chatFile, this.chatLog);
+    const self = this.getSelf();
+    const memories = this.recall({ text }, this.log.last(['observe']));
+    const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
+    const user = T.chatPrompt({ self, view: this.view, memories, answering: question, text, now: t });
+    try {
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { chat: true }), user, schema: T.CHAT_SCHEMA, history });
+      const r = T.parseReply(raw);
+      if (!r) return { error: "he couldn't find the words" };
+      this.lastSpokeAt = this.now();
+      this.todaysChat().push({ from: 'him', text: r.reply, at: this.now() });
+      this.log.add({ kind: 'chat', from: 'him', text: r.reply });
+      this.writeJson(this.chatFile, this.chatLog);
+      return r;
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  /** Your own answer to the question he's waiting on: like a clicked one, and kept to learn from. */
+  answeredOwn(text) {
+    const a = this.awaiting;
+    if (!a || !a.question) return false;
+    this.awaiting = null;
+    const q = a.entry;
+    q.reaction = `answered in his own words "${text}"`;
+    this.ignoredStreak = 0;
+    this.questionsIgnored = 0;
+    this.log.add({ kind: 'reaction', to: q.text, reaction: q.reaction });
+    if (q.aboutSushant && this.memory) this.memory.addFacts([{ text: `Asked "${q.text}", Sushant answered "${text}"`, importance: 6 }]);
+    this.ownAnswers = [...this.ownAnswers, { question: q.text, offered: q.answers, answer: text.slice(0, 120), day: memoryDay(this.now()) }].slice(-MIND.ownAnswersKept);
+    this.writeJson(this.ownAnswersFile, this.ownAnswers);
+    return true;
   }
 
   /** You changed his personality in the editor: he notices. */
@@ -528,7 +633,7 @@ class Mind {
     this.thinking = true;
     try {
       const t = this.now();
-      const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed']);
+      const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed', 'chat']);
       const decisions = this.log.recent(MIND.recentDecisions, ['said', 'silent']);
       const self = this.getSelf();
       const screen = this.log.last(['observe']);
@@ -538,7 +643,8 @@ class Mind {
       // No questions while you watch something together, and his reaction
       // to your answer is never another question.
       const canAsk = this.canAsk() && !self.watching && !trigger.answered;
-      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk });
+      const ownAnswers = canAsk ? this.ownAnswers.slice(-MIND.ownAnswersShown) : [];
+      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk, ownAnswers });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
       const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
