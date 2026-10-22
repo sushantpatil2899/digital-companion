@@ -68,7 +68,10 @@ test('his instructions give no example topics or sounds, only to try to name the
   assert.doesNotMatch(sys, /Toge!|Priii/);
   assert.doesNotMatch(sys, /\(the company|\(his skills/);
   assert.match(sys, /Try to name the actual thing\./);
-  assert.match(sys, /At most 8 words, one short sentence/);
+  assert.match(sys, /At most 8 words, one short sentence\./);
+  // No fixed tone: his voice comes from his personality only.
+  assert.doesNotMatch(sys, /baby|cute/i);
+  assert.doesNotMatch(T.systemPrompt(P.defaultPersonality(), '', { chat: true }), /baby|cute/i);
 });
 
 test('he is told he may ask (never yes or no) only when he can, and the question is optional', () => {

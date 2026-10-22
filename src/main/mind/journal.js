@@ -1,6 +1,6 @@
 'use strict';
 
-// Writes Togepi's diary for a day: a short entry in his own baby voice, new
+// Writes Togepi's diary for a day: a short entry in his own voice, new
 // things he learned about Sushant, and his own opinions and running jokes
 // (memory.js stores them). Run when you're away at the end of the day, or the
 // next time the app runs for days it missed.
@@ -25,7 +25,7 @@ const SCHEMA = {
 // Asked of the decision model for each new memory.
 const IMPORTANCE = {
   type: 'score',
-  instructions: 'How important is this for Togepi, a baby Pokémon companion, to remember about his day or about Sushant?',
+  instructions: 'How important is this for Togepi, Sushant\'s companion, to remember about his day or about Sushant?',
   criteria: ['trivial', 'minor', 'somewhat important', 'important', 'very important'],
 };
 
@@ -105,7 +105,7 @@ function userPrompt(day, digest, memory) {
     jokes.length ? `\nYour opinions and jokes so far:\n${jokes.join('\n')}` : '',
     '',
     'Answer in JSON:',
-    '- diary: 2 to 6 short sentences about your day, in your own baby voice ("I", "Sushant"). Mention the real things that happened: the companies, sites, games and what he did with you.',
+    '- diary: 2 to 6 short sentences about your day, in your own voice ("I", "Sushant"). Mention the real things that happened: the companies, sites, games and what he did with you.',
     '- facts: up to 5 NEW things you learned about Sushant today (his work, interests, habits, how he treats you). Plain words, and specific: name the companies, sites and projects, e.g. "Sushant applied to Amazon and Stripe on JobRight". Never email contents or private things. None if nothing new.',
     '- opinions: up to 3 of your own opinions or running jokes, if you have any.',
   ].join('\n');

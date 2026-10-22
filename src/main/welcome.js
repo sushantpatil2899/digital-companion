@@ -9,7 +9,7 @@
 // and updates WELCOME if the overview changed.
 // No Electron imports, so it can be unit tested.
 
-const WELCOME_VERSION = 9;
+const WELCOME_VERSION = 10;
 
 // What he can do (the first-run welcome).
 const WELCOME = [
@@ -95,6 +95,11 @@ const WHATS_NEW = [
       'When neither of my two answers fits, click ✏️ and write your own. I remember it and use it to offer better answers next time.',
       'When you watch something (YouTube too), I join you after 30 seconds and get up 30 seconds after you stop.',
     ],
+  },
+  {
+    version: 10,
+    title: 'My voice is my personality',
+    items: ['How I talk now comes only from my personality: who I am, my sliders and how well we know each other. Change them in Mind → Personality… and my voice changes too.'],
   },
 ];
 

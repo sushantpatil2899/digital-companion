@@ -615,6 +615,14 @@ Built:
   wider).
 - Watching timers both 30 s (Sushant, 2026-10-22). Welcome version 9.
 
+Feedback (2026-10-22): chat replies felt childish and fantasy-like. Cause:
+fixed tone instructions in the code ("a baby Pokémon", "talk like a baby",
+"simple, cute baby words", "baby voice" in the diary). Removed everywhere:
+his voice now comes only from his personality ("Who I am", the sliders and
+the relationship). Kept: length limits (8 words for bubbles, 1-3 sentences
+in chat), never mention being an AI, don't repeat, may stay quiet, act like
+his personality. Welcome version 10.
+
 ## Later
 
 Noted for the future (not scheduled; ask Sushant before starting):
