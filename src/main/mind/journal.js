@@ -196,7 +196,7 @@ async function writeWeek(engine, memory, personality, week) {
       ...diary,
       '',
       'Answer in JSON:',
-      '- summary: 3 to 4 short sentences about your week, in your own voice ("I", "Sushant"): the main things that happened and how you feel about them.',
+      '- summary: 3 to 4 short sentences about your week, in your own voice ("I", "Sushant"). Mention the most important real things that happened (the companies, events and what he did with you), then how you feel about them.',
     ].join('\n'),
     schema: WEEK_SCHEMA,
   });
