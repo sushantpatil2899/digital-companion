@@ -1,7 +1,9 @@
 # Graph Report - digital-companion  (2026-10-22)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 82 files · ~116,213 words
+- Verdict: corpus is large enough that graph structure adds value.
+- Unclassified: 2 file(s) not represented in the graph (top: (none) 1, .applescript 1)
 
 ## Summary
 - 1231 nodes · 2419 edges · 65 communities (56 shown, 9 thin omitted)
@@ -9,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b078fa93`
+- Built from commit: `0d105986`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -87,15 +89,15 @@
 6. `ContextTracker` - 18 edges
 7. `Engine` - 18 edges
 8. `NudgeTracker` - 17 edges
-9. `ellipse()` - 16 edges
-10. `startMind()` - 16 edges
+9. `startMind()` - 16 edges
+10. `ellipse()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Making him your own` --references--> `scoreActivities()`  [INFERRED]
   README.md → src/main/brain.js
-- `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `scrub()`  [INFERRED]
-  docs/mind/PLAN.md → src/main/mind/screen.js
 - `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `whyNotRead()`  [INFERRED]
+  docs/mind/PLAN.md → src/main/mind/screen.js
+- `Phase 3: reading the screen — status: `in progress` (built and tested here; screen capture and OCR need testing on Sushant's Mac)` --references--> `scrub()`  [INFERRED]
   docs/mind/PLAN.md → src/main/mind/screen.js
 - `Phase 6: questions with two answers — status: `in progress` (built and tested here; Sushant to try it on his Mac)` --references--> `cleanQuestion()`  [INFERRED]
   docs/mind/PLAN.md → src/main/mind/thinker.js
@@ -340,16 +342,16 @@ Nodes (4): updateRest(), REST, restPlan(), restReason()
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Companion` connect `Companion state machine and physics` to `Companion constants and game config`, `Context tracker and needs`, `Electron main process setup`, `Prompt text helpers (events, lines, chat)`, `NudgeTracker`, `Fetch ball`, `Companion tests`, `Nudge timing and phrases`, `App startup and brain saving`, `Companion test helpers`, `Event log and sounds`, `Watching together detector`, `Screen travel tests`?**
-  _High betweenness centrality (0.206) - this node is a cross-community bridge._
+  _High betweenness centrality (0.242) - this node is a cross-community bridge._
 - **What connects `electron-builder` to the rest of the system?**
   _1 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Companion state machine and physics` be split into smaller, more focused modules?**
   _Cohesion score 0.06594956797742903 - nodes in this community are weakly interconnected._
 - **Why does `Making him your own` connect `Togepi drawing code` to `README`, `Context tracker and needs`, `Diary writing and mood faces`?**
-  _High betweenness centrality (0.112) - this node is a cross-community bridge._
+  _High betweenness centrality (0.105) - this node is a cross-community bridge._
 - **Should `Togepi drawing code` be split into smaller, more focused modules?**
   _Cohesion score 0.08087431693989071 - nodes in this community are weakly interconnected._
 - **Why does `scoreActivities()` connect `Context tracker and needs` to `Togepi drawing code`?**
-  _High betweenness centrality (0.107) - this node is a cross-community bridge._
+  _High betweenness centrality (0.099) - this node is a cross-community bridge._
 - **Should `Companion constants and game config` be split into smaller, more focused modules?**
   _Cohesion score 0.10526315789473684 - nodes in this community are weakly interconnected._

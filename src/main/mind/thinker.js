@@ -303,10 +303,16 @@ function chatPrompt(s) {
   return lines.join('\n');
 }
 
-/** His chat reply, checked: at most three sentences, nothing he must never say. Null if unusable. */
+/**
+ * His chat reply, checked: at most three sentences, nothing he must never
+ * say, no *stage directions* (his body acts things out). Null if unusable.
+ */
 function cleanReply(text) {
   if (typeof text !== 'string' || GARBLED.test(text)) return null;
-  let s = text.replace(/[\r\n]+/g, ' ').replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/\s+/g, ' ').trim();
+  let s = text
+    .replace(/\*[^*]{1,40}\*/g, ' ')
+    .replace(/\*/g, '')
+    .replace(/[\r\n]+/g, ' ').replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '').replace(/\s+/g, ' ').trim();
   if (!s || FORBIDDEN.test(s)) return null;
   const sentences = s.match(/[^.!?…]+[.!?…]*/g) || [s];
   s = sentences.slice(0, 3).join('').trim();

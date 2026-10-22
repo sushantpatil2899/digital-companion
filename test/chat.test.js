@@ -53,6 +53,8 @@ test('in the chat he answers in baby talk, up to three short sentences', () => {
   assert.doesNotMatch(sys, /You may stay quiet/);
   assert.match(T.systemPrompt(P.defaultPersonality()), /At most 8 words/);
   assert.deepEqual(T.parseReply(JSON.stringify({ reply: 'Hi Sushant! Ramen today? Yum yum! Extra sentence here.', action: 'happy' })), { reply: 'Hi Sushant! Ramen today? Yum yum!', action: 'happy' });
+  assert.equal(T.parseReply(JSON.stringify({ reply: 'Togepi happy! *wiggles* I feel sparkly!', action: 'wave' })).reply, 'Togepi happy! I feel sparkly!');
+  assert.equal(T.parseReply(JSON.stringify({ reply: 'Study? So many big words! *Togepi hop!', action: 'wave' })).reply, 'Study? So many big words! Togepi hop!');
   assert.equal(T.parseReply(JSON.stringify({ reply: 'As an AI, I…', action: 'none' })), null);
   assert.equal(T.parseReply('not json'), null);
   assert.equal(T.parseReply(JSON.stringify({ reply: 'Play?', action: 'askToPlay' })).action, 'none');
