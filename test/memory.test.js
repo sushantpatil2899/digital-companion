@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { Memory, relevance, readEvents, pruneEvents, journalDue, dayString, dayStart } = require('../src/main/mind/memory');
-const { writeDay, dayDigest } = require('../src/main/mind/journal');
+const { writeDay, writeWeek, dayDigest } = require('../src/main/mind/journal');
 const { Mind } = require('../src/main/mind/mind');
 const P = require('../src/main/mind/personality');
 
@@ -158,6 +158,22 @@ test('his memories and your notes reach his thoughts', async () => {
   const now = at('2026-10-20', 12);
   const memory = new Memory(null, () => now);
   memory.notes = 'I am a CS student looking for SWE internships.';
+  // His 12 most important facts are his core (in message 1); the rest come to mind when they fit.
+  const core = [
+    'plays chess every weekend at the club',
+    'watches cricket matches late at night',
+    'learning guitar chords from videos',
+    'cooks spicy biryani on Sundays',
+    'hikes mountain trails in autumn',
+    'paints watercolour landscapes sometimes',
+    'swims laps before breakfast',
+    'reads science fiction novels',
+    'cycles to campus daily',
+    'grows tomatoes and basil indoors',
+    'photographs sunsets near the harbour',
+    'bakes sourdough bread on Fridays',
+  ];
+  memory.addFacts(core.map((c) => ({ text: `Core: ${c}`, date: '2026-10-01', importance: 9 })));
   memory.addFacts([{ text: 'Sushant applied to Amazon jobs yesterday', date: '2026-10-19', importance: 8 }]);
   const engine = fakeEngine({ thought: 'x', urge: 0, lines: ['x'], action: 'none' });
   const mind = new Mind({
@@ -172,6 +188,51 @@ test('his memories and your notes reach his thoughts', async () => {
   assert.match(engine.calls[0].system, /What Sushant told you about himself:\nI am a CS student/);
   assert.match(engine.calls[0].user, /Things you remember[^\n]*\n- \(yesterday\) Sushant applied to Amazon jobs yesterday/);
   assert.deepEqual(mind.status().recalled, ['Sushant applied to Amazon jobs yesterday']);
+  assert.match(engine.calls[0].system, /What you know best about Sushant:\n- Core: /);
+  assert.equal((engine.calls[0].system.match(/- Core: /g) || []).length, 12);
+  assert.doesNotMatch(engine.calls[0].user, /Core: /); // not twice
+});
+
+test('his core: the 12 most important facts, newest first among equals, refreshed after his diary', async () => {
+  const now = at('2026-10-20', 12);
+  const memory = new Memory(null, () => now);
+  memory.addFacts([
+    { text: 'Sushant loves ramen noodles', date: '2026-10-01', importance: 6 },
+    { text: 'Sushant is preparing for a Google interview', date: '2026-10-18', importance: 9 },
+    { text: 'Sushant studies at Stony Brook', date: '2026-10-02', importance: 9 },
+  ]);
+  assert.deepEqual(memory.core(2), ['Sushant is preparing for a Google interview', 'Sushant studies at Stony Brook']);
+  const engine = fakeEngine({ diary: ['A good day.'], facts: ['Sushant got an offer from Stripe'], opinions: [] });
+  const mind = new Mind({ engine, memory, now: () => now, getSelf: () => ({ band: 'content', hour: 9 }), onSpeak: () => {} });
+  assert.equal(mind.coreFacts.length, 3);
+  for (let i = 0; i < 6; i++) mind.log.items.push({ t: at('2026-10-19', 10 + i), kind: 'interact', text: 'Sushant petted you.' });
+  await mind.maybeWriteJournal();
+  assert.ok(mind.coreFacts.includes('Sushant got an offer from Stripe'));
+});
+
+test('weekly summaries: written from the diary, kept in weeks.md, recalled like facts, forgettable', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-weeks-'));
+  const now = at('2026-10-25', 19); // Sunday
+  const memory = new Memory(dir, () => now);
+  memory.writeJournal('2026-10-20', [{ text: 'Sushant practised interview questions with me.', importance: 7 }], at('2026-10-20', 23));
+  memory.writeJournal('2026-10-23', [{ text: 'We watched a movie together.', importance: 5 }], at('2026-10-23', 23));
+  const engine = fakeEngine({ summary: 'This week Sushant practised for interviews and we watched a movie. I felt happy and proud of him.' });
+  const s = await writeWeek(engine, memory, P.defaultPersonality(), '2026-10-19');
+  assert.match(s, /practised for interviews/);
+  assert.match(engine.calls[0].user, /2026-10-20:\n- Sushant practised interview questions with me\./);
+  assert.match(engine.calls[0].user, /3 to 4 short sentences about your week/);
+  assert.equal(await writeWeek(engine, memory, P.defaultPersonality(), '2026-10-19'), null, 'only once per week');
+  assert.equal(await writeWeek(engine, memory, P.defaultPersonality(), '2026-10-12'), null, 'no diary that week');
+  // Kept on disk and read back.
+  const again = new Memory(dir, () => now);
+  assert.equal(again.weeks['2026-10-19'].text, s);
+  assert.deepEqual(again.all().weeks.map((w) => w.id), ['week:2026-10-19']);
+  // Two months later the week still comes to mind; the daily lines have faded.
+  const later = new Memory(dir, () => at('2026-12-20', 12));
+  const r = later.recall('interview practice', 5);
+  assert.equal(r[0].kind, 'week');
+  assert.equal(later.forget('week:2026-10-19'), true);
+  assert.equal(new Memory(dir, () => now).weeks['2026-10-19'], undefined);
 });
 
 test('the mind writes his diary when a day is due', async () => {

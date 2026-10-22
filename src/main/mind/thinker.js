@@ -121,9 +121,11 @@ function needsWords(n) {
 
 /**
  * `notes`: what Sushant wrote about himself in about-sushant.md (Phase 2).
+ * `core`: the most important facts he's learned about Sushant (refreshed
+ * once a day, so this message stays the same and the server reuses it).
  * `chat`: for the chat window, where he answers what Sushant writes.
  */
-function systemPrompt(personality, notes = '', { chat = false } = {}) {
+function systemPrompt(personality, notes = '', { chat = false, core = [] } = {}) {
   const traits = P.describe(personality)
     .map((t) => `- ${t}`)
     .join('\n');
@@ -143,6 +145,7 @@ function systemPrompt(personality, notes = '', { chat = false } = {}) {
     '',
     `You and Sushant: you ${P.describeRelationship(personality)}.`,
     ...(notes ? ['', 'What Sushant told you about himself:', notes] : []),
+    ...(core.length ? ['', 'What you know best about Sushant:', ...core.map((c) => `- ${c}`)] : []),
     '',
     'How you talk:',
     ...(chat

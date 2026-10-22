@@ -26,12 +26,10 @@
   "27": "Tic-tac-toe board window",
   "28": "session-start.sh",
   "29": "Tic-tac-toe",
-  "30": "Memory store (facts, opinions, diary)",
   "31": "Window capture and text recognition",
   "32": "Attention and screen reader",
   "33": "Decisions log",
   "34": "Calendar watcher and reader",
-  "35": "Memory recall and event files",
   "36": "Mind plan",
   "37": "Personality editor window",
   "38": "Chirp synthesis",
@@ -57,6 +55,5 @@
   "61": "package.json metadata",
   "62": "Build configuration",
   "63": "npm scripts",
-  "64": "Resting the models",
   "66": "Welcome window renderer"
 }
