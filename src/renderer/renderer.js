@@ -1,7 +1,14 @@
 'use strict';
 
-const C = window.Character;
-const { drawCharacter, defaultPose, drawHeart, drawStar, drawText, drawPuff, BODY_CY, HEAD_TOP } = C;
+// The active character (?character=<id>, set by src/main/main.js): its
+// looks, activities, voice and lines live in src/characters/<id>/.
+const CHARACTER_ID = new URLSearchParams(location.search).get('character') || 'togepi';
+const ch = window.Characters[CHARACTER_ID] || window.Characters.togepi;
+const LINES = (window.CharacterLines || {})[CHARACTER_ID] || window.CharacterLines.togepi;
+const C = window.UI;
+const { drawHeart, drawStar, drawText, drawPuff } = C;
+const { defaultPose, BODY_CY, HEAD_TOP } = ch;
+const drawCharacter = ch.draw;
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
@@ -16,7 +23,6 @@ let lastNow = performance.now();
 
 // Local animation state.
 let walkPhase = 0;
-let ballRot = 0;
 let squash = 1;
 let squashVel = 0;
 let blinkTimer = 2 + Math.random() * 3;
@@ -25,25 +31,14 @@ let zzzTimer = 0;
 let turn = 0; // eased 0..1 amount he's turned sideways
 
 // States where he turns to a 3/4 view towards where he's going or looking;
-// otherwise he faces you, like most panels of the reference sheet.
-const TURNED = { walk: 1, run: 1, play: 1, adventure: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5, eyeRest: 1, watchBall: 0.6, pickBall: 1, ttt: 0.6 };
+// otherwise he faces you, like most panels of the reference sheet. The
+// character adds its own activities.
+const TURNED = { ...ch.turned, walk: 1, run: 1, talk: 1, curious: 1, surprised: 1, jump: 1, angry: 0.6, wave: 0.5, shy: 0.6, fall: 1, grabbed: 0.5, eyeRest: 1, watchBall: 0.6, pickBall: 1, ttt: 0.6 };
 
 // What he says after you answer a nudge (or when he gives up on one), by
-// mood. When he's sad or cross he doesn't gush.
-const SAYS = {
-  reminderAck: { cheerful: 'Got it!', content: 'Got it', meh: 'ok.', sad: 'ok…', grumpy: 'Fine.' },
-  noteDone: { cheerful: 'Got it!', content: 'Got it', meh: 'ok.', sad: 'ok…', grumpy: 'Fine.' },
-  waterDone: { cheerful: 'Cheers!', content: 'Good job', meh: 'ok.', sad: 'thanks…', grumpy: 'Hmph. Good.' },
-  stretchDone: { cheerful: 'Ahh, nice!', content: 'Better?', meh: 'ok.', sad: 'thanks…', grumpy: 'Fine.' },
-  eyesDone: { cheerful: 'Ahh, better!', content: 'Better', meh: 'ok.', sad: '…better', grumpy: 'There.' },
-  bedtimeDone: { cheerful: 'Night night!', content: 'Night!', meh: 'night.', sad: 'night…', grumpy: 'Finally.' },
-  nudgeLater: { cheerful: 'Later then!', content: 'Later then…', meh: '…later.', sad: 'later…', grumpy: 'Ugh. Later.' },
-  // Games.
-  gaveUp: { cheerful: "I'll play alone then!", content: 'Never mind…', meh: '…never mind.', sad: 'ok… never mind', grumpy: 'Fine. Whatever.' },
-  thatWasFun: { cheerful: 'That was fun!', content: 'That was fun!', meh: 'that was ok.', sad: 'thanks…', grumpy: 'Hmph. Fun.' },
-  tttYouWin: { cheerful: 'You win! Again?', content: 'You win!', meh: 'you win.', sad: 'you win…', grumpy: 'Lucky.' },
-  tttIWin: { cheerful: 'I win! Yay!', content: 'I win!', meh: 'I win.', sad: 'I won…', grumpy: 'Ha. Mine.' },
-};
+// mood, and other floating texts: the character's own (LINES.says / floats).
+const SAYS = LINES.says;
+const FLOATS = LINES.floats;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -54,6 +49,8 @@ window.addEventListener('resize', resize);
 resize();
 
 // ------------------------------------------------------------ particles
+
+const CONFETTI = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#c77dff', '#ff9f43'];
 
 function spawn(kind, x, y, extra = {}) {
   particles.push({ kind, x, y, vx: 0, vy: 0, life: 0, max: 1, size: 10, rot: 0, ...extra });
@@ -97,25 +94,25 @@ function handleEvent(name) {
       spawn('star', 0, HEAD_TOP + 10, { vy: -30, max: 0.6, size: 9 });
       break;
     case 'throw':
-      spawn('text', 0, HEAD_TOP - 8, { text: 'Wheee!', vy: -20, max: 1, size: 15 });
+      spawn('text', 0, HEAD_TOP - 8, { text: FLOATS.throw, vy: -20, max: 1, size: 15 });
       break;
     case 'grab':
-      spawn('text', 34, HEAD_TOP + 8, { text: '!', vy: -30, max: 0.6, size: 20 });
+      spawn('text', 34, HEAD_TOP + 8, { text: FLOATS.grab, vy: -30, max: 0.6, size: 20 });
       break;
     case 'goodMorning':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Good morning!', vy: -12, max: 2.2, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.goodMorning, vy: -12, max: 2.2, size: 14 });
       break;
     case 'hello':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Hi again!', vy: -12, max: 2, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.hello, vy: -12, max: 2, size: 14 });
       break;
     case 'welcomeBack':
-      spawn('text', 0, HEAD_TOP - 10, { text: "You're back!", vy: -12, max: 2, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.welcomeBack, vy: -12, max: 2, size: 14 });
       break;
     case 'charging':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Yum, power!', vy: -12, max: 1.8, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.charging, vy: -12, max: 1.8, size: 14 });
       break;
     case 'lonely':
-      spawn('text', 30, HEAD_TOP + 4, { text: '…', vy: -15, max: 1.5, size: 18 });
+      spawn('text', 30, HEAD_TOP + 4, { text: FLOATS.lonely, vy: -15, max: 1.5, size: 18 });
       break;
     case 'reminderAck':
     case 'noteDone':
@@ -132,7 +129,7 @@ function handleEvent(name) {
       break;
     }
     case 'eventEnded':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'All done!', vy: -12, max: 1.8, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.eventEnded, vy: -12, max: 1.8, size: 14 });
       break;
     case 'gaveUp':
     case 'thatWasFun':
@@ -144,24 +141,63 @@ function handleEvent(name) {
       break;
     }
     case 'ballThrow':
-      spawn('text', 0, HEAD_TOP - 10, { text: "I'll get it!", vy: -14, max: 1.4, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.ballThrow, vy: -14, max: 1.4, size: 14 });
       break;
     case 'gotBall':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Got it!', vy: -14, max: 1.2, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.gotBall, vy: -14, max: 1.2, size: 14 });
       break;
     case 'tttDraw':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'A draw!', vy: -12, max: 1.6, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.tttDraw, vy: -12, max: 1.6, size: 14 });
       break;
     case 'tttYouStart':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'You go first!', vy: -12, max: 1.6, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.tttYouStart, vy: -12, max: 1.6, size: 14 });
       break;
     case 'tttIStart':
-      spawn('text', 0, HEAD_TOP - 10, { text: 'Me first!', vy: -12, max: 1.6, size: 14 });
+      spawn('text', 0, HEAD_TOP - 10, { text: FLOATS.tttIStart, vy: -12, max: 1.6, size: 14 });
+      break;
+    case 'watchHeart':
+      // Something funny in what you're watching.
+      spawn('heart', 30, HEAD_TOP + 10, { vy: -30, max: 1.4, size: 10 });
+      break;
+    case 'sparkles':
+      // Something beautiful in what you're watching.
+      for (let i = 0; i < 5; i++) {
+        spawn('star', (Math.random() - 0.5) * 90, HEAD_TOP + 10 + Math.random() * 50, { vy: -12 - Math.random() * 12, max: 1.6 + Math.random(), size: 6 + Math.random() * 4 });
+      }
+      break;
+    case 'puff':
+      // A new character appearing (switched from the menu).
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        spawn('puff', Math.cos(a) * 26, BODY_CY + Math.sin(a) * 34, { vx: Math.cos(a) * 70, vy: Math.sin(a) * 70 - 20, max: 0.7 + Math.random() * 0.3, size: 9 + Math.random() * 6 });
+      }
       break;
     case 'wake':
-      spawn('text', 32, HEAD_TOP + 8, { text: '!?', vy: -30, max: 0.8, size: 18 });
+      spawn('text', 32, HEAD_TOP + 8, { text: FLOATS.wake, vy: -30, max: 0.8, size: 18 });
+      break;
+    // Phase 12 moments (his mind chose 'celebrate' or 'comfort'). Particles
+    // only, so they work the same for every character.
+    case 'confetti':
+      for (let i = 0; i < 28; i++) {
+        spawn('confetti', (Math.random() - 0.5) * 50, HEAD_TOP - 4, {
+          vx: (Math.random() - 0.5) * 150,
+          vy: -90 - Math.random() * 70,
+          max: 1.6 + Math.random() * 0.8,
+          size: 4 + Math.random() * 3,
+          rot: Math.random() * Math.PI,
+          spin: (Math.random() - 0.5) * 14,
+          color: CONFETTI[i % CONFETTI.length],
+        });
+      }
+      break;
+    case 'comfort':
+      for (let i = 0; i < 3; i++) {
+        spawn('heart', (i - 1) * 24, HEAD_TOP + 16, { vx: (i - 1) * 6, vy: -22 - i * 6, max: 1.8 + i * 0.3, size: 9 + Math.random() * 3 });
+      }
       break;
     default:
+      // The character's own floating texts (Pip: "That was unnecessary.").
+      if (FLOATS[name]) spawn('text', 0, HEAD_TOP - 10, { text: FLOATS[name], vy: -12, max: 2.4, size: 13 });
   }
 }
 
@@ -175,6 +211,11 @@ function updateParticles(dt) {
       p.vy *= 1 - 3 * dt;
     }
     if (p.kind === 'heart' || p.kind === 'zzz') p.x += Math.sin(p.life * 5) * 15 * dt;
+    if (p.kind === 'confetti') {
+      p.vy += 220 * dt;
+      p.vx *= 1 - 1.5 * dt;
+      p.rot += p.spin * dt;
+    }
   }
   particles = particles.filter((p) => p.life < p.max);
 }
@@ -198,6 +239,15 @@ function drawParticles(ctx) {
         break;
       case 'text':
         drawText(ctx, p.text, p.x, p.y, p.size, alpha);
+        break;
+      case 'confetti':
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        ctx.restore();
         break;
       default:
     }
@@ -278,6 +328,12 @@ function nudgeFace(p, f) {
 
 const happyBand = (f) => f.band === 'cheerful' || f.band === 'content';
 
+// An item he holds (holdItem / playItem): f.item, a PNG or SVG (item.js).
+function itemFor(item) {
+  const it = window.Items.load(item);
+  return it && { img: it.img, w: it.w / SIZE, h: it.h / SIZE };
+}
+
 function computePose(f, dt) {
   const p = defaultPose();
   const t = clock;
@@ -348,29 +404,30 @@ function computePose(f, dt) {
       p.mouth = 'open';
       p.eyes = 'happy';
       break;
-    case 'play':
-      walkCycle(p, f, dt, 12, 6);
-      p.prop = 'ball';
-      // The ball rolls just ahead of him; each step gives it a little kick.
-      p.ballX = f.facing * (46 + Math.abs(Math.sin(walkPhase * 0.5)) * 8);
-      ballRot += (f.vx * dt) / 11;
-      p.ballRot = ballRot;
-      p.mouth = 'open';
-      p.lookX = f.facing;
-      p.lookY = 0.6;
-      break;
-    case 'adventure':
-      walkCycle(p, f, dt, 10, 5);
-      p.prop = 'backpack';
-      p.mouth = 'open';
-      p.armSwing = 0.35;
-      break;
     case 'sit':
       p.feet = 'sit';
       p.scaleY *= 0.95;
       p.scaleX = 1.03;
       applyMoodFace(p, f, false);
       if (f.band === 'sad') p.scaleY *= 0.97; // slumped
+      if (f.byWindow) {
+        // Lonely, sitting below your window, still looking up at it.
+        if (f.band !== 'sad' && f.band !== 'grumpy') p.eyes = 'open';
+        p.lookX = 0;
+        p.lookY = -0.8;
+      }
+      break;
+    case 'lookUp':
+      // Lonely: standing below your window, looking up at it (eyes open and
+      // hopeful, unless he's sad or cross).
+      applyMoodFace(p, f, false);
+      if (f.band !== 'sad' && f.band !== 'grumpy') {
+        p.eyes = 'open';
+        p.mouth = 'flat';
+      }
+      p.lookX = 0;
+      p.lookY = -0.9;
+      p.tilt = Math.sin(t * 1.2) * 0.03;
       break;
     case 'sleep':
       p.view = 'lying';
@@ -467,24 +524,6 @@ function computePose(f, dt) {
       p.arms = Math.sin(t * 2.5) > 0 ? 'cheer' : 'down';
       p.bob = -Math.abs(Math.sin(t * 8)) * 1.2;
       overlay = 'sound';
-      break;
-    case 'eat':
-      p.feet = 'sit';
-      p.arms = 'hold';
-      p.prop = 'apple';
-      p.propProgress = clamp(st / duration, 0, 1);
-      p.eyes = 'content';
-      p.mouth = 'chew';
-      p.blush = 0.7;
-      break;
-    case 'flower':
-      p.arms = 'hold';
-      p.prop = 'flower';
-      p.eyes = 'content';
-      p.mouth = 'smallSmile';
-      p.blush = 0.8;
-      p.tilt = Math.sin(t * 1.5) * 0.04;
-      overlay = 'flower';
       break;
     case 'backView':
       p.view = 'back';
@@ -609,7 +648,7 @@ function computePose(f, dt) {
       overlay = 'waveLines';
       break;
     case 'offerBall':
-      // Holding the Pokeball out to you: "Play fetch?"
+      // Holding the fetch ball out to you: "Play fetch?"
       nudgeFace(p, f);
       if (happyBand(f)) p.mouth = 'open';
       p.bob = -Math.abs(Math.sin(t * 4)) * 2;
@@ -656,11 +695,49 @@ function computePose(f, dt) {
         overlay = 'question';
       }
       break;
-    default:
+    case 'holdItem':
+      // Holding up something (f.item) in the hand on the left of his body, having a look at it.
+      applyMoodFace(p, f, false);
+      p.arms = 'item';
+      p.lookX = -0.7;
+      p.lookY = -0.3;
+      p.tilt = -0.03 + Math.sin(t * 1.4) * 0.015;
+      break;
+    case 'playItem':
+      // Playing with it: waving it around.
+      applyMoodFace(p, f, false);
+      if (happyBand(f)) {
+        p.eyes = 'happy';
+        p.mouth = 'open';
+      }
+      p.arms = 'item';
+      p.itemWave = 1;
+      p.lookX = -0.8;
+      p.lookY = -0.4 + Math.sin(t * 7) * 0.3;
+      p.bob = -Math.abs(Math.sin(t * 7)) * 1.5;
+      p.tilt = Math.sin(t * 3.5) * 0.04;
+      break;
+    case 'watchReact':
+      // A moment of what you're watching, in the character's own way
+      // (src/characters/<id>/look.js watchPose).
+      if (ch.watchPose) ch.watchPose(f.watchMood, p, f, { t, st, duration, dt, clamp, overlay: (k) => (overlay = k) });
+      break;
+    default: {
+      // The character's own activities (src/characters/<id>/look.js).
+      const own = ch.activityPose && ch.activityPose[f.state];
+      if (own) own(p, f, { t, st, duration, dt, clamp, size: SIZE, walkCycle: (pp, ff, speed, step) => walkCycle(pp, ff, dt, speed, step), overlay: (k) => (overlay = k) });
+    }
   }
-  // Carrying the Pokeball (running back with it, holding it out to you).
+  // The character's own take on shared states (Pip's victory flight when happy).
+  if (ch.restyle) ch.restyle(f.state, p, f, { t, st, duration, dt, clamp });
+  // The item's picture, once it has loaded (until then his hand stays down).
+  if (p.arms === 'item') {
+    p.item = itemFor(f.item);
+    if (!p.item) p.arms = 'down';
+  }
+  // Carrying the fetch ball (running back with it, holding it out to you).
   if (f.holdingBall && !['grabbed', 'fall', 'jump', 'sleep'].includes(f.state)) {
-    p.prop = 'pokeball';
+    p.prop = ch.heldProp;
     p.arms = 'grip';
     p.armSwing = 0;
   }
@@ -694,9 +771,6 @@ function drawOverlay(ctx, kind, p) {
     case 'question':
       drawText(ctx, '?', x, y - 2 + Math.sin(clock * 3) * 2, 20, 1);
       break;
-    case 'flower':
-      C.drawDaisy(ctx, x, y + Math.sin(clock * 2) * 2, 5);
-      break;
     case 'waveLines': {
       // Little motion arcs next to the waving hand.
       ctx.save();
@@ -714,6 +788,8 @@ function drawOverlay(ctx, kind, p) {
       break;
     }
     default:
+      // The character's own marks (src/characters/<id>/look.js).
+      if (ch.overlays && ch.overlays[kind]) ch.overlays[kind](ctx, x, y, clock);
   }
 }
 
@@ -764,15 +840,17 @@ function render(now) {
     if (frame.quiet && (overlay === 'question' || overlay === 'sound')) overlay = null;
     if (overlay) drawOverlay(ctx, overlay, pose);
     // Whatever he's holding up over his head: a sign, a note or a speech bubble.
+    let bubble = null; // a bubble's size, when it sizes to its text
     if (frame.board) {
-      if (frame.board.style === 'bubble') C.drawBubble(ctx, frame.board, clock);
+      if (frame.board.style === 'bubble') bubble = C.drawBubble(ctx, frame.board, clock);
       else C.drawSign(ctx, frame.board, clock);
     } else if (frame.speech && frame.answers) {
-      C.drawQuestion(ctx, frame.speech, frame.answers, frame.cursor ? { x: frame.cursor.x / SIZE, y: frame.cursor.y / SIZE } : null);
+      bubble = C.drawQuestion(ctx, frame.speech, frame.answers, frame.cursor ? { x: frame.cursor.x / SIZE, y: frame.cursor.y / SIZE } : null, frame.speechBadge);
     } else if (frame.speech) {
-      C.drawSpeech(ctx, frame.speech, clock);
+      bubble = C.drawSpeech(ctx, frame.speech, clock, frame.speechBadge);
     }
     ctx.restore();
+    reportBubble(bubble);
 
     drawParticles(ctx);
     ctx.restore();
@@ -781,16 +859,28 @@ function render(now) {
   requestAnimationFrame(render);
 }
 
+// Tell the main process how big the bubble is (screen px from his feet:
+// half its width and how high its top is, with room for the bob), so his
+// window can grow to fit it and clicks on it land. Sent only when it changes.
+let sentBubble = 'null';
+function reportBubble(L) {
+  const box = L ? { halfWidth: Math.ceil((L.w / 2 + 2) * SIZE), top: Math.ceil((-L.top + 3) * SIZE) } : null;
+  const key = JSON.stringify(box);
+  if (key === sentBubble) return;
+  sentBubble = key;
+  if (window.companion.bubble) window.companion.bubble(box);
+}
+
 window.companion.onFrame((f) => {
   frame = f;
   for (const e of f.events) handleEvent(e);
 });
 
-// He chirps when he talks: your own clip if you've added some, otherwise a
-// generated "toge-priii" (src/renderer/chirp.js).
+// He chirps when he talks: your own clip if you've added some, otherwise
+// the character's own generated voice (src/renderer/chirp.js).
 window.companion.onVoice((v) => {
   if (v.clip) window.Chirp.playClip(v.clip.buffer ? v.clip.buffer.slice(v.clip.byteOffset, v.clip.byteOffset + v.clip.byteLength) : v.clip);
-  else window.Chirp.play({ band: v.band, syllables: v.syllables });
+  else window.Chirp.play(ch, { band: v.band, syllables: v.syllables });
 });
 requestAnimationFrame(render);
 

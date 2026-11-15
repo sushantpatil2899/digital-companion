@@ -7,6 +7,9 @@ const { ScreenReader, SCREEN, scrub, whyNotRead, screenKey } = require('../src/m
 const T = require('../src/main/mind/thinker');
 const { Mind } = require('../src/main/mind/mind');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 // Two screens side by side: Claude on the left one, Chrome (GitHub) on the right one.
 const displays = [
   { x: 0, y: 0, width: 1512, height: 982 },
@@ -211,4 +214,24 @@ test('the mind thinks with the view, the screen text and the picture, and saves 
   assert.equal(calls[0].image, 'BASE64');
   assert.ok(!JSON.stringify(m.log.items).includes('qualifications'), 'screen text is not written to his log');
   assert.equal(m.status().looked.chars, 34);
+});
+
+test('attention: a new mind (another character) sees the window you are already on', () => {
+  const c = clock();
+  const a = new Attention(c.now);
+  a.update({ windows, frontApp: 'Claude', displays });
+  c.advance(ATTENTION.settle);
+  assert.equal(a.update({ windows, frontApp: 'Claude', displays }).settled, true);
+  c.advance(10);
+  assert.equal(a.update({ windows, frontApp: 'Claude', displays }).settled, false, 'nothing new');
+  // Switching character: the same window counts as new again once it settles.
+  a.forget();
+  assert.equal(a.update({ windows, frontApp: 'Claude', displays }).attention, null);
+  c.advance(ATTENTION.settle);
+  const v = a.update({ windows, frontApp: 'Claude', displays });
+  assert.equal(v.settled, true);
+  assert.equal(v.attention.app, 'Claude');
+  const main = require('fs').readFileSync(require('path').join(__dirname, '../src/main/main.js'), 'utf8');
+  const start = main.slice(main.indexOf('function startMind'), main.indexOf('mind = new Mind({'));
+  assert.match(start, /attention\.forget\(\)/);
 });

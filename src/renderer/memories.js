@@ -1,6 +1,6 @@
 'use strict';
 
-// What Togepi remembers (src/main/mind/memory.js), with a × to forget each.
+// What he remembers (src/main/mind/memory.js), with a × to forget each.
 
 const $ = (id) => document.getElementById(id);
 

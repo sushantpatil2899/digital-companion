@@ -3,8 +3,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session, systemPreferences, desktopCapturer, clipboard, dialog } = require('electron');
-const { Companion, TUNING } = require('./companion');
+const { execFile } = require('child_process');
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, powerMonitor, shell, session, systemPreferences, desktopCapturer, clipboard, dialog, safeStorage, globalShortcut, protocol } = require('electron');
+const { Companion, TUNING, GAMES } = require('./companion');
 const { ContextTracker } = require('./context');
 const { Settings } = require('./settings');
 const { AppWatcher } = require('./mac/front-app');
@@ -13,31 +14,41 @@ const { px } = require('./px');
 const { toScreen, screenAt } = require('./screens');
 const { BALL } = require('./games/fetch');
 const P = require('./mind/personality');
+const creator = require('./creator');
 const { Mind } = require('./mind/mind');
 const { Engine } = require('./mind/engine');
+const { GeminiEngine, engineChoice, applyEngineEnv, engineChoices } = require('./mind/gemini');
 const { EventLog } = require('./mind/events');
+const { Store, databaseDir } = require('./mind/store');
+const songs = require('./mind/song');
+const commands = require('./mind/commands');
+const hearing = require('./mind/hearing');
+const { weekDiary } = require('./mind/reflect');
 const { SoundLibrary } = require('./mind/sounds');
 const { Memory, pruneEvents } = require('./mind/memory');
 const { Attention } = require('./mind/attention');
 const { Growth } = require('./mind/growth');
 const { ScreenReader, screenKey } = require('./mind/screen');
 const { REST, restReason, restPlan } = require('./mind/rest');
-const { Watching, WATCH, GUESS_QUESTION, GUESS_YES, needsGuess, guessState } = require('./mind/watching');
+const { Watching, WATCH, guessQuestion, GUESS_YES, needsGuess, guessState } = require('./mind/watching');
 const privacy = require('./mind/privacy');
 const { buildReport } = require('./report');
+const { PANES, permissionProblems, parseSigning, signingNote } = require('./permissions');
 const { SWITCHES, welcomeFor } = require('./welcome');
+const characters = require('../characters');
+const names = require('./mind/names');
+const { migrate, characterDir } = require('./migrate');
+const music = require('./mind/music');
+const { run } = require('./mac/run');
 
 const CONTEXT_MS = 2000; // how often he checks on you (idle time, battery, …)
 const SAVE_MS = 60 * 1000; // how often his brain is saved to disk
 
-// Entries for the "Do something…" menu: [activity, label].
+// Entries for the "Do something…" menu: [activity, label]. The character's
+// own activities are in the "Activities" menu.
 const ACTIVITY_MENU = [
-  ['eat', 'Eat an apple'],
-  ['play', 'Play with the ball'],
-  ['flower', 'Smell a flower'],
   ['talk', 'Chatter'],
   ['wave', 'Wave'],
-  ['adventure', 'Go on an adventure'],
   ['jump', 'Jump'],
   ['sit', 'Sit down'],
   ['backView', 'Turn around'],
@@ -47,6 +58,7 @@ const ACTIVITY_MENU = [
 // The character's feet sit at (WIN_W / 2, WIN_H - FOOT_MARGIN) inside it.
 const WIN_W = 220;
 const WIN_H = 256; // tall enough for a sticky note or a two-line question over his head
+// (It grows upward and wider while a long bubble needs the room: winSize().)
 const FOOT_MARGIN = 18;
 const TICK_MS = 1000 / 60;
 // Fetch: the thrown ball gets its own little window so it can fly anywhere.
@@ -94,6 +106,7 @@ const VOICE_EVENTS = {
 let win = null;
 let tray = null;
 let companion = null;
+let character = characters.get(); // the active character (src/characters), from settings
 let timer = null;
 let lastTick = 0;
 let ignoringMouse = null;
@@ -105,7 +118,7 @@ let boardWin = null;
 let boardSide = 1; // which side of him the board is on
 let lastBoardPos = { x: NaN, y: NaN };
 let lastBoardView = '';
-let lastWinPos = { x: NaN, y: NaN };
+let lastWinPos = { x: NaN, y: NaN, w: WIN_W, h: WIN_H };
 let tracker = null;
 let contextTimer = null;
 let saveTimer = null;
@@ -119,6 +132,11 @@ let calendar = null;
 let hiddenForPresenting = false;
 let mind = null;
 let engine = null;
+// A new install: his models wait until you've chosen how he thinks in the
+// welcome window (Gemma would otherwise start loading about 11 GB at once).
+let waitForBrainChoice = false;
+let store = null; // Tiger Data: the shared TimescaleDB database (src/main/mind/store.js)
+let storeTimer = null;
 let mindTimer = null;
 let personality = null;
 let personalityWin = null;
@@ -139,17 +157,26 @@ let restWanted = null; // the latest reason (for the battery hysteresis)
 let restWorking = false; // doing the diary / reflection before resting
 let awakeUntil = 0; // "Try it now" keeps the models awake until then
 let chatWin = null; // the chat window (Phase 8)
+let songWin = null; // the weekly song window (Phase 10)
+let listenWin = null; // hidden: records what you say (Phase 11)
 let chatState = { busy: false, status: '', question: null }; // question: his, while you type your own answer
 let lastBodyClick = 0; // for double-clicking him (opens the chat)
 let engineMB = null; // memory the models use (measured every 10 s)
 let welcomeWin = null;
+let pickerWin = null; // "Pick your companion" (Phase 9)
+let pruneTimer = null;
 const IS_MAC = process.platform === 'darwin';
+// For testing the mind and the other windows without him on screen
+// (TOGEPI_NO_BODY=1 npm start): his window exists and everything runs, it's
+// just never shown. Open things from the tray icon.
+const NO_BODY = !!process.env.TOGEPI_NO_BODY;
 
 // --------------------------------------------------------------- opt-in context (macOS)
 
 function applyWatchApps(on) {
   if (frontApp) frontApp.stop();
   frontApp = null;
+  if (companion) companion.setWorkWindow(null);
   tracker.setApps({ watching: false });
   tracker.setNote('apps', null);
   showAfterPresenting();
@@ -174,6 +201,7 @@ function applyReadCalendar(on) {
   calendar = null;
   tracker.setEvents([]);
   tracker.setNote('calendar', null);
+  tracker.calendarRead = null;
   if (!on || !IS_MAC) return;
   calendar = new CalendarWatcher((r) => {
     if (r.error) {
@@ -182,8 +210,46 @@ function applyReadCalendar(on) {
     }
     tracker.setNote('calendar', null);
     tracker.setEvents(r.events);
+    tracker.calendarRead = Date.now();
   });
   calendar.start();
+}
+
+/** Read the calendar now (opening the menu or the brain view, the Mac waking up), unless it just did. */
+function refreshCalendar(minGapMs) {
+  if (calendar) calendar.refresh(minGapMs);
+}
+
+// --------------------------------------------------------------- permissions and signing
+
+let signing = null; // how this app is signed: { kind, name? } (permissions.js)
+
+/** How the app is signed (macOS, packaged builds): ad hoc builds lose their permissions with every rebuild. */
+function checkSigning() {
+  if (!IS_MAC || !app.isPackaged) return;
+  const bundle = path.resolve(process.execPath, '..', '..', '..');
+  execFile('/usr/bin/codesign', ['-dv', '--verbose=2', bundle], (_err, stdout, stderr) => {
+    signing = parseSigning(`${stdout}\n${stderr}`);
+    tracker.setNote('signing', signingNote(signing));
+  });
+}
+
+/** What's on but not allowed by macOS (the Brain menu shows it). */
+function currentPermissionProblems() {
+  if (!IS_MAC || !settings || !tracker) return [];
+  return permissionProblems({ settings: settings.values, screen: screenPermission(), notes: tracker.notes });
+}
+
+/** "Fix…" in the Brain menu: open the right page of System Settings and say what to do. */
+function fixPermission(problem) {
+  if (problem.kind === 'screen' && screenPermission() === 'not-determined') {
+    // Asking for a picture of the screen makes macOS show its prompt.
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => {});
+    return;
+  }
+  shell.openExternal(PANES[problem.kind]).catch(() => {});
+  const detail = problem.kind === 'screen' ? SCREEN_PERMISSION_NOTE : problem.text;
+  tell('Allow Filo in System Settings', `${detail}${signing && signing.kind === 'adhoc' ? `\n\n${signingNote(signing)}` : ''}`);
 }
 
 // While you present (Keynote / PowerPoint in front) he hides completely.
@@ -196,13 +262,18 @@ function hideForPresenting() {
 function showAfterPresenting() {
   if (!hiddenForPresenting || !win || win.isDestroyed()) return;
   hiddenForPresenting = false;
-  win.showInactive();
+  if (!NO_BODY) win.showInactive();
 }
 
 // --------------------------------------------------------------- memory
 
+/** The active character's own data folder (src/main/migrate.js). */
+function characterData() {
+  return characterDir(app.getPath('userData'), character.id);
+}
+
 function brainFile() {
-  return path.join(app.getPath('userData'), 'brain.json');
+  return path.join(characterData(), 'brain.json');
 }
 
 function loadBrain() {
@@ -230,8 +301,61 @@ function saveBrain() {
 
 // --------------------------------------------------------------- context
 
+// Music you're playing (Phase 9, for Pip's conducting): every 10 s, only
+// when the character has an activity that needs it and app watching is on.
+const MUSIC_SCRIPT = path.join(__dirname, 'mac', 'music.jxa.js').replace('app.asar', 'app.asar.unpacked');
+const musicGuesses = new Map(); // decision model answers per tab
+let musicGuessing = false;
+let musicChecking = false;
+
+async function checkMusic() {
+  const wanted = IS_MAC && settings.get('watchApps') && character.activities.some((a) => a.needs === 'music');
+  if (!wanted || musicChecking) {
+    if (!wanted) tracker.setMusic(null);
+    return;
+  }
+  musicChecking = true;
+  try {
+    let players = {};
+    try {
+      players = JSON.parse(await run('/usr/bin/osascript', ['-l', 'JavaScript', MUSIC_SCRIPT]));
+    } catch {
+      // not allowed to ask (Automation), or neither app is around
+    }
+    let tab = lastApps && lastApps.frontTab;
+    if (tab && privacy.check({ app: lastApps.frontApp, title: tab.title, url: tab.url, private: tab.private }, settings.get('privacyBlock')).blocked) tab = null;
+    const windows = lastApps && lastApps.windows ? lastApps.windows : [];
+    tracker.setMusic(music.musicPlaying({ players, windows, frontTab: tab, guess: musicGuess(tab) }));
+  } finally {
+    musicChecking = false;
+  }
+}
+
+/** The decision model's answer for a tab that might be music, asked once per page; null until then. */
+function musicGuess(tab) {
+  const key = music.needsGuess(tab);
+  if (!key) return null;
+  if (musicGuesses.has(key)) return musicGuesses.get(key);
+  if (!musicGuessing && engine && engine.canDecide) {
+    musicGuessing = true;
+    engine
+      .decide(music.guessState(tab), { music: music.guessQuestion() })
+      .then((ans) => {
+        const p = ans && ans.music && ans.music.probabilities;
+        musicGuesses.set(key, { music: !!p && Number(p.A) >= music.GUESS_YES });
+        if (musicGuesses.size > 300) musicGuesses.delete(musicGuesses.keys().next().value);
+      })
+      .catch(() => {})
+      .finally(() => {
+        musicGuessing = false;
+      });
+  }
+  return null;
+}
+
 function startContext() {
   tracker = new ContextTracker();
+  setInterval(() => checkMusic().catch(() => {}), 10 * 1000);
   applyWatchApps(settings.get('watchApps'));
   applyReadCalendar(settings.get('readCalendar'));
   const refresh = () => {
@@ -245,7 +369,10 @@ function startContext() {
     companion.setContext(tracker.update(idle));
   };
   powerMonitor.on('lock-screen', () => tracker.setLocked(true));
-  powerMonitor.on('unlock-screen', () => tracker.setLocked(false));
+  powerMonitor.on('unlock-screen', () => {
+    tracker.setLocked(false);
+    refreshCalendar(0);
+  });
   powerMonitor.on('suspend', () => {
     tracker.setSuspended(true);
     suspendedAt = Date.now();
@@ -256,6 +383,7 @@ function startContext() {
     // He "slept" while the Mac did.
     if (suspendedAt && companion) companion.catchUp((Date.now() - suspendedAt) / 1000);
     suspendedAt = null;
+    refreshCalendar(0);
   });
   powerMonitor.on('on-battery', () => tracker.setOnBattery(true));
   powerMonitor.on('on-ac', () => tracker.setOnBattery(false));
@@ -279,6 +407,7 @@ function followYou(w) {
 }
 
 function showBrain() {
+  refreshCalendar();
   if (brainWin && !brainWin.isDestroyed()) {
     brainWin.show();
     brainWin.focus();
@@ -287,7 +416,7 @@ function showBrain() {
   brainWin = new BrowserWindow({
     width: 380,
     height: 560,
-    title: "Togepi's brain",
+    title: `${character.name}'s brain`,
     resizable: true,
     alwaysOnTop: true,
     webPreferences: {
@@ -298,9 +427,9 @@ function showBrain() {
     },
   });
   followYou(brainWin);
-  brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'));
+  brainWin.loadFile(path.join(__dirname, '..', 'renderer', 'brain.html'), { query: { name: character.name } });
   const send = () => {
-    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? { ...mind.status(), rest, memoryMB: engine && engine.running ? engineMB : null, watchCheck: watcher.check } : null });
+    if (brainWin && !brainWin.isDestroyed() && companion) brainWin.webContents.send('brain', { ...companion.brainSnapshot(), mind: mind ? { ...mind.status(), rest, memoryMB: engine && engine.running ? engineMB : null, watchCheck: watcher.check, watchingApps: !!settings.get('watchApps'), database: store ? store.status(character.id) : null, hearing: hearStatus().text } : null });
   };
   brainWin.webContents.on('did-finish-load', send);
   brainTimer = setInterval(send, 1000);
@@ -323,10 +452,15 @@ function boundsForPoint(point) {
 
 function createWindow() {
   settings = new Settings(app.getPath('userData'));
+  applyEngineEnv(settings);
+  waitForBrainChoice = !settings.get('welcomeSeen') && !process.env.MIND_ENGINE;
+  character = characters.get(settings.get('character'));
+  names.setNames({ user: settings.get('userName'), pronoun: settings.get('userPronoun'), character: character.name });
   const start = screen.getCursorScreenPoint();
   const bounds = boundsForPoint(start);
 
   companion = new Companion({
+    character,
     bounds,
     halfWidth: 56,
     height: 142,
@@ -373,14 +507,17 @@ function createWindow() {
   if (process.platform === 'darwin') {
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { character: character.id } });
   win.once('ready-to-show', () => {
-    win.showInactive();
+    if (!NO_BODY) win.showInactive();
     startLoop();
     startContext();
+    applyVoice(settings.get('voiceCommands'));
+    checkSigning();
     startMind();
-    // First run: what he can do; after an update: what's new (once).
-    setTimeout(() => showWelcome(false), 2500);
+    // First run: what he can do; after an update: what's new (once). Also
+    // when he doesn't know your name or pronouns yet.
+    setTimeout(() => showWelcome(!settings.get('userName') || !names.PRONOUNS[settings.get('userPronoun')]), 2500);
   });
   win.on('closed', () => {
     win = null;
@@ -425,7 +562,7 @@ function overlayWindow(width, height, preload) {
 
 function createBallWindow() {
   ballWin = overlayWindow(BALL_WIN_W, BALL_WIN_H, 'game-preload.js');
-  ballWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'ball.html'));
+  ballWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'ball.html'), { query: { character: character.id } });
   ballWin.on('closed', () => {
     ballWin = null;
   });
@@ -481,12 +618,12 @@ function tickOnce() {
   // (He works out which monitor he's on himself, from the display list.)
   companion.update(dt, cursor);
 
-  const wx = px(companion.x - WIN_W / 2);
-  const wy = px(companion.y - (WIN_H - FOOT_MARGIN));
-  if (wx !== lastWinPos.x || wy !== lastWinPos.y) {
-    win.setPosition(wx, wy);
-    lastWinPos = { x: wx, y: wy };
-  }
+  const { w: ww, h: wh } = winSize();
+  const wx = px(companion.x - ww / 2);
+  const wy = px(companion.y - (wh - FOOT_MARGIN));
+  if (ww !== lastWinPos.w || wh !== lastWinPos.h) win.setBounds({ x: wx, y: wy, width: ww, height: wh });
+  else if (wx !== lastWinPos.x || wy !== lastWinPos.y) win.setPosition(wx, wy);
+  lastWinPos = { x: wx, y: wy, w: ww, h: wh };
 
   updateClickThrough(cursor);
   updateBallWindow(cursor);
@@ -505,6 +642,14 @@ function tickOnce() {
     // Cursor relative to his feet, so the eyes can follow it.
     cursor: { x: cursor.x - companion.x, y: cursor.y - companion.y },
   });
+}
+
+// His window: the usual size, or bigger while the bubble over his head needs
+// the room (it grows upward and to both sides; his feet stay where they are).
+function winSize() {
+  const b = companion.bubble;
+  if (!b) return { w: WIN_W, h: WIN_H };
+  return { w: Math.max(WIN_W, 2 * Math.ceil(b.halfWidth + 6)), h: Math.max(WIN_H, Math.ceil(b.top + FOOT_MARGIN + 6)) };
 }
 
 // Let clicks pass through the transparent parts of the window: only the
@@ -579,7 +724,7 @@ function openBoard() {
   lastBoardPos = { x: NaN, y: NaN };
   lastBoardView = '';
   boardWin = overlayWindow(BOARD_W, BOARD_H, 'game-preload.js');
-  boardWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'board.html'));
+  boardWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'board.html'), { query: { name: character.name, character: character.id } });
   boardWin.webContents.on('did-finish-load', () => {
     lastBoardView = '';
   });
@@ -595,6 +740,11 @@ function closeBoard() {
 }
 
 // --------------------------------------------------------------- input
+
+// The renderer measured the bubble over his head (it sizes to its text).
+ipcMain.on('bubble', (_e, box) => {
+  if (companion) companion.setBubble(box);
+});
 
 ipcMain.on('press', () => {
   const p = screen.getCursorScreenPoint();
@@ -632,9 +782,17 @@ ipcMain.on('release', () => {
     // away when clicked; anywhere else is a pat.
     const part = companion.hitPart(at);
     const link = part === 'join' ? companion.meetingLink() : null;
-    if (part === 'speech') {
+    if (part === 'listening') {
+      // His 👂 bubble: nothing to do (he's listening to you).
+    } else if (part === 'speech') {
+      // "I made us a song!": the song window opens and it plays.
+      const song = pendingSong && companion.speech && companion.speech.text === pendingSong.text ? pendingSong.id : null;
       companion.dismissSpeech();
       if (mind) mind.reacted('clicked');
+      if (song) {
+        pendingSong = null;
+        showSong(song, true);
+      }
     } else if (link) {
       companion.acknowledgeReminder();
       shell.openExternal(link).catch(() => {});
@@ -678,7 +836,9 @@ ipcMain.on('battery', (_e, b) => {
 
 ipcMain.on('context-menu', () => {
   press = null;
-  buildMenu().popup({ window: win });
+  // He holds still while the menu is open, so it doesn't move with his window.
+  if (companion) companion.holdForMenu(true);
+  buildMenu().popup({ window: win, callback: () => companion && companion.holdForMenu(false) });
 });
 
 ipcMain.on('tray-icon', (_e, dataUrl) => {
@@ -686,7 +846,7 @@ ipcMain.on('tray-icon', (_e, dataUrl) => {
   let image = nativeImage.createFromDataURL(dataUrl);
   image = image.resize({ width: process.platform === 'darwin' ? 18 : 24 });
   tray = new Tray(image);
-  tray.setToolTip('Togepi');
+  tray.setToolTip(character.name);
   if (process.platform === 'linux') {
     // Most Linux trays only support a fixed context menu, not click events.
     tray.setContextMenu(buildMenu());
@@ -725,6 +885,29 @@ function callHere() {
   companion.enter('fall');
 }
 
+/**
+ * A Brain menu switch. Ticked means you switched it on; if macOS hasn't
+ * allowed it (or it isn't working), it says so and a line under it opens
+ * System Settings.
+ */
+function permissionSwitch(problems, key, label, apply) {
+  const problem = problems.find((p) => p.key === key);
+  const items = [
+    {
+      label: problem ? `${label} (not allowed by macOS)` : label,
+      type: 'checkbox',
+      enabled: IS_MAC,
+      checked: !!(settings && settings.get(key)),
+      click: (item) => {
+        apply(item.checked);
+        refreshTrayMenu();
+      },
+    },
+  ];
+  if (problem) items.push({ label: '    ⚠ Fix in System Settings…', click: () => fixPermission(problem) });
+  return items;
+}
+
 // "Stay put (10 min)", or "Stay put (7 min left)" while it's on.
 function stayPutLabel() {
   if (companion && companion.paused) {
@@ -739,19 +922,27 @@ function refreshTrayMenu() {
 }
 
 function buildMenu() {
+  refreshCalendar(); // so "Next event" in the brain view is fresh
+  const problems = currentPermissionProblems();
   const sleeping = companion && companion.state === 'sleep';
+  const doIt = (name) => () => {
+    companion.doActivity(name);
+    refreshTrayMenu();
+  };
+  const grounded = companion ? companion.isGrounded() : false;
   const items = [
     { label: 'Come here', click: callHere },
     {
+      label: 'Activities',
+      // Night-only ones (Mori's fireflies) only at night.
+      submenu: character.activities.map((a) => {
+        const later = notYet(a);
+        return { label: later ? `${a.menu} (at night)` : a.menu, enabled: grounded && !later, click: doIt(a.id) };
+      }),
+    },
+    {
       label: 'Do something…',
-      submenu: ACTIVITY_MENU.map(([name, label]) => ({
-        label,
-        enabled: companion ? companion.isGrounded() : false,
-        click: () => {
-          companion.doActivity(name);
-          refreshTrayMenu();
-        },
-      })),
+      submenu: ACTIVITY_MENU.map(([name, label]) => ({ label, enabled: grounded, click: doIt(name) })),
     },
     { label: 'Play', submenu: playMenu() },
     {
@@ -773,7 +964,15 @@ function buildMenu() {
       },
     },
   ];
-  items.push({ label: 'Chat with Togepi…', click: () => showChat() });
+  items.push({ label: `Chat with ${character.name}…`, click: () => showChat() });
+  items.push({
+    label: 'Character',
+    submenu: [
+      ...characters.list().map((c) => ({ label: c.name, type: 'radio', checked: c.id === character.id, click: () => switchCharacter(c.id) })),
+      { type: 'separator' },
+      { label: 'Pick your companion…', click: showPicker },
+    ],
+  });
   items.push({ label: 'Remind me…', click: showNotes });
   items.push({ label: 'Wellbeing', submenu: wellbeingMenu() });
   items.push({ label: 'Mind', submenu: mindMenu() });
@@ -783,38 +982,15 @@ function buildMenu() {
     submenu: [
       { label: 'Show his brain…', click: showBrain },
       { type: 'separator' },
-      {
-        label: 'Notice which app I’m using',
-        type: 'checkbox',
-        enabled: IS_MAC,
-        checked: !!(settings && settings.get('watchApps')),
-        click: (item) => {
-          settings.set('watchApps', item.checked);
-          applyWatchApps(item.checked);
-          refreshTrayMenu();
-        },
-      },
-      {
-        label: 'Let him read my screen',
-        type: 'checkbox',
-        enabled: IS_MAC,
-        checked: !!(settings && settings.get('readScreen')),
-        click: (item) => {
-          applyReadScreen(item.checked);
-          refreshTrayMenu();
-        },
-      },
-      {
-        label: 'Read my calendar',
-        type: 'checkbox',
-        enabled: IS_MAC,
-        checked: !!(settings && settings.get('readCalendar')),
-        click: (item) => {
-          settings.set('readCalendar', item.checked);
-          applyReadCalendar(item.checked);
-          refreshTrayMenu();
-        },
-      },
+      ...permissionSwitch(problems, 'watchApps', 'Notice which app I’m using', (on) => {
+        settings.set('watchApps', on);
+        applyWatchApps(on);
+      }),
+      ...permissionSwitch(problems, 'readScreen', 'Let him read my screen', (on) => applyReadScreen(on)),
+      ...permissionSwitch(problems, 'readCalendar', 'Read my calendar', (on) => {
+        settings.set('readCalendar', on);
+        applyReadCalendar(on);
+      }),
     ],
   });
   items.push({ label: 'Welcome and what’s new…', click: () => showWelcome(true) });
@@ -846,6 +1022,15 @@ function mindMenu() {
       },
     },
     {
+      label: 'Think with',
+      submenu: engineChoices({ hasKey: !!geminiKey() }).map(([id, label]) => ({
+        label,
+        type: 'radio',
+        checked: engineChoice(settings) === id,
+        click: () => switchEngine(id),
+      })),
+    },
+    {
       label: 'Chirp when he talks',
       type: 'checkbox',
       checked: !!(settings && settings.get('sounds')),
@@ -869,6 +1054,36 @@ function mindMenu() {
     { type: 'separator' },
     { label: 'Personality…', click: showPersonality },
     { label: 'Memories…', click: showMemories },
+    { label: 'Our songs…', click: () => showSong() },
+    { type: 'separator' },
+    {
+      label: `Talk to me (${(settings && settings.get('listenShortcut')) || 'Alt+Space'})`,
+      type: 'checkbox',
+      checked: !!(settings && settings.get('voiceCommands')),
+      click: (item) => {
+        settings.set('voiceCommands', item.checked);
+        applyVoice(item.checked);
+        sendChat();
+        refreshTrayMenu();
+      },
+    },
+    {
+      label: 'Listen with',
+      submenu: [
+        ['apple', 'Apple, on this Mac (nothing leaves it)'],
+        ['elevenlabs', 'ElevenLabs Scribe (online: your voice goes to ElevenLabs)'],
+      ].map(([id, label]) => ({
+        label,
+        type: 'radio',
+        checked: (settings && settings.get('speechEngine') === 'elevenlabs' ? 'elevenlabs' : 'apple') === id,
+        click: () => {
+          settings.set('speechEngine', id);
+          applyVoice(settings.get('voiceCommands'));
+          refreshTrayMenu();
+        },
+      })),
+    },
+    { type: 'separator' },
     { label: 'Open sounds folder…', click: () => sounds && shell.openPath(sounds.dir) },
     { label: 'Privacy blocklist… (settings.json)', click: () => settings && shell.openPath(settings.file) },
     { label: 'Show his memory folder…', click: () => shell.openPath(mindDir()) },
@@ -885,6 +1100,7 @@ function tryMenu() {
     { label: 'Write today’s diary now', enabled: on, click: () => tryNow('diary') },
     { label: 'Count today towards our relationship now', enabled: !!mind && !!growth, click: () => tryNow('days') },
     { label: 'Reflect on this week now', enabled: on && !!growth, click: () => tryNow('reflect') },
+    { label: 'Make this week’s song now', enabled: on && !songState.busy, click: () => makeSong({ manual: true }) },
   ];
 }
 
@@ -996,7 +1212,7 @@ ipcMain.on('note-close', () => {
 // --------------------------------------------------------------- mind (src/main/mind)
 
 function mindDir() {
-  return path.join(app.getPath('userData'), 'mind');
+  return path.join(characterData(), 'mind');
 }
 
 function personalityFile() {
@@ -1007,16 +1223,30 @@ function eventsFile() {
   return path.join(mindDir(), 'events.jsonl');
 }
 
+const WATCHED_MIND_FILES = ['about-you.md', 'about-me.md'];
+
+/** Stop the current character's mind (switching characters); his models keep running. */
+function stopMind() {
+  if (mind) mind.setEnabled(false);
+  clearInterval(mindTimer);
+  clearInterval(pruneTimer);
+  for (const f of WATCHED_MIND_FILES) fs.unwatchFile(path.join(mindDir(), f));
+  mind = null;
+  memory = null;
+  growth = null;
+}
+
 function startMind() {
-  personality = P.load(personalityFile());
-  sounds = new SoundLibrary(path.join(app.getPath('userData'), 'sounds'));
+  const id = character.id;
+  personality = P.load(personalityFile(), character);
+  sounds = new SoundLibrary(path.join(characterData(), 'sounds'));
   memory = new Memory(mindDir());
   // The raw event log is kept 90 days (his diary keeps the gist); checked daily.
   const prune = () => pruneEvents(eventsFile());
   prune();
-  setInterval(prune, 24 * 3600 * 1000);
+  pruneTimer = setInterval(prune, 24 * 3600 * 1000);
   // You can edit his memory files by hand: pick up the changes.
-  for (const f of ['about-sushant.md', 'about-me.md']) {
+  for (const f of WATCHED_MIND_FILES) {
     fs.watchFile(path.join(mindDir(), f), { interval: 3000 }, () => {
       memory.load();
       sendMemories();
@@ -1024,6 +1254,9 @@ function startMind() {
   }
   growth = new Growth(mindDir());
   companion.temperament = P.temperament(personality);
+  // His mind starts with nothing seen: the window you're on counts as new
+  // (otherwise after switching character he'd see nothing until you moved).
+  attention.forget();
   mind = new Mind({
     personality,
     memory,
@@ -1038,11 +1271,12 @@ function startMind() {
     eventsFile: eventsFile(),
     chatFile: path.join(mindDir(), 'chat.json'),
     ownAnswersFile: path.join(mindDir(), 'own-answers.json'),
-    log: new EventLog({ file: eventsFile() }),
+    log: new EventLog({ file: eventsFile(), onAdd: (e) => store && store.addEvent(id, e) }),
     getSelf: () => ({
       band: companion.moodBand(),
       needs: companion.needs,
       state: companion.state,
+      doing: (companion.own(companion.state) || companion.ownState(companion.state) || {}).doing || null,
       hour: companion.context.hour,
       quiet: !!companion.context.quiet,
       away: !!companion.context.userAway,
@@ -1050,11 +1284,21 @@ function startMind() {
       asleep: companion.state === 'sleep',
       busy: !!companion.board(),
       watching: watcher.current ? watcher.current.name : null,
+      studying: companion.studying,
+      calendar: tracker ? tracker.calendar.events : [],
     }),
-    onSpeak: ({ text, action }) => companion.say(text, action),
-    onAsk: ({ text, answers, action }) => companion.ask(text, answers, action),
+    onSpeak: ({ text, action, badge }) => companion.say(text, action, { badge }),
+    onAsk: ({ text, answers, action, badge }) => companion.ask(text, answers, action, { badge }),
     getBlocklist: () => settings.get('privacyBlock'),
+    // Phase 10: the memories closest in meaning, from the database.
+    meaning: async (query) => {
+      if (!store || !store.vectors || !engine || !engine.canEmbed || !store.memoryCount[id]) return null;
+      const [v] = await engine.embed([plainForMeaning(query.slice(0, 1500))], { query: true });
+      const near = await store.nearest(id, v, 30);
+      return near.length ? new Map(near.map((n) => [n.text, n.similarity])) : null;
+    },
   });
+  syncMeaning();
   let ticks = 0;
   mindTimer = setInterval(() => {
     mind.tick();
@@ -1062,6 +1306,10 @@ function startMind() {
     updateWatching();
     updateRest();
     if (++ticks % 10 === 0 && engine && engine.running) engine.memoryMB().then((mb) => (engineMB = mb));
+    // Never listening in a meeting or while you're away (Phase 11).
+    if (hear.on && (companion.context.quiet || companion.context.userAway)) stopListening(false);
+    // Fingerprint his memories as soon as the models are awake (then every minute).
+    if (ticks % 5 === 0 && store && store.vectors && store.memoryCount[id] === undefined) syncMeaning();
   }, 1000);
   if (IS_MAC) {
     reader = new ScreenReader(require('./mac/screen-capture'), {
@@ -1086,8 +1334,8 @@ function screenPermission() {
 // app: a Screen Recording switch that's already on belongs to the old build.
 const SCREEN_PERMISSION_NOTE =
   'macOS hasn’t given him Screen Recording. Open System Settings → Privacy & Security → Screen & System Audio Recording. ' +
-  'If Togepi is already listed (even switched on), it’s from an older build: select it, remove it with −, then quit and reopen him and allow it when asked. ' +
-  'Otherwise switch Togepi on, then quit and reopen him.';
+  'If Filo is already listed (even switched on), it’s from an older build: select it, remove it with −, then quit and reopen him and allow it when asked. ' +
+  'Otherwise switch Filo on, then quit and reopen him.';
 
 /** He may look at your windows right now. */
 function canReadScreen() {
@@ -1109,6 +1357,8 @@ async function updateAttention() {
     const displays = screen.getAllDisplays().map((d) => d.bounds);
     const v = attention.update({ windows: lastApps.windows || [], frontApp: lastApps.frontApp, frontTab: lastApps.frontTab, displays });
     const a = v.attention;
+    // Where he goes when he's lonely (Phase 9, step 1b).
+    companion.setWorkWindow(a);
     if (!a) return;
     const view = { typing: v.typing, cursorOn: v.cursorOn, others: v.others, via: v.via };
     const reading = canReadScreen();
@@ -1156,6 +1406,31 @@ function updateWatching() {
   } else if (w && w.screen && before && before.screen !== w.screen) {
     companion.watchOn(w.screen - 1);
   }
+  if (w && event !== 'start') glanceAtShow(w);
+}
+
+// While you watch (Phase 9, step 1b): every 2 minutes he glances at the
+// screen (a picture of that window, for his vision model) and his body
+// reacts to the moment. Needs "Let him read my screen" and his models
+// running (they rest on battery below 20%); skipped while he's busy.
+let lastGlanceAt = 0;
+let glancing = false;
+
+function glanceAtShow(w) {
+  if (glancing || rest || !engine || !engine.ready || !canReadScreen() || !reader || !attention.current) return;
+  if (Date.now() - Math.max(lastGlanceAt, w.since) < WATCH.glance * 1000) return;
+  glancing = true;
+  lastGlanceAt = Date.now();
+  (async () => {
+    const r = await reader.look({ attention: attention.current }, { force: true, picture: true });
+    if (!watcher.current || !r || r.skipped) return;
+    const g = await mind.glance(r, watcher.current);
+    if (g && watcher.current) companion.watchReact(g.mood);
+  })()
+    .catch((e) => console.error('Glance:', e.message))
+    .finally(() => {
+      glancing = false;
+    });
 }
 
 /**
@@ -1170,7 +1445,7 @@ function watchGuess(a) {
   if (!watchGuessing && engine && engine.canDecide) {
     watchGuessing = true;
     engine
-      .decide(guessState(a), { watching: GUESS_QUESTION })
+      .decide(guessState(a), { watching: guessQuestion() })
       .then((ans) => {
         const p = ans && ans.watching && ans.watching.probabilities;
         watchGuesses.set(key, { video: !!p && Number(p.A) >= GUESS_YES });
@@ -1209,7 +1484,7 @@ function showChat() {
   chatWin = new BrowserWindow({
     width: 380,
     height: 540,
-    title: 'Chat with Togepi',
+    title: `Chat with ${character.name}`,
     resizable: true,
     alwaysOnTop: true,
     webPreferences: {
@@ -1220,7 +1495,7 @@ function showChat() {
     },
   });
   followYou(chatWin);
-  chatWin.loadFile(path.join(__dirname, '..', 'renderer', 'chat.html'));
+  chatWin.loadFile(path.join(__dirname, '..', 'renderer', 'chat.html'), { query: { name: character.name } });
   chatWin.webContents.on('did-finish-load', sendChat);
   chatWin.on('closed', () => {
     chatWin = null;
@@ -1240,6 +1515,8 @@ function sendChat() {
     question: chatState.question,
     busy: chatState.busy,
     status: chatState.status,
+    canListen: !!settings.get('voiceCommands'),
+    listening: hear.on,
   });
 }
 
@@ -1263,7 +1540,14 @@ async function voiceReady(ms = 90 * 1000) {
   return !!(engine && engine.ready);
 }
 
-ipcMain.on('chat-send', async (_e, text) => {
+ipcMain.on('chat-send', (_e, text) => chatSend(text));
+
+/**
+ * A chat message, typed or said out loud (Phase 11): he answers in the chat,
+ * and in his bubble when `bubble` (typed messages; a spoken one opens the chat
+ * and is answered only there, Sushant 2026-10-25).
+ */
+async function chatSend(text, { bubble = true } = {}) {
   if (typeof text !== 'string' || !text.trim() || chatState.busy) return;
   if (!mind || !engine || !settings.get('mind')) {
     chatState.status = 'His mind is off: turn on Mind → Think and talk for himself.';
@@ -1285,7 +1569,7 @@ ipcMain.on('chat-send', async (_e, text) => {
       return;
     }
   }
-  chatState.status = 'Togepi is thinking…';
+  chatState.status = `${character.name} is thinking…`;
   sendChat();
   // (Your message shows right away.)
   const reply = mind.chat(text, { answering });
@@ -1299,8 +1583,8 @@ ipcMain.on('chat-send', async (_e, text) => {
   chatState.status = r.error ? `He couldn't answer: ${r.error}` : '';
   sendChat();
   // His reply in his bubble too (with a chirp), except in meetings and while you watch something.
-  if (!r.error && !companion.context.quiet && !watcher.current) companion.say(r.reply, r.action);
-});
+  if (bubble && !r.error && !companion.context.quiet && !watcher.current) companion.say(r.reply, r.action);
+}
 
 /** Turn "Let him read my screen" on or off (it needs app watching and Screen Recording permission). */
 function applyReadScreen(on) {
@@ -1322,8 +1606,12 @@ function applyReadScreen(on) {
 function applyMind(on) {
   if (!mind) return;
   mind.setEnabled(on);
+  if (on && engine) mind.engine = engine; // a new character's mind uses the models already running
+  if (on && !engine && waitForBrainChoice) return; // he uses his built-in lines meanwhile
   if (on && !engine) {
-    engine = new Engine({ pidFile: path.join(mindDir(), 'engine.pids') });
+    // mindEngine (Mind → Think with): 'local' models, or his voice on Gemini (gemini.js).
+    const pidFile = path.join(mindDir(), 'engine.pids');
+    engine = engineChoice(settings) === 'gemini' ? GeminiEngine.fromSettings(settings, { pidFile, apiKey: geminiKey() }) : new Engine({ pidFile });
     mind.engine = engine;
     engine
       .start()
@@ -1335,6 +1623,27 @@ function applyMind(on) {
     mind.engine = null;
     rest = null;
   }
+}
+
+/** Mind → Think with (and the welcome window): stop the models he uses now and start the other kind. */
+function switchEngine(id) {
+  if (!settings || !['local', 'gemini'].includes(id)) return;
+  const changed = engineChoice(settings) !== id;
+  if (changed) settings.set('mindEngine', id);
+  if (changed || waitForBrainChoice) restartEngine();
+}
+
+/** Stop his models and start them again as settings say (another engine, a new Gemini key, your choice made). */
+function restartEngine() {
+  waitForBrainChoice = false;
+  if (engine) {
+    engine.stop();
+    engine = null;
+    if (mind) mind.engine = null;
+    rest = null;
+  }
+  applyMind(settings.get('mind'));
+  refreshTrayMenu();
 }
 
 // --------------------------------------------------------------- resting the models (Phase 5)
@@ -1444,8 +1753,17 @@ async function copyReport() {
     engine: engine ? { state: engine.status(), ready: engine.ready, canDecide: engine.canDecide, files: engine.files, memoryMB } : null,
     rest,
     mind: mind ? mind.status() : null,
+    database: store ? store.status(character.id) : null,
+    hearing: hearStatus().text,
+    song: { weekly: !!settings.get('weeklySong'), key: !!elevenKey(), songs: songs.listSongs(songsDir()).length, last: songState.error ? songState.status : null },
     context: companion.context,
-    permissions: { screen: IS_MAC ? screenPermission() : 'n/a', apps: tracker.notes.apps, calendar: tracker.notes.calendar },
+    permissions: {
+      screen: IS_MAC ? screenPermission() : 'n/a',
+      apps: tracker.notes.apps,
+      calendar: tracker.notes.calendar,
+      calendarRead: tracker.calendarRead || null,
+      signing: signing ? signing.kind : IS_MAC && app.isPackaged ? 'unknown' : 'not packaged',
+    },
     counts: memory
       ? { facts: memory.facts.length, opinions: memory.opinions.length, diaryDays: Object.keys(memory.journal).length, growthWeeks: growth ? growth.history().length : 0, locked: ((personality && personality.locked) || []).length }
       : {},
@@ -1461,14 +1779,21 @@ async function copyReport() {
 
 function welcomeData(info) {
   const loginOk = process.platform === 'darwin' || process.platform === 'win32';
+  const named = (w) => ({ ...w, title: names.fill(w.title), ...(w.text ? { text: names.fill(w.text) } : {}), ...(w.items ? { items: w.items.map(names.fill) } : {}) });
   return {
     ...info,
+    sections: info.sections.map(named),
+    whatsNew: info.whatsNew.map(named),
+    userName: settings.get('userName'),
+    userPronoun: settings.get('userPronoun'),
+    // How he thinks: Gemma on this Mac or Gemini online, and whether a Gemini key is saved.
+    brain: { engine: engineChoice(settings), hasKey: !!geminiKey(), keyFromEnv: !!geminiEnvKey(), memGB: Math.round(os.totalmem() / 2 ** 30) },
     switches: SWITCHES.map(([key, label, help]) => ({
       key,
       label,
       help,
       on: key === 'openAtLogin' ? loginOk && app.getLoginItemSettings().openAtLogin : !!settings.get(key),
-      enabled: key === 'openAtLogin' ? loginOk : IS_MAC,
+      enabled: key === 'openAtLogin' ? loginOk : key === 'weeklySong' || key === 'voiceCommands' ? true : IS_MAC,
     })),
   };
 }
@@ -1485,7 +1810,7 @@ function showWelcome(manual = false) {
   welcomeWin = new BrowserWindow({
     width: 460,
     height: 640,
-    title: 'Welcome to Togepi',
+    title: 'Welcome to Filo',
     resizable: true,
     alwaysOnTop: true,
     minimizable: false,
@@ -1498,12 +1823,148 @@ function showWelcome(manual = false) {
   });
   followYou(welcomeWin);
   welcomeWin.info = info;
-  welcomeWin.loadFile(path.join(__dirname, '..', 'renderer', 'welcome.html'));
+  welcomeWin.loadFile(path.join(__dirname, '..', 'renderer', 'welcome.html'), { query: { name: character.name } });
   welcomeWin.webContents.on('did-finish-load', sendWelcome);
   welcomeWin.on('closed', () => {
     settings.set('welcomeSeen', info.version);
     welcomeWin = null;
+    // A new install: start his models now, as you chose (Gemma if you didn't).
+    if (waitForBrainChoice) restartEngine();
+    // A new install: now pick your companion.
+    if (!settings.get('characterChosen')) showPicker();
   });
+}
+
+// --------------------------------------------------------------- characters (Phase 9)
+
+/** "Pick your companion": on a new install after the welcome, and from the menu. */
+function showPicker() {
+  if (pickerWin && !pickerWin.isDestroyed()) {
+    pickerWin.show();
+    pickerWin.focus();
+    return;
+  }
+  pickerWin = new BrowserWindow({
+    width: Math.max(480, 60 + characters.list().length * 214),
+    height: 500,
+    title: 'Pick your companion',
+    resizable: true,
+    alwaysOnTop: true,
+    minimizable: false,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'picker-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  followYou(pickerWin);
+  pickerWin.loadFile(path.join(__dirname, '..', 'renderer', 'picker.html'));
+  pickerWin.webContents.on('did-finish-load', () => {
+    if (!pickerWin || pickerWin.isDestroyed()) return;
+    pickerWin.webContents.send('picker', {
+      characters: characters.list().map((c) => ({ id: c.id, name: c.name, concept: c.concept, self: c.self })),
+      current: character.id,
+    });
+  });
+  pickerWin.on('closed', () => {
+    pickerWin = null;
+  });
+}
+
+// "More info" on a character in the picker.
+ipcMain.on('picker-info', (_e, id) => showCreator(id));
+
+// ---------------------------------------------------------- character creator
+
+// The character creator (src/creator/, served by src/main/creator.js): who
+// a character is, its scenes, and the real simulation to play with. Opened
+// from "More info" in the picker, or from the command line while making a
+// character: `npx electron . --creator=<id>` (see CREATOR_ARG).
+const CREATOR_SCHEME = 'filo-creator';
+protocol.registerSchemesAsPrivileged([{ scheme: CREATOR_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+let creatorWin = null;
+
+/** Answer the creator page's requests from the app's own files. */
+function serveCreator() {
+  protocol.handle(CREATOR_SCHEME, (req) => {
+    let r;
+    try {
+      const p = decodeURIComponent(new URL(req.url).pathname);
+      // The app doesn't reload on file changes or make new items (the browser one does).
+      if (p === '/creator/env.json') r = { status: 200, type: creator.TYPES['.json'], body: JSON.stringify({ host: 'app', live: false, makesItems: false }) };
+      else r = creator.serve(p) || { status: 404, type: 'text/plain', body: 'Not found' };
+    } catch (e) {
+      console.error('Character creator:', e);
+      r = { status: 500, type: 'text/plain', body: String(e && e.stack ? e.stack : e) };
+    }
+    return new Response(r.body, { status: r.status, headers: { 'Content-Type': r.type, 'Cache-Control': 'no-store' } });
+  });
+}
+
+/** The creator on character `id` (the current one if none); one window, reused. */
+function showCreator(id) {
+  const url = `${CREATOR_SCHEME}://app/?character=${encodeURIComponent(id || character.id)}`;
+  if (creatorWin && !creatorWin.isDestroyed()) {
+    creatorWin.loadURL(url);
+    creatorWin.show();
+    creatorWin.focus();
+    return;
+  }
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  creatorWin = new BrowserWindow({
+    width: Math.min(1320, area.width - 40),
+    height: Math.min(880, area.height - 40),
+    title: 'Character creator',
+    minimizable: false,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  followYou(creatorWin);
+  creatorWin.loadURL(url);
+  creatorWin.on('closed', () => {
+    creatorWin = null;
+  });
+}
+
+ipcMain.on('picker-pick', (_e, id) => {
+  settings.set('characterChosen', true);
+  switchCharacter(id);
+  if (pickerWin && !pickerWin.isDestroyed()) pickerWin.close();
+});
+
+/**
+ * Another character takes his place on your screen, with its own mind,
+ * memories and needs (its folder in your data); your reminders and settings
+ * stay. The models keep running. It appears in a puff.
+ */
+function switchCharacter(id) {
+  const next = characters.get(id);
+  if (!companion || next.id === character.id) return;
+  saveBrain();
+  stopMind();
+  for (const w of [brainWin, personalityWin, memoriesWin, chatWin, songWin]) if (w && !w.isDestroyed()) w.close();
+  pendingSong = null;
+  stopListening(false);
+  character = next;
+  settings.set('character', next.id);
+  names.setNames({ character: next.name });
+  let saved = null;
+  let elapsed = 0;
+  try {
+    saved = JSON.parse(fs.readFileSync(brainFile(), 'utf8'));
+    elapsed = Math.max(0, (Date.now() - (saved.savedAt || Date.now())) / 1000);
+  } catch {
+    // never been on your screen before: fresh
+  }
+  companion.setCharacter(next, saved, elapsed);
+  if (tray) tray.setToolTip(next.name);
+  if (win && !win.isDestroyed()) {
+    win.webContents.once('did-finish-load', () => companion.emit('puff'));
+    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { character: next.id } });
+  }
+  if (ballWin && !ballWin.isDestroyed()) ballWin.loadFile(path.join(__dirname, '..', 'renderer', 'games', 'ball.html'), { query: { character: next.id } });
+  startMind();
+  refreshTrayMenu();
 }
 
 function sendWelcome() {
@@ -1520,6 +1981,12 @@ ipcMain.on('welcome-set', (_e, key, on) => {
   } else if (key === 'readCalendar') {
     settings.set('readCalendar', on);
     applyReadCalendar(on);
+  } else if (key === 'voiceCommands') {
+    settings.set('voiceCommands', on);
+    applyVoice(on);
+  } else if (key === 'weeklySong') {
+    settings.set('weeklySong', on);
+    if (on && !elevenKey()) showSong();
   } else if (key === 'openAtLogin') {
     if (process.platform === 'darwin' || process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: on });
   } else {
@@ -1529,14 +1996,46 @@ ipcMain.on('welcome-set', (_e, key, on) => {
   sendWelcome();
 });
 
+// What he calls you (the welcome window's "What should I call you?").
+ipcMain.on('welcome-name', (_e, name) => {
+  if (typeof name !== 'string' || !name.trim() || name.trim() === settings.get('userName')) return;
+  settings.set('userName', name.trim().slice(0, 40));
+  names.setNames({ user: settings.get('userName') });
+});
+
+// How he refers to you (he/him, she/her or they/them).
+ipcMain.on('welcome-pronoun', (_e, pronoun) => {
+  if (!names.PRONOUNS[pronoun]) return;
+  settings.set('userPronoun', pronoun);
+  names.setNames({ pronoun });
+});
+
 ipcMain.on('welcome-done', () => {
   if (welcomeWin && !welcomeWin.isDestroyed()) welcomeWin.close();
+});
+
+// How he thinks (the welcome window's "How should I think?"): Gemma or Gemini.
+ipcMain.on('welcome-engine', (_e, id) => {
+  switchEngine(id);
+  sendWelcome();
+});
+
+// Your Gemini key, from the welcome window: kept in the Keychain; his mind
+// starts again with it if he thinks with Gemini.
+ipcMain.on('welcome-gemini-key', (_e, key) => {
+  if (typeof key !== 'string') return;
+  const saved = setGeminiKey(key.trim().slice(0, 200));
+  if (saved && engineChoice(settings) === 'gemini' && !waitForBrainChoice) restartEngine();
+  else refreshTrayMenu();
+  if (welcomeWin && !welcomeWin.isDestroyed()) welcomeWin.webContents.send('welcome-key-saved', saved);
+  sendWelcome();
 });
 
 /** He chirps: one of your clips if there are any for his mood, otherwise a generated one. */
 function chirp(syllables) {
   // Quiet in meetings and while you watch something together.
   if (!win || win.isDestroyed() || !settings.get('sounds') || companion.context.quiet || watcher.current) return;
+  if (hear.on) return; // the microphone shouldn't hear him (Phase 11)
   const band = companion.moodBand();
   const clip = sounds ? sounds.clipFor(band) : null;
   win.webContents.send('voice', { band, syllables, clip: clip ? clip.data : null });
@@ -1563,7 +2062,7 @@ function showPersonality() {
   personalityWin = new BrowserWindow({
     width: 420,
     height: 640,
-    title: "Togepi's personality",
+    title: `${character.name}'s personality`,
     resizable: true,
     alwaysOnTop: true,
     webPreferences: {
@@ -1574,7 +2073,7 @@ function showPersonality() {
     },
   });
   followYou(personalityWin);
-  personalityWin.loadFile(path.join(__dirname, '..', 'renderer', 'personality.html'));
+  personalityWin.loadFile(path.join(__dirname, '..', 'renderer', 'personality.html'), { query: { name: character.name } });
   personalityWin.webContents.on('did-finish-load', sendPersonality);
   personalityWin.on('closed', () => {
     personalityWin = null;
@@ -1622,8 +2121,8 @@ ipcMain.on('growth-undo', (_e, week) => {
 
 ipcMain.on('personality-reset', () => {
   if (!personality) return;
-  // Back to Togepi's traits and values; the relationship stays as it has grown.
-  const next = P.defaultPersonality();
+  // Back to the character's own traits and values; the relationship stays as it has grown.
+  const next = P.defaultPersonality(character);
   next.relationship = { ...personality.relationship };
   next.locked = personality.locked || [];
   if (growth) {
@@ -1650,7 +2149,7 @@ function showMemories() {
   memoriesWin = new BrowserWindow({
     width: 440,
     height: 620,
-    title: "Togepi's memories",
+    title: `${character.name}'s memories`,
     resizable: true,
     alwaysOnTop: true,
     webPreferences: {
@@ -1661,7 +2160,7 @@ function showMemories() {
     },
   });
   followYou(memoriesWin);
-  memoriesWin.loadFile(path.join(__dirname, '..', 'renderer', 'memories.html'));
+  memoriesWin.loadFile(path.join(__dirname, '..', 'renderer', 'memories.html'), { query: { name: character.name } });
   memoriesWin.webContents.on('did-finish-load', () => {
     if (memory) memory.load();
     sendMemories();
@@ -1678,7 +2177,615 @@ ipcMain.on('memory-forget', (_e, id) => {
   }
 });
 ipcMain.on('memory-open-folder', () => shell.openPath(mindDir()));
-ipcMain.on('memory-edit-notes', () => shell.openPath(path.join(mindDir(), 'about-sushant.md')));
+ipcMain.on('memory-edit-notes', () => shell.openPath(path.join(mindDir(), 'about-you.md')));
+
+// --------------------------------------------------------------- talking to him (Phase 11)
+
+const hear = { on: false, source: null, engine: null, status: '', error: null, last: null, timer: null };
+let listenReady = null;
+let shortcutOn = null; // the shortcut that's registered, or null
+
+/** The Apple speech helper (built by scripts/build-helpers.js), or null. */
+function listenHelper() {
+  const found = [
+    process.resourcesPath && path.join(process.resourcesPath, 'helpers', 'companion-listen'),
+    path.join(__dirname, '..', '..', 'helpers', 'companion-listen'),
+  ].filter(Boolean);
+  return found.find((f) => fs.existsSync(f)) || null;
+}
+
+/** Turn "Talk to me" on or off: the keyboard shortcut (the microphone only opens when you use it). */
+function applyVoice(on) {
+  if (shortcutOn) globalShortcut.unregister(shortcutOn);
+  shortcutOn = null;
+  hear.error = null;
+  if (!on) {
+    stopListening(false);
+    return;
+  }
+  const key = settings.get('listenShortcut') || 'Alt+Space';
+  try {
+    if (globalShortcut.register(key, () => startListening('shortcut'))) shortcutOn = key;
+    else hear.error = `${key} is taken by another app (change listenShortcut in settings.json)`;
+  } catch (e) {
+    hear.error = `shortcut ${key}: ${e.message}`;
+  }
+  if (settings.get('speechEngine') !== 'elevenlabs' && IS_MAC && !listenHelper()) hear.error = 'Apple speech recognition isn’t built yet: run npm run build-helpers (needs xcode-select --install)';
+}
+
+function listenWindow() {
+  if (listenWin && !listenWin.isDestroyed()) return listenReady;
+  listenWin = new BrowserWindow({
+    show: false,
+    width: 120,
+    height: 80,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'listen-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  listenReady = new Promise((resolve) => listenWin.webContents.once('did-finish-load', resolve));
+  listenWin.loadFile(path.join(__dirname, '..', 'renderer', 'listen.html'));
+  listenWin.on('closed', () => {
+    listenWin = null;
+    listenReady = null;
+  });
+  return listenReady;
+}
+
+function hearSays(status, error = null) {
+  hear.status = status;
+  if (error) hear.error = error;
+  if (hear.source === 'chat') {
+    chatState.status = error ? `Couldn’t hear you: ${error}` : status;
+    sendChat();
+  }
+}
+
+/** Why he can't listen right now, or null. */
+function cantListen() {
+  if (!settings.get('voiceCommands')) return 'Talk to me is off (Mind → Talk to me)';
+  if (!companion) return 'not ready';
+  if (companion.context.quiet) return 'you’re in a meeting';
+  if (companion.context.userAway) return 'you’re away';
+  const engine = settings.get('speechEngine') === 'elevenlabs' ? 'elevenlabs' : 'apple';
+  if (engine === 'apple' && !IS_MAC) return 'Apple speech recognition only works on a Mac (Mind → Listen with → ElevenLabs Scribe)';
+  if (engine === 'apple' && !listenHelper()) return 'Apple speech recognition isn’t built yet: run npm run build-helpers';
+  if (engine === 'elevenlabs' && !elevenKey()) return 'add your ElevenLabs key first (Mind → Our songs… → Settings)';
+  return null;
+}
+
+/** ⌥ Space or 🎤: listen to one thing you say (again while listening: stop and use what was said). */
+async function startListening(source = 'shortcut') {
+  if (hear.on) {
+    stopListening(true);
+    return;
+  }
+  hear.source = source;
+  const why = cantListen();
+  if (why) {
+    hearSays('', why);
+    // Set-up problems get a message; meetings and being away just stay quiet.
+    if (source === 'shortcut' && companion && !companion.context.quiet && !companion.context.userAway && settings.get('voiceCommands')) tell('Talk to me', `He can’t listen yet: ${why}.`);
+    return;
+  }
+  if (IS_MAC) {
+    const mic = systemPreferences.getMediaAccessStatus('microphone');
+    if (mic === 'denied' || mic === 'restricted') {
+      hearSays('', 'the microphone isn’t allowed (System Settings → Privacy & Security → Microphone → Filo)');
+      tell('Filo can’t hear you', 'Allow the microphone for Filo in System Settings → Privacy & Security → Microphone, then try again.');
+      return;
+    }
+    if (mic !== 'granted' && !(await systemPreferences.askForMediaAccess('microphone'))) {
+      hearSays('', 'the microphone wasn’t allowed');
+      return;
+    }
+  }
+  hear.on = true;
+  hear.error = null;
+  hear.engine = settings.get('speechEngine') === 'elevenlabs' ? 'elevenlabs' : 'apple';
+  companion.listening(true, '👂');
+  hearSays('Listening… (just talk; it stops when you do)');
+  clearTimeout(hear.timer);
+  hear.timer = setTimeout(() => stopListening(true), 15000);
+  await listenWindow();
+  if (hear.on && listenWin) listenWin.webContents.send('listen-start');
+}
+
+/** Stop the microphone: `keep` what was said so far, or throw it away. */
+function stopListening(keep) {
+  if (!hear.on) return;
+  clearTimeout(hear.timer);
+  if (listenWin && !listenWin.isDestroyed()) listenWin.webContents.send('listen-stop', keep);
+  if (!keep) {
+    hear.on = false;
+    companion.listening(false);
+    hearSays('');
+  }
+}
+
+ipcMain.on('listen-state', (_e, st) => {
+  if (hear.on && st === 'talking') companion.listening(true, '👂 …');
+});
+
+ipcMain.on('listen-result', async (_e, r) => {
+  if (!hear.on) return;
+  hear.on = false;
+  clearTimeout(hear.timer);
+  if (!r || r.error || r.nothing || !r.wav) {
+    companion.listening(false);
+    hearSays(r && r.nothing ? 'I didn’t hear anything.' : '', r && r.error ? r.error : null);
+    if (hear.source === 'chat') sendChat();
+    return;
+  }
+  companion.listening(true, '…');
+  hearSays('Working out what you said…');
+  // The recording only lives until it's turned into text (hearing.transcribe deletes it).
+  const file = path.join(os.tmpdir(), `companion-heard-${process.pid}-${Date.now()}.wav`);
+  try {
+    fs.writeFileSync(file, Buffer.from(r.wav), { mode: 0o600 });
+    const acts = commandActivities();
+    const text = await hearing.transcribe({
+      engine: hear.engine,
+      file,
+      helper: listenHelper(),
+      key: elevenKey(),
+      locale: settings.get('speechLocale') || '',
+      hints: commands.hints(characters.list().map((c) => c.name), acts),
+    });
+    companion.listening(false);
+    hear.last = { text, at: Date.now() };
+    if (!text) {
+      hearSays('I didn’t catch that.');
+      return;
+    }
+    hearSays(`Heard: “${text}”`);
+    heard(text);
+  } catch (e) {
+    fs.rmSync(file, { force: true });
+    companion.listening(false);
+    console.error('Talk to me:', e.message);
+    hearSays('', e.message);
+  }
+});
+
+/** A night-only activity (Mori's fireflies, Nomi's moon) while it isn't night. */
+function notYet(a) {
+  return !!a.night && !(character.isNight && character.isNight(companion ? companion.context.hour : new Date().getHours()));
+}
+
+/**
+ * His activities and the shared ones, as the parser matches them. Night-only
+ * ones are left out by day, like in his menu (asked for anyway, it's a chat
+ * message he answers).
+ */
+function commandActivities() {
+  return [...character.activities.filter((a) => !notYet(a)).map((a) => ({ id: a.id, label: a.menu })), ...ACTIVITY_MENU.map(([id, label]) => ({ id, label }))];
+}
+
+/** Something you said: one of his commands, an answer to his question, or a chat message. */
+function heard(text) {
+  const cmd = commands.parseCommand(text, {
+    now: Date.now(),
+    names: [character.name],
+    activities: commandActivities(),
+    answers: companion.asking() ? companion.speech.answers : null,
+    waiting: companion.showingNudge() || companion.showingReminder() || companion.showingGameInvite(),
+  });
+  if (!cmd) {
+    // Not one of his commands: an open-ended message. The chat opens with it
+    // and his reply goes there only (Sushant, 2026-10-25).
+    showChat();
+    sendWhenFree(text);
+    return;
+  }
+  // It goes into his day like a chat message (the recording itself is never kept).
+  if (mind && cmd.kind !== 'answer') mind.log.add({ kind: 'interact', text: `${names.user()} asked you out loud: "${text}"`, key: 'voice' });
+  runCommand(cmd);
+  refreshTrayMenu();
+}
+
+/**
+ * A spoken chat message: sent as soon as he's done answering the one before
+ * (typed chat ignores a message while he's busy; a spoken one would be lost).
+ */
+async function sendWhenFree(text) {
+  const until = Date.now() + 2 * 60 * 1000;
+  while (chatState.busy && Date.now() < until) await new Promise((r) => setTimeout(r, 300));
+  chatSend(text, { bubble: false });
+}
+
+function runCommand(cmd) {
+  const c = companion;
+  switch (cmd.kind) {
+    case 'answer':
+      if (c.answerQuestion(cmd.index) != null && mind) mind.answered(cmd.index);
+      break;
+    case 'comeHere':
+      callHere();
+      break;
+    case 'play':
+      if (c.context.quiet) break;
+      if (cmd.game === 'any' && c.showingGameInvite()) c.acceptGame();
+      else c.startGame(cmd.game === 'any' ? GAMES[Math.floor(Math.random() * GAMES.length)] : cmd.game, true);
+      break;
+    case 'stopPlaying':
+      if (c.game) c.endGame('done');
+      break;
+    case 'wake':
+      if (c.state === 'sleep') c.pat();
+      break;
+    case 'nap':
+      c.doActivity('sleep');
+      break;
+    case 'stayPut':
+      c.stayPut(TUNING.stayPutFor);
+      break;
+    case 'moveAgain':
+      c.endStayPut();
+      break;
+    case 'remind': {
+      c.addNote(cmd.text, cmd.at);
+      saveBrain();
+      sendNotes();
+      const t = new Date(cmd.at);
+      // Holding up a nudge or a sign: he shows it once he's put that down.
+      c.sayLater(`📝 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`, 'happy');
+      break;
+    }
+    case 'remindAsk':
+      showNotes();
+      break;
+    case 'song':
+      makeSong({ manual: true });
+      break;
+    case 'openChat':
+      showChat();
+      break;
+    case 'done':
+      c.pat();
+      break;
+    case 'activity':
+      c.doActivity(cmd.id);
+      break;
+    default:
+  }
+}
+
+ipcMain.on('chat-listen', () => startListening('chat'));
+
+/** Talk to me, for the brain view and the report (never what you said). */
+function hearStatus() {
+  const engine = settings.get('speechEngine') === 'elevenlabs' ? 'ElevenLabs Scribe (online)' : 'Apple, on this Mac';
+  if (!settings.get('voiceCommands')) return { text: `off (${engine})` };
+  const parts = [`${shortcutOn || 'no shortcut'} · ${engine}`];
+  if (hear.on) parts.push('listening now');
+  if (hear.error) parts.push(`problem: ${hear.error}`);
+  if (IS_MAC) parts.push(`microphone: ${systemPreferences.getMediaAccessStatus('microphone')}`);
+  return { text: parts.join(' · ') };
+}
+
+// --------------------------------------------------------------- the weekly song (src/main/mind/song.js)
+
+const songState = { current: null, busy: false, status: '', error: false };
+let pendingSong = null; // { id, text }: his "I made us a song!" bubble
+let lastSongTry = 0;
+let danceTimer = null;
+let songAudioSent = null; // the song whose audio the window has (so status updates don't restart it)
+
+function songsDir() {
+  return path.join(mindDir(), 'songs');
+}
+
+// Your ElevenLabs key: asked in the app, kept encrypted with the macOS
+// Keychain (safeStorage), never in the build. ELEVENLABS_API_KEY wins (testing).
+function keyFile() {
+  return path.join(app.getPath('userData'), 'elevenlabs.key');
+}
+
+function elevenKey() {
+  if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY.trim();
+  try {
+    return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(fs.readFileSync(keyFile())).trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function setElevenKey(key) {
+  if (!key) {
+    fs.rmSync(keyFile(), { force: true });
+    return true;
+  }
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(keyFile(), safeStorage.encryptString(key), { mode: 0o600 });
+  return true;
+}
+
+// Your Gemini key (Mind → Think with → Gemini): asked in the welcome window,
+// kept encrypted with the macOS Keychain like the ElevenLabs key, never in
+// the build. GOOGLE_API_KEY / GEMINI_API_KEY win (testing).
+function geminiKeyFile() {
+  return path.join(app.getPath('userData'), 'gemini.key');
+}
+
+function geminiEnvKey() {
+  return (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '').trim() || null;
+}
+
+function geminiKey() {
+  if (geminiEnvKey()) return geminiEnvKey();
+  try {
+    return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(fs.readFileSync(geminiKeyFile())).trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function setGeminiKey(key) {
+  if (!key) {
+    fs.rmSync(geminiKeyFile(), { force: true });
+    return true;
+  }
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(geminiKeyFile(), safeStorage.encryptString(key), { mode: 0o600 });
+  return true;
+}
+
+function showSong(id = null, autoplay = false) {
+  const list = songs.listSongs(songsDir());
+  songState.current = id || songState.current || (list[0] && list[0].id) || null;
+  if (songState.current && !list.some((s) => s.id === songState.current)) songState.current = list[0] ? list[0].id : null;
+  if (songWin && !songWin.isDestroyed()) {
+    sendSong(autoplay);
+    songWin.show();
+    songWin.focus();
+    return;
+  }
+  songWin = new BrowserWindow({
+    width: 400,
+    height: 620,
+    title: `${character.name}’s songs`,
+    resizable: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'song-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  followYou(songWin);
+  songWin.loadFile(path.join(__dirname, '..', 'renderer', 'song.html'));
+  songWin.webContents.on('did-finish-load', () => {
+    songAudioSent = null;
+    sendSong(autoplay);
+  });
+  songWin.on('closed', () => {
+    songWin = null;
+    songAudioSent = null;
+    dance(false);
+  });
+}
+
+/** The window's list and settings, then the current song's audio. */
+function sendSong(autoplay = false) {
+  if (!songWin || songWin.isDestroyed()) return;
+  const list = songs.listSongs(songsDir());
+  songWin.webContents.send('song', {
+    name: character.name,
+    songs: list.map(({ file, ...s }) => s),
+    current: songState.current,
+    keySet: !!elevenKey(),
+    keyFromEnv: !!process.env.ELEVENLABS_API_KEY,
+    weekly: !!settings.get('weeklySong'),
+    busy: songState.busy,
+    status: songState.status,
+    error: songState.error,
+  });
+  const cur = list.find((s) => s.id === songState.current);
+  if (cur && (autoplay || cur.id !== songAudioSent)) {
+    try {
+      songWin.webContents.send('song-audio', { id: cur.id, audio: fs.readFileSync(cur.file), autoplay });
+      songAudioSent = cur.id;
+    } catch (e) {
+      console.error('Could not read the song:', e.message);
+    }
+  }
+}
+
+/** While the song plays he dances: happy hops, unless he's busy with something else. */
+function dance(on) {
+  clearInterval(danceTimer);
+  danceTimer = null;
+  if (!on || !companion) return;
+  let n = 0;
+  const step = () => companion.mindAction(n++ % 3 === 2 ? 'jump' : 'happy');
+  step();
+  danceTimer = setInterval(step, 1600);
+}
+
+function songStatus(text, error = false) {
+  songState.status = text;
+  songState.error = error;
+  sendSong();
+}
+
+/**
+ * Make this week's song: the week from the database, his diary, his own
+ * words and style (only from his personality), the privacy checks, then
+ * ElevenLabs. `manual`: from the window or Try it now (the window opens and
+ * plays it); otherwise he announces it with a bubble.
+ */
+async function makeSong({ manual = false } = {}) {
+  if (songState.busy || !mind || !memory) return null;
+  const key = elevenKey();
+  if (!key) {
+    if (manual) {
+      showSong();
+      songStatus('Add your ElevenLabs key under Settings first.', true);
+    }
+    return null;
+  }
+  if (!engine || !settings.get('mind')) {
+    if (manual) {
+      showSong();
+      songStatus('His mind is off: turn on Mind → Think and talk for himself.', true);
+    }
+    return null;
+  }
+  const who = character.id;
+  songState.busy = true;
+  lastSongTry = Date.now();
+  if (manual) showSong();
+  try {
+    awakeUntil = Math.max(awakeUntil, Date.now() + REST.forceFor);
+    if (!engine.ready) {
+      songStatus('Waking up his mind… (a few seconds)');
+      if (!(await voiceReady())) throw new Error(`his mind didn't start: ${engine.status()}`);
+    }
+    songStatus('Adding up our week…');
+    const now = Date.now();
+    const week = store && store.ready ? await store.week(who, { to: now }).catch(() => null) : null;
+    const diary = weekDiary(memory, now);
+    songStatus(`${character.name} is writing the words…`);
+    let song = null;
+    for (let i = 0; i < 2 && !song; i++) {
+      const raw = await engine.think({ system: songs.songSystem(personality, memory.notes, mind.coreFacts), user: songs.songPrompt({ week, diary }), schema: songs.SCHEMA });
+      song = songs.parseSong(raw);
+    }
+    if (!song) throw new Error('he couldn’t find the words this time');
+    // Nothing private may be sung: your blocklist, then the decision model.
+    const block = settings.get('privacyBlock');
+    if (songs.blockedWords(song, block)) throw new Error('the words touched something on your privacy blocklist, so it wasn’t sent');
+    if (engine.canDecide) {
+      const a = await engine.decide(`Song lyrics: ${songs.songText(song)}`, { sensitive: privacy.MODEL_QUESTION }).catch(() => null);
+      const p = a && a.sensitive && a.sensitive.probabilities;
+      if (p && Number(p.A) >= 0.5) throw new Error('the words looked private, so they weren’t sent');
+    }
+    songStatus('ElevenLabs is singing it… (up to a minute)');
+    const audio = await songs.compose(songs.compositionPlan(song, settings.get('songSinger')), key);
+    if (character.id !== who) throw new Error('switched characters while it was being made');
+    const saved = songs.saveSong(songsDir(), song, audio, { week, now: Date.now() });
+    mind.log.add({ kind: 'song', text: `You made a song for ${names.user()}: "${saved.title}"`, title: saved.title });
+    songState.current = saved.id;
+    songState.busy = false;
+    songStatus('');
+    if (manual || (songWin && !songWin.isDestroyed())) {
+      showSong(saved.id, true);
+    } else if (!companion.context.quiet && !watcher.current) {
+      const text = 'I made us a song! 🎵 Click me';
+      if (companion.say(text, 'happy')) pendingSong = { id: saved.id, text };
+    }
+    return saved;
+  } catch (e) {
+    songState.busy = false;
+    console.error('Weekly song:', e.message);
+    songStatus(`Couldn’t make the song: ${e.message}`, true);
+    return null;
+  } finally {
+    songState.busy = false;
+    refreshTrayMenu();
+  }
+}
+
+/** Every 5 minutes: once a week (from Sunday 6 pm), when you're here and he isn't busy, he makes the song. */
+function checkWeeklySong() {
+  if (!settings || !settings.get('weeklySong') || !mind || songState.busy || !elevenKey()) return;
+  if (!engine || !engine.ready || companion.context.userAway || companion.context.quiet || watcher.current || companion.board()) return;
+  if (Date.now() - lastSongTry < 60 * 60 * 1000) return; // after a failure, try again in an hour
+  if (!songs.songDue(songsDir(), Date.now())) return;
+  makeSong();
+}
+
+ipcMain.on('song-select', (_e, id) => {
+  if (typeof id !== 'string' || id === songState.current) return;
+  songState.current = id;
+  sendSong(true);
+});
+ipcMain.on('song-playing', (_e, on) => dance(!!on));
+ipcMain.on('song-make', () => makeSong({ manual: true }));
+ipcMain.on('song-weekly', (_e, on) => {
+  settings.set('weeklySong', !!on);
+  sendSong();
+});
+ipcMain.on('song-key', (_e, key) => {
+  if (typeof key !== 'string') return;
+  if (!setElevenKey(key.trim())) songStatus('Couldn’t save the key: this computer’s keychain isn’t available.', true);
+  else songStatus(key.trim() ? 'Key saved.' : 'Key removed.');
+});
+
+// --------------------------------------------------------------- Tiger Data (src/main/mind/store.js)
+
+/** Start the shared database, loading every character's old event logs; then a sample every minute. */
+function startStore() {
+  store = new Store({ dir: databaseDir(app.getPath('userData')) });
+  const imports = characters.list().map((c) => {
+    const dir = path.join(characterDir(app.getPath('userData'), c.id), 'mind');
+    return { companion: c.id, files: [path.join(dir, 'events.1.jsonl'), path.join(dir, 'events.jsonl')] };
+  });
+  store.start({ imports }).then((ok) => console.log(`Database: ${store.status()}`, ok ? '' : '(he works without it)'));
+  storeTimer = setInterval(() => {
+    sampleMinute();
+    syncMeaning();
+  }, 60 * 1000);
+}
+
+/** Once a minute: the character's mood and needs, and what you're on (as his mind last saw it). */
+function sampleMinute() {
+  if (!store || !store.ready || !companion) return;
+  const seen = mind ? mind.log.last(['observe']) : null;
+  store.addMinute(character.id, {
+    mood: companion.moodBand(),
+    needs: companion.needs,
+    app: seen && seen.app,
+    site: seen && seen.site,
+    private: !!(seen && seen.private),
+    away: !!companion.context.userAway,
+    quiet: !!companion.context.quiet,
+  });
+}
+
+let storeStopped = false;
+let syncingMeaning = false;
+
+/**
+ * Your name is in almost every memory, which made everything look alike
+ * (measured: unrelated memories 0.3-0.45); fingerprints leave it out.
+ */
+function plainForMeaning(text) {
+  const name = names.user();
+  if (!name) return text;
+  return String(text).replace(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'), 'they');
+}
+
+/** His memories as the database fingerprints them (the Markdown files stay the real ones). */
+function memoryItems(m) {
+  return [
+    ...m.facts.map((f) => ({ ...f, kind: 'fact' })),
+    ...m.opinions.map((o) => ({ ...o, kind: 'opinion' })),
+    ...Object.values(m.journal).flatMap((j) => j.lines.map((l) => ({ ...l, kind: 'journal' }))),
+    ...Object.values(m.weeks).map((w) => ({ ...w, kind: 'week' })),
+  ];
+}
+
+/** Every few minutes (and when his mind starts): fingerprint new memories, drop forgotten ones. */
+async function syncMeaning() {
+  if (syncingMeaning || !store || !store.ready || !store.vectors || !engine || !engine.canEmbed || !memory) return;
+  syncingMeaning = true;
+  const id = character.id;
+  try {
+    const r = await store.syncMemories(id, memoryItems(memory), (texts) => engine.embed(texts.map(plainForMeaning)));
+    if (r && (r.added || r.removed)) console.log(`Memories by meaning (${id}): +${r.added} −${r.removed}`);
+  } catch (e) {
+    console.error('Memories by meaning:', e.message);
+  } finally {
+    syncingMeaning = false;
+  }
+}
 
 // Fully local: nothing in his windows may reach the internet. (The models run
 // in llama-server on 127.0.0.1; see src/main/mind/engine.js.)
@@ -1691,14 +2798,37 @@ function blockNetwork() {
 
 // --------------------------------------------------------------- app
 
-if (!app.requestSingleInstanceLock()) {
+// `--creator` or `--creator=<id>` opens the character creator: in the Filo
+// that's already running (handed over with the single-instance lock), or
+// once this one has started.
+const CREATOR_ARG = (() => {
+  const a = process.argv.find((x) => x === '--creator' || x.startsWith('--creator='));
+  return a == null ? null : a.slice('--creator='.length) || '';
+})();
+
+if (!app.requestSingleInstanceLock({ creator: CREATOR_ARG })) {
   app.quit();
 } else {
-  app.on('second-instance', () => callHere());
+  // Started again: the creator if asked for, else he comes over to you.
+  app.on('second-instance', (_e, _argv, _cwd, data) => {
+    if (app.isReady() && data && data.creator != null) showCreator(data.creator);
+    else callHere();
+  });
   app.whenReady().then(() => {
+    serveCreator();
     if (process.platform === 'darwin' && app.dock) app.dock.hide();
+    try {
+      // The data of the app's older names (Companion, Togepi), copied once.
+      const from = migrate({ appData: app.getPath('appData'), userData: app.getPath('userData') });
+      if (from) console.log(`Copied the old data from ${from}`);
+    } catch (e) {
+      console.error('Could not copy the old data:', e.message);
+    }
     blockNetwork();
     createWindow();
+    if (CREATOR_ARG != null) showCreator(CREATOR_ARG);
+    startStore();
+    setInterval(checkWeeklySong, 5 * 60 * 1000);
     // Monitors plugged in / unplugged / rearranged.
     const updateScreens = () => {
       if (companion) companion.setScreens(allDisplays());
@@ -1712,6 +2842,15 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     saveBrain();
     if (engine) engine.stop();
+  });
+  // The database is stopped cleanly before the app goes (a few seconds at most).
+  app.on('will-quit', (e) => {
+    globalShortcut.unregisterAll();
+    if (!store || storeStopped) return;
+    e.preventDefault();
+    storeStopped = true;
+    clearInterval(storeTimer);
+    store.stop().finally(() => app.quit());
   });
   app.on('window-all-closed', () => app.quit());
 }

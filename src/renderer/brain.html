@@ -97,7 +97,8 @@
       }
       td:first-child {
         color: var(--muted);
-        width: 92px;
+        width: 108px;
+        padding-right: 8px;
       }
       .score td:first-child {
         color: var(--ink);
@@ -108,21 +109,88 @@
         color: var(--muted);
         font-size: 12px;
       }
+      /* Tabs (Sushant, 2026-10-25): the header stays; Feelings, Noticing and
+         Decisions are tabs, and Noticing has a row of smaller sub-tabs. */
+      .header {
+        margin-bottom: 10px;
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        margin: 0 0 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabs button {
+        flex: 1;
+        font: inherit;
+        font-weight: 600;
+        color: var(--muted);
+        background: none;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 6px 4px;
+        margin-bottom: -1px;
+        cursor: pointer;
+      }
+      .tabs button.on {
+        color: var(--ink);
+        border-bottom-color: var(--accent);
+      }
+      .subtabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin: 0 0 8px;
+      }
+      .subtabs button {
+        font: inherit;
+        font-size: 12px;
+        color: var(--muted);
+        background: var(--track);
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: 2px 10px;
+        cursor: pointer;
+      }
+      .subtabs button.on {
+        color: var(--ink);
+        background: var(--panel);
+        border-color: var(--accent);
+      }
+      .subtabs .count {
+        opacity: 0.6;
+        margin-left: 3px;
+      }
+      [hidden] {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
-    <h2>Doing</h2>
-    <div class="card"><div class="state" id="state">…</div><div class="muted" id="sub"></div></div>
+    <div class="card header"><div class="state" id="state">…</div><div class="muted" id="sub"></div></div>
 
-    <h2>Needs &amp; mood</h2>
-    <div class="card" id="needs"></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="feelings">Feelings</button>
+      <button data-tab="noticing">Noticing</button>
+      <button data-tab="decisions">Decisions</button>
+    </nav>
 
-    <h2>What he's noticing</h2>
-    <div class="card"><table id="context"></table></div>
+    <section data-panel="feelings">
+      <h2>Needs &amp; mood</h2>
+      <div class="card" id="needs"></div>
+    </section>
 
-    <h2>Last decision (top choices)</h2>
-    <div class="card"><table id="scores"></table></div>
+    <section data-panel="noticing">
+      <nav class="subtabs" id="groups"></nav>
+      <div class="card"><table id="context"></table></div>
+    </section>
 
+    <section data-panel="decisions">
+      <h2>Last decision (top choices)</h2>
+      <div class="card"><table id="scores"></table></div>
+    </section>
+
+    <script src="name.js"></script>
     <script src="brain.js"></script>
   </body>
 </html>

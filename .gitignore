@@ -6,6 +6,10 @@ out/
 # His mind's engine and models: downloaded by scripts/fetch-models.js (too big for git)
 engine/
 models/
+# Small macOS helpers built from source by scripts/build-helpers.js
+helpers/
+# Items drawn in the animation playground (dev/server.js)
+dev/items/
 
 # graphify: share the graph, report and curated group names; keep caches,
 # backups and scratch files local
@@ -15,3 +19,11 @@ graphify-out/*
 !graphify-out/GRAPH_REPORT.md
 !graphify-out/.graphify_labels.json
 !graphify-out/.graphify_labels.json.sig
+
+# Local setup, not shared
+.claude/skills/devrelay-*/
+.direnv/
+.env
+.envrc
+.githooks/
+.mcp.json

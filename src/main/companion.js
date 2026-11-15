@@ -10,6 +10,7 @@
 // src/main/brain.js.
 
 const brain = require('./brain');
+const characters = require('../characters');
 const screensLib = require('./screens');
 const { NudgeTracker, TIMING: NUDGE_TIMING, say, clockTime } = require('./nudges');
 const { Ball, BALL } = require('./games/fetch');
@@ -22,8 +23,6 @@ const TUNING = {
   airDrag: 0.35, // fraction of velocity lost per second while airborne
   wallBounce: 0.55, // fraction of speed kept when hitting a wall
   floorBounce: 0.35, // fraction of vertical speed kept on a hard landing
-  playSpeed: 95, // px/s, dribbling his ball
-  adventureSpeed: 85, // px/s, off on an adventure with his backpack
   hardLanding: 900, // px/s impact speed that counts as a "hard" landing
   confusedLanding: 1700, // px/s impact speed that leaves him confused
   maxThrowSpeed: 4000, // px/s
@@ -39,10 +38,11 @@ const TUNING = {
   waveAway: 30, // seconds the cursor must be far away before he waves on its return
 };
 
-// Activities that move him around (asking for one ends "Stay put").
-const MOVING_ACTIVITIES = ['walk', 'run', 'play', 'adventure', 'jump'];
-// Activities you can ask for from the menu.
-const MENU_ACTIVITIES = ['eat', 'play', 'talk', 'wave', 'flower', 'adventure', 'sit', 'sleep', 'jump', 'backView'];
+// Activities that move him around (asking for one ends "Stay put"), besides
+// the character's own that `move`.
+const MOVING_ACTIVITIES = ['walk', 'run', 'jump'];
+// Things you can ask for from the menu, besides the character's own activities.
+const MENU_ACTIVITIES = ['talk', 'wave', 'sit', 'sleep', 'jump', 'backView'];
 
 // Area around his body that counts as the cursor being "on him", relative to
 // his feet in screen px (an ellipse centred `cy` above the feet). The board
@@ -57,7 +57,7 @@ const HIT = {
   signTop: 205,
   join: { left: -66, right: -12, bottom: 126, top: 162 },
   // His question bubble, its two answer buttons and the ✏️ button (type your
-  // own answer), from questionButton() in src/renderer/character.js times
+  // own answer), from questionButton() in src/renderer/ui.js times
   // the drawing scale (x ranges, left to right).
   question: { halfWidth: 107, bottom: 146, top: 228 },
   answers: { bottom: 162, top: 183, a0: [-99, -16], a1: [-13, 70], own: [74, 99] },
@@ -90,6 +90,17 @@ const HELD_BALL = { x: 3, y: 64 };
 // Watching together: how far from the screen's right edge he sits, and how
 // long each stretch of watching lasts before he checks his spot again (s).
 const WATCH_SPOT = { margin: 24, sit: 60 };
+// How long his body reacts to a moment of what you're watching (s), by its
+// mood (src/main/mind/thinker.js MOODS); calm: no reaction.
+const WATCH_REACT = { exciting: 4, funny: 3.5, sad: 4, scary: 4, beautiful: 5, boring: 3 };
+
+// Lonely (Phase 9, step 1b): he goes to the window you're working in, looks
+// up at it for `lookUp` s, then sits down there quietly for `sit` s.
+const LONELY = { lookUp: 60, sit: 90 };
+
+// Study buddy (Phase 12): how long each stretch of watching your screen with
+// you lasts before he checks whether he's still studying (s).
+const STUDY_SIT = 30;
 
 // A question waits `question` s for you to click an answer.
 const SPEECH = { base: 2.5, perWord: 0.35, max: 6, question: 30 };
@@ -99,8 +110,9 @@ const BOARD_STATES = ['sign', ...NUDGE_STATES, 'offerBall', 'offerGame'];
 // Busy with you, or just landed: a reminder waits until he's done.
 const REACTING = ['hug', 'happy', 'surprised', 'land', 'confused', 'angry', 'drink', 'nod'];
 
-// What he stops doing when you join a meeting (he sits down where he is).
-const BUSY_WHEN_QUIET = ['walk', 'run', 'play', 'adventure', 'lookAround', 'talk', 'eat', 'flower', 'curious', 'wave'];
+// What he stops doing when you join a meeting (he sits down where he is),
+// besides the character's own activities.
+const BUSY_WHEN_QUIET = ['walk', 'run', 'lookAround', 'talk', 'curious', 'wave'];
 
 // States the cursor reactions (curious / shy / wave) may interrupt.
 const INTERRUPTIBLE = ['idle', 'sit', 'lookAround', 'walk', 'backView', 'talk'];
@@ -122,11 +134,9 @@ const STATES = [
   'surprised',
   'lookAround',
   'talk',
-  'eat',
-  'flower',
-  'play',
-  'adventure',
   'backView',
+  'watchReact',
+  'lookUp',
   'sad',
   'angry',
   'shy',
@@ -150,6 +160,16 @@ function rand(min, max, rng) {
   return min + (max - min) * rng();
 }
 
+/** One of `variants` ([{ id, chance }]) at random, by chance; its id. */
+function pickVariant(variants, rng) {
+  let r = rng() * variants.reduce((sum, v) => sum + v.chance, 0);
+  for (const v of variants) {
+    r -= v.chance;
+    if (r < 0) return v.id;
+  }
+  return variants[variants.length - 1].id;
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -162,9 +182,11 @@ class Companion {
    * @param {number} [opts.halfWidth] half of the body width, used for walls
    * @param {number} [opts.height] body height, used for the ceiling
    * @param {() => number} [opts.rng] random source in [0, 1)
+   * @param {object} [opts.character] the character (src/characters), Togepi by default
    */
   constructor(opts) {
     this.rng = opts.rng || Math.random;
+    this.character = opts.character || characters.get();
     this.halfWidth = opts.halfWidth || 40;
     this.height = opts.height || 90;
     this.bounds = { ...opts.bounds };
@@ -238,8 +260,24 @@ class Companion {
 
     // Something he's saying in his own words (src/main/mind): { text, until }.
     this.speech = null;
+    // How big the bubble over his head is drawn (setBubble), or null.
+    this.bubble = null;
+    // A bubble waiting for him to put down what he's holding up (sayLater).
+    this.pendingSay = null;
+    // Listening to you (listening()): { text, until }, or null.
+    this.listen = null;
+    this.listenAt = 0;
     // Watching something with you: { screen } (index of the screen it's on).
     this.watching = null;
+    this.workWindow = null; // the window you're working in (setWorkWindow)
+    this.byWindow = false;
+    this.variant = null; // how his current activity is turning out (variants)
+    this.wonGameAt = -Infinity; // when he last beat you at tic-tac-toe
+    this.wonBoard = null; // that game's board: { mine: [0 | 1 | 2 ×9], line }
+    this.justThrown = false; // in the air after a throw (not a drop)
+    // Being your study buddy (his mind chose 'studyBuddy'): he stays where
+    // he is watching your screen until he chooses something else.
+    this.studying = false;
     // How his personality colours his mood (personality.temperament): his
     // resting mood and how fast it moves. Togepi's own is { 0, 1 }.
     this.temperament = { offset: 0, speed: 1 };
@@ -446,6 +484,14 @@ class Companion {
       if (next.event) this.emit(next.event);
       return;
     }
+    // One of his own activities that moves him and leads on to something
+    // when he gets there (Mori finding his mushrooms).
+    const own = this.own(this.state);
+    const then = own && own.move && ((this.currentVariant() && this.currentVariant().then) || own.then);
+    if (then) {
+      this.enter(then.state, then.duration);
+      return;
+    }
     if (this.route && this.continueRoute()) return;
     this.chooseNext();
   }
@@ -455,12 +501,13 @@ class Companion {
   }
 
   enter(state, duration) {
-    if (!STATES.includes(state)) throw new Error(`unknown state ${state}`);
+    if (!STATES.includes(state) && !this.own(state) && !this.ownState(state)) throw new Error(`unknown state ${state}`);
     // A planned "then do X when you arrive" only survives the walk/run it belongs to.
     if (state !== 'walk' && state !== 'run') this.afterMove = null;
     this.state = state;
     this.stateTime = 0;
     this.stateDuration = duration != null ? duration : 0;
+    this.byWindow = false; // sitting by your window after looking up at it (set after entering)
   }
 
   emit(name) {
@@ -477,8 +524,26 @@ class Companion {
     return (this.mood + 1) / 2;
   }
 
+  /** The character's own activity `name` ({ id, move | stay, effects… }), or null. */
+  own(name) {
+    return characters.activity(this.character, name);
+  }
+
+  /** The character's own extra state `name` ({ label, doing, tap? }), or null. */
+  ownState(name) {
+    return (this.character.states && this.character.states[name]) || null;
+  }
+
+  /** How the current activity is turning out (its variant), or null. */
+  currentVariant() {
+    const a = this.own(this.state);
+    return (a && a.variants && a.variants.find((v) => v.id === this.variant)) || null;
+  }
+
   applyEffect(name, scale = 1) {
-    const e = brain.EFFECTS[name];
+    const a = this.own(name);
+    const variant = a && a.variants ? a.variants.find((v) => v.id === this.variant) : null;
+    const e = brain.EFFECTS[name] || (variant && variant.effects) || (a && a.effects);
     if (e) this.mood = brain.apply(this.needs, this.mood, e, scale);
     // Any attention from you means he no longer has to keep asking (for a while).
     if (e && e.affection > 0) {
@@ -516,6 +581,38 @@ class Companion {
   /** Seconds of "Stay put" left (0 when off). */
   stayPutLeft() {
     return Math.max(0, this.pausedUntil - this.time);
+  }
+
+  /**
+   * Your right-click menu opened (true) or closed (false) on him (main.js).
+   * While it's open he doesn't move, so the menu stays where it opened; just
+   * wandering, he stops and stands. At most a minute, in case the menu never
+   * says it closed.
+   */
+  holdForMenu(on) {
+    this.menuHeldUntil = on ? this.time + 60 : 0;
+    if (on) this.menuHeldAt = this.time;
+    const wandering = ['walk', 'run'].includes(this.state) && !this.route && !this.nudge && !this.reminder && !this.watching && !this.game;
+    if (on && wandering && this.isGrounded()) {
+      this.afterMove = null;
+      this.enter('idle', 1);
+    }
+    if (on) this.vx = 0;
+  }
+
+  get menuHeld() {
+    return this.time < (this.menuHeldUntil || 0);
+  }
+
+  /**
+   * While your right-click menu is open he shows his standing pose, whatever
+   * he was doing (it carries on when the menu closes), unless he's asleep, in
+   * the air, or holding something up for you (a sign, a nudge, an invitation).
+   */
+  standingForMenu() {
+    // Listening: his standing pose whatever he was doing (even holding something up, or asleep).
+    if (this.listeningNow) return !['grabbed', 'fall', 'jump'].includes(this.state);
+    return this.menuHeld && !['sleep', 'grabbed', 'fall', 'jump'].includes(this.state) && !BOARD_STATES.includes(this.state);
   }
 
   // ---------------------------------------------------------------- input
@@ -581,6 +678,7 @@ class Companion {
       this.throwTimes.push(this.time);
       this.applyEffect('throw');
       this.grumpiness = Math.min(1, this.grumpiness + brain.NEEDS.grumpyPerThrow);
+      this.justThrown = true;
       this.emit('throw');
     } else {
       this.applyEffect('drop');
@@ -633,6 +731,16 @@ class Companion {
     this.applyEffect('pat');
     this.vx = 0;
     this.grumpyUntil = 0;
+    // A click that does something in one of the character's own states or
+    // activities (Pip waiting for you to wind his key, Nomi's rain).
+    const tap = (this.ownState(this.state) || this.own(this.state) || {}).tap;
+    if (tap) {
+      this.mood = brain.apply(this.needs, this.mood, tap.effects || {});
+      this.enter(tap.then.state, tap.then.duration);
+      this.emit('heart');
+      if (tap.event) this.emit(tap.event);
+      return;
+    }
     if (this.state === 'happy') {
       this.stateDuration = Math.max(this.stateDuration, this.stateTime + 1.2);
     } else {
@@ -673,14 +781,17 @@ class Companion {
     return true;
   }
 
-  /** Do one of MENU_ACTIVITIES on request. Returns false if he can't right now. */
+  /** Do one of MENU_ACTIVITIES (or his own activities) on request. Returns false if he can't right now. */
   doActivity(name) {
-    if (!MENU_ACTIVITIES.includes(name) || !this.isGrounded()) return false;
+    if ((!MENU_ACTIVITIES.includes(name) && !this.own(name)) || !this.isGrounded()) return false;
     this.lastInteraction = this.time;
+    // Asked to do something else: any game he's offering or playing ends
+    // (otherwise he'd go mushroom hunting with the pinecone in his paws).
+    if (this.game) this.endGame('cancel');
     this.grumpyUntil = 0;
     this.vx = 0;
     this.applyEffect('attention');
-    if (MOVING_ACTIVITIES.includes(name)) this.endStayPut();
+    if (MOVING_ACTIVITIES.includes(name) || (this.own(name) && this.own(name).move)) this.endStayPut();
     if (name === 'sleep') {
       this.startActivity('sleep');
       this.stateDuration = Math.max(this.stateDuration, 60);
@@ -706,7 +817,7 @@ class Companion {
     this.time += dt;
     this.stateTime += dt;
     if (cursor) this.lastCursor = { x: cursor.x, y: cursor.y };
-    this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context, this.temperament);
+    this.mood = brain.drift(this.needs, this.mood, this.state, dt, this.context, this.temperament, this.character);
     this.grumpiness = Math.max(0, this.grumpiness - brain.NEEDS.grumpyFade * dt);
     this.nudges.tick(dt, this.context);
     // Petting "charge" fades once the rubbing stops.
@@ -718,11 +829,29 @@ class Companion {
       this.emit('stayPutEnded');
     }
 
+    // Something he couldn't say while holding something up (sayLater).
+    if (this.pendingSay && !this.listeningNow && !this.board()) {
+      const p = this.pendingSay;
+      this.pendingSay = null;
+      if (this.time <= p.until) this.say(p.text, p.action);
+    }
+    // His question waits while he listens to you.
+    if (this.listeningNow && this.speech && this.speech.answers) this.speech.until += dt;
     if (this.speech && this.speech.answers && this.time >= this.speech.until) this.questionTimedOut();
 
     this.updateScreen();
     this.updateBall(dt);
-    switch (this.state) {
+    // Your right-click menu is open on him (holdForMenu), or he's listening to
+    // you: he waits where he is, so the menu doesn't move with his window. In
+    // the air he still lands.
+    if ((this.menuHeld || this.listeningNow) && !['grabbed', 'fall', 'jump'].includes(this.state)) {
+      this.vx = 0;
+      this.stateTime -= dt; // what he was doing waits too, and carries on afterwards
+      return;
+    }
+    // One of the character's own activities that flies (Nomi wandering the sky).
+    const flying = this.own(this.state) && this.own(this.state).fly;
+    switch (flying ? 'fly' : this.state) {
       case 'grabbed':
         this.updateGrabbed(dt);
         break;
@@ -730,8 +859,53 @@ class Companion {
       case 'jump':
         this.updateAirborne(dt);
         break;
+      case 'fly':
+        this.updateFlying(dt);
+        break;
       default:
         this.updateGrounded(dt, cursor);
+    }
+  }
+
+  /**
+   * Up near the top of the screen, drifting back and forth (Nomi wandering
+   * the sky); when the time's up he floats back down (updateGrounded).
+   */
+  updateFlying(dt) {
+    const b = this.bounds;
+    const fly = this.own(this.state).fly;
+    const minX = b.left + this.halfWidth;
+    const maxX = b.right - this.halfWidth;
+    const skyY = b.top + this.height + (fly.below || 30);
+    if (this.stateTime >= this.stateDuration) {
+      this.chooseNext();
+      return;
+    }
+    // Rise to the sky, then drift towards one spot after another.
+    this.y = Math.max(skyY, this.y - (fly.climb || 70) * dt);
+    if (Math.abs(this.targetX - this.x) < 8 || this.targetX < minX || this.targetX > maxX) {
+      this.targetX = minX + this.rng() * (maxX - minX);
+    }
+    const dir = Math.sign(this.targetX - this.x);
+    this.facing = dir || this.facing;
+    this.vx = dir * (fly.speed || 35) * this.speedFactor();
+    this.x = clamp(this.x + this.vx * dt, minX, maxX);
+  }
+
+  /** Thrown off the edge of the screen (Nomi): a moment out of sight, then floating slowly back. */
+  updateReturning(dt) {
+    this.vx = 0;
+    if (this.stateTime < 2.5) return;
+    const dir = Math.sign(this.targetX - this.x);
+    this.facing = dir || this.facing;
+    this.vx = dir * 40;
+    this.x += this.vx * dt;
+    if (!dir || Math.sign(this.targetX - this.x) !== dir) {
+      this.x = this.targetX;
+      this.vx = 0;
+      const after = this.character.afterThrow;
+      if (after) this.enter(after.state, after.duration);
+      else this.chooseNext();
     }
   }
 
@@ -746,9 +920,12 @@ class Companion {
 
   updateAirborne(dt) {
     const b = this.bounds;
-    this.vy += TUNING.gravity * dt;
-    const drag = Math.max(0, 1 - TUNING.airDrag * dt);
+    // A floating character (Nomi) falls gently and the air slows her more.
+    const float = this.character.float;
+    this.vy += TUNING.gravity * (float ? float.gravity : 1) * dt;
+    const drag = Math.max(0, 1 - TUNING.airDrag * (float ? float.drag : 1) * dt);
     this.vx *= drag;
+    if (float) this.vy *= drag;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
@@ -760,13 +937,30 @@ class Companion {
     const minX = b.left + this.halfWidth;
     const maxX = b.right - this.halfWidth;
     const open = this.crossing ? this.crossing.dir : null;
-    if (this.x < minX && this.vx <= 0 && open !== 'left') {
+    // Thrown hard enough, a floating character is carried off the screen
+    // and comes back on her own a little later (updateReturning).
+    if (float && this.justThrown && (this.x < b.left - this.halfWidth || this.x > b.right + this.halfWidth)) {
+      const side = this.x > b.right ? 1 : -1;
+      this.throwTimes = this.throwTimes.filter((t) => this.time - t < TUNING.angryWindow);
+      this.justThrown = false;
+      this.confusedPending = false;
+      this.x = side > 0 ? b.right + this.halfWidth * 2 : b.left - this.halfWidth * 2;
+      this.y = b.floor;
+      this.vx = 0;
+      this.vy = 0;
+      this.swing = 0;
+      this.targetX = side > 0 ? maxX - 120 : minX + 120;
+      this.enter(float.returning, Infinity);
+      return;
+    }
+    const carried = float && this.justThrown;
+    if (this.x < minX && this.vx <= 0 && open !== 'left' && !carried) {
       this.x = minX;
       if (this.vx < 0) {
         this.vx = -this.vx * TUNING.wallBounce;
         if (Math.abs(this.vx) > 300) this.emit('bonk');
       }
-    } else if (this.x > maxX && this.vx >= 0 && open !== 'right') {
+    } else if (this.x > maxX && this.vx >= 0 && open !== 'right' && !carried) {
       this.x = maxX;
       if (this.vx > 0) {
         this.vx = -this.vx * TUNING.wallBounce;
@@ -799,7 +993,7 @@ class Companion {
         this.enter('land', 0.35);
         return;
       }
-      if (impact > TUNING.hardLanding) {
+      if (impact > TUNING.hardLanding && !float) {
         // Bounce.
         this.vy = -impact * TUNING.floorBounce;
         this.vx *= 0.6;
@@ -811,16 +1005,26 @@ class Companion {
       this.vy = 0;
       this.swing = 0;
       this.emit('land');
-      this.throwTimes = this.throwTimes.filter((t) => this.time - t < TUNING.angryWindow);
-      if (this.throwTimes.length >= TUNING.angryThrows) {
+      const thrown = this.justThrown;
+      this.justThrown = false;
+      // The character's own reaction to being thrown (Pip checks himself).
+      const afterThrow = thrown && this.character.afterThrow;
+      // Thrown around too much: angry (or the character's own rule: Mori
+      // never gets angry; he holds up a "Please don't." sign).
+      const rule = this.character.thrownTooMuch;
+      this.throwTimes = this.throwTimes.filter((t) => this.time - t < (rule ? rule.window : TUNING.angryWindow));
+      const limit = rule ? rule.throws : this.character.neverAngry ? Infinity : TUNING.angryThrows;
+      if (this.throwTimes.length >= limit) {
         this.throwTimes = [];
         this.confusedPending = false;
-        this.enter('angry', 2.5);
-        this.emit('angry');
+        this.enter(rule ? rule.state : 'angry', rule ? rule.duration : 2.5);
+        this.emit(rule ? rule.event : 'angry');
       } else if (this.confusedPending) {
         this.confusedPending = false;
         this.enter('confused', 2.5);
         this.emit('confused');
+      } else if (afterThrow) {
+        this.enter(afterThrow.state, afterThrow.duration);
       } else if (!this.greeted) {
         this.greeted = true;
         this.enter('wave', 2.2);
@@ -833,23 +1037,28 @@ class Companion {
 
   updateGrounded(dt, cursor) {
     const b = this.bounds;
-    this.y = b.floor;
+    // Back from the sky (or anywhere up high), a floating character drifts down.
+    if (this.character.float && this.y < b.floor - 1) this.y = Math.min(b.floor, this.y + 160 * dt);
+    else this.y = b.floor;
     this.vy = 0;
+    if (this.ownState(this.state) && this.ownState(this.state).returning) {
+      this.updateReturning(dt);
+      return;
+    }
+    // Called away (a reminder…) while still off the screen after a throw: back in at once.
+    if (this.character.float && !this.crossing && (this.x < b.left || this.x > b.right)) {
+      this.x = clamp(this.x, b.left + this.halfWidth, b.right - this.halfWidth);
+    }
 
     const minX = b.left + this.halfWidth;
     const maxX = b.right - this.halfWidth;
 
-    switch (this.state) {
+    // His own activities that move him (dribbling a ball…) walk like walking.
+    const ownMove = this.own(this.state) && this.own(this.state).move;
+    switch (ownMove ? 'walk' : this.state) {
       case 'walk':
-      case 'run':
-      case 'play':
-      case 'adventure': {
-        const speed = {
-          walk: TUNING.walkSpeed,
-          run: TUNING.runSpeed,
-          play: TUNING.playSpeed,
-          adventure: TUNING.adventureSpeed,
-        }[this.state] * this.speedFactor();
+      case 'run': {
+        const speed = (ownMove ? ownMove.speed : this.state === 'run' ? TUNING.runSpeed : TUNING.walkSpeed) * this.speedFactor();
         const dir = Math.sign(this.targetX - this.x);
         this.facing = dir || this.facing;
         this.vx = dir * speed;
@@ -882,6 +1091,15 @@ class Companion {
           } else {
             this.enter('lookAround', 2);
           }
+        }
+        break;
+      case 'lookUp':
+        // Lonely, looking up at your window; ignored long enough, he sits
+        // down there quietly for a while.
+        this.vx = 0;
+        if (this.stateTime >= this.stateDuration) {
+          this.enter('sit', LONELY.sit);
+          this.byWindow = true;
         }
         break;
       case 'angry':
@@ -929,7 +1147,22 @@ class Companion {
         break;
       default:
         this.vx = 0;
-        if (this.stateTime >= this.stateDuration) this.chooseNext();
+        if (this.stateTime >= this.stateDuration) {
+          // One of the character's own states that ends with something (Pip: "That was unnecessary.").
+          const own = this.ownState(this.state);
+          if (own && own.endEvent) this.emit(own.endEvent);
+          // Distracted on the way to the fetch toy (Mori and a leaf): on he goes.
+          if (own && own.resumeFetch && this.game && this.game.kind === 'fetch' && this.ball.state === 'resting') {
+            this.fetchBall(true);
+            break;
+          }
+          // Some activities turn out a way that leads on to something else,
+          // and some of his own states do (Mori walks away after a throw).
+          const then = (this.currentVariant() && this.currentVariant().then) || (own && own.then);
+          if (then && then.activity) this.startActivity(then.activity);
+          else if (then) this.enter(then.state, then.duration);
+          else this.chooseNext();
+        }
     }
 
     this.updateReminder();
@@ -959,10 +1192,21 @@ class Companion {
     const sx = point.x - this.x;
     const sy = this.y - point.y; // height above his feet
     if (this.ball.state === 'held' && this.canGrabBall(point)) return 'ball';
+    // Listening: only his 👂 bubble is shown (nothing to click on it); what
+    // he was holding up is hidden, so it can't be clicked either.
+    if (this.listeningNow) {
+      const lb = this.bubble;
+      if (lb && Math.abs(sx) <= lb.halfWidth && sy >= HIT.signBottom && sy <= lb.top) return 'listening';
+      const lx = sx / HIT.rx;
+      const ly = (sy - HIT.cy) / HIT.ry;
+      return lx * lx + ly * ly <= 1 ? 'body' : null;
+    }
+    // A bubble that sizes to its text: the renderer says how big it is (setBubble).
+    const b = this.bubble;
     if (BOARD_STATES.includes(this.state)) {
       const j = HIT.join;
       if (this.state === 'sign' && this.meetingLink() && sx >= j.left && sx <= j.right && sy >= j.bottom && sy <= j.top) return 'join';
-      if (Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'sign';
+      if (Math.abs(sx) <= Math.max(HIT.signHalfWidth, b ? b.halfWidth : 0) && sy >= HIT.signBottom && sy <= Math.max(HIT.signTop, b ? b.top : 0)) return 'sign';
     }
     if (this.asking()) {
       const a = HIT.answers;
@@ -973,13 +1217,23 @@ class Companion {
         if (inside(a.own)) return 'answerOwn';
       }
       const q = HIT.question;
-      if (Math.abs(sx) <= q.halfWidth && sy >= q.bottom && sy <= q.top) return 'question';
+      if (Math.abs(sx) <= (b ? Math.max(q.halfWidth, b.halfWidth) : q.halfWidth) && sy >= q.bottom && sy <= (b ? Math.max(q.top, b.top) : q.top)) return 'question';
     }
-    if (this.speaking() && Math.abs(sx) <= HIT.signHalfWidth && sy >= HIT.signBottom && sy <= HIT.signTop) return 'speech';
+    if (this.speaking() && Math.abs(sx) <= (b ? b.halfWidth : HIT.signHalfWidth) && sy >= HIT.signBottom && sy <= (b ? b.top : HIT.signTop)) return 'speech';
     const dx = sx / HIT.rx;
     const dy = (sy - HIT.cy) / HIT.ry;
     if (dx * dx + dy * dy <= 1) return 'body';
     return null;
+  }
+
+  /**
+   * The size of the bubble over his head as the renderer drew it: { halfWidth,
+   * top } in screen px from his feet (top: how high it reaches), or null when
+   * there's none. Bubbles size to their text, so clicks and his window follow.
+   */
+  setBubble(box) {
+    const ok = box && Number.isFinite(box.halfWidth) && Number.isFinite(box.top);
+    this.bubble = ok ? { halfWidth: Math.min(Math.max(box.halfWidth, 0), 400), top: Math.min(Math.max(box.top, 0), 1200) } : null;
   }
 
   // ---------------------------------------------------------------- his own words
@@ -989,23 +1243,35 @@ class Companion {
    * `action` along with it if he's free. Returns false if he can't show it
    * right now (he's holding up a sign, a nudge or a game invite).
    */
-  say(text, action = 'none') {
+  say(text, action = 'none', { badge = null } = {}) {
     if (!text || this.board()) return false;
     const words = String(text).split(/\s+/).length;
-    this.speech = { text: String(text), until: this.time + Math.min(SPEECH.max, SPEECH.base + SPEECH.perWord * words) };
+    this.speech = { text: String(text), badge, until: this.time + Math.min(SPEECH.max, SPEECH.base + SPEECH.perWord * words) };
     this.emit('speak');
     this.mindAction(action);
     return true;
   }
 
   /**
+   * Say `text` now, or, while he's holding something up for you (a nudge, a
+   * sign, a game invite), as soon as he puts it down (within `maxWait` s).
+   * For the "📝 17:00" after a spoken reminder (Sushant, 2026-10-25).
+   */
+  sayLater(text, action = 'none', maxWait = 600) {
+    if (this.say(text, action)) return true;
+    this.pendingSay = { text: String(text), action, until: this.time + maxWait };
+    return false;
+  }
+
+  /**
    * Ask `text` with two answers to click (his own question, from
    * src/main/mind). It stays up until you answer or SPEECH.question s pass.
-   * Returns false if he can't show it right now.
+   * Returns false if he can't show it right now. `badge`: a small sign on the
+   * bubble saying what it's about ('calendar'), or null.
    */
-  ask(text, answers, action = 'none') {
+  ask(text, answers, action = 'none', { badge = null } = {}) {
     if (!text || !Array.isArray(answers) || answers.length !== 2 || this.board()) return false;
-    this.speech = { text: String(text), answers: answers.map(String), until: this.time + SPEECH.question };
+    this.speech = { text: String(text), answers: answers.map(String), badge, until: this.time + SPEECH.question };
     this.emit('speak');
     // He stands still so the answers don't walk away from your cursor (and
     // doesn't hold up a game invite over his own question).
@@ -1024,12 +1290,13 @@ class Companion {
    */
   startWatching(screen) {
     this.watching = { screen: Number.isInteger(screen) && this.screens && this.screens[screen] ? screen : null };
+    this.studying = false;
     if (this.nudge && this.nudge.kind !== 'note' && this.nudge.kind !== 'bedtime') {
       const showing = this.state === NUDGE[this.nudge.kind].state;
       this.nudge = null;
       if (showing) this.enter('idle', 0.5);
     }
-    if (this.isGrounded() && !this.game && !this.reminder && (INTERRUPTIBLE.includes(this.state) || ['sleep', 'play', 'adventure', 'eat', 'flower'].includes(this.state))) this.goWatch();
+    if (this.isGrounded() && !this.game && !this.reminder && (INTERRUPTIBLE.includes(this.state) || this.state === 'sleep' || this.own(this.state))) this.goWatch();
   }
 
   /** What you're watching moved to screen `screen`: he follows. */
@@ -1043,12 +1310,26 @@ class Companion {
   stopWatching() {
     if (!this.watching) return;
     this.watching = null;
-    if (this.state === 'backView' || (this.state === 'walk' && this.afterMove && this.afterMove.state === 'backView')) {
+    if (this.state === 'backView' || this.state === 'watchReact' || (this.state === 'walk' && this.afterMove && this.afterMove.state === 'backView')) {
       this.route = null;
       this.afterMove = null;
       this.vx = 0;
       this.enter('idle', 1.5);
     }
+  }
+
+  /**
+   * A moment of what you're watching made him feel `mood` (exciting, funny,
+   * sad, scary, beautiful, boring, calm): his body shows it for a few
+   * seconds, then he goes back to watching. Only while sitting in his spot.
+   */
+  watchReact(mood) {
+    if (!this.watching || this.state !== 'backView' || !this.isGrounded() || !WATCH_REACT[mood]) return false;
+    this.watchMood = mood;
+    this.enter('watchReact', WATCH_REACT[mood]);
+    if (mood === 'funny') this.emit('watchHeart');
+    if (mood === 'beautiful') this.emit('sparkles');
+    return true;
   }
 
   /** Go to the bottom-right corner of the screen you're watching on and sit there with his back to you. */
@@ -1065,6 +1346,51 @@ class Companion {
     }
     this.vx = 0;
     this.enter('backView', WATCH_SPOT.sit);
+  }
+
+  /**
+   * The window you're working in ({ x, y, width, height } in screen px), or
+   * null if he doesn't know (app watching off): where he goes when lonely.
+   */
+  setWorkWindow(w) {
+    this.workWindow = w && w.width > 0 && w.height > 0 ? { x: w.x, y: w.y, width: w.width, height: w.height } : null;
+  }
+
+  /**
+   * Another character takes his place (Phase 9): its own needs and mood
+   * (`saved`, from its brain.json, `elapsed` s ago), while your reminders,
+   * notes and water count stay. (main.js shows a puff once he's drawn.)
+   */
+  setCharacter(ch, saved = null, elapsed = 0) {
+    const nudges = this.nudges.serialize();
+    if (this.game) this.endGame('cancel');
+    this.character = ch;
+    this.needs = brain.defaultNeeds();
+    this.mood = 0.3;
+    this.grumpiness = 0;
+    this.speech = null;
+    this.route = null;
+    this.afterMove = null;
+    this.vx = 0;
+    if (saved) this.restore(saved, elapsed);
+    this.nudges.restore(nudges);
+    if (this.isGrounded()) this.enter('idle', 2);
+  }
+
+  /** Walk (across screens if needed) to just below your window, then `then`. */
+  goToWindowThen(then) {
+    const w = this.workWindow;
+    if (!w || this.paused || this.context.quiet) {
+      this.enter(then.state, then.duration);
+      return;
+    }
+    const cx = w.x + w.width / 2;
+    const cy = w.y + w.height / 2;
+    if (this.screens.length > 1) {
+      const target = screensLib.screenAt(this.screens, cx, cy);
+      if (target !== this.screenIndex && this.travelTo(target, cx, then)) return;
+    }
+    this.walkTo(clamp(cx, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth), 'walk', then);
   }
 
   /** Showing a question with answers right now. */
@@ -1118,12 +1444,48 @@ class Companion {
     this.speech = null;
   }
 
+  /**
+   * You're talking to him (Phase 11): a bubble (👂, then … while he works out
+   * what you said); no chirp, so the microphone doesn't hear him. Listening
+   * comes before whatever he's doing (Sushant, 2026-10-25): he stops what he
+   * was saying and stands still in his standing pose with the 👂 bubble. A
+   * question, a sign, a reminder, a nudge or a game invite he was showing
+   * waits underneath (its timers too) and comes back when he's done, so a
+   * spoken answer still picks the question's answer. What he was doing
+   * carries on afterwards, like after his right-click menu.
+   */
+  listening(on, text = '👂') {
+    if (!on) {
+      this.listen = null;
+      return;
+    }
+    if (!this.listen) {
+      this.listenAt = this.time;
+      if (this.speech && !this.speech.answers) this.speech = null; // he stops talking to listen
+      const wandering = ['walk', 'run'].includes(this.state) && !this.route && !this.nudge && !this.reminder && !this.watching && !this.game;
+      if (wandering && this.isGrounded()) {
+        this.afterMove = null;
+        this.enter('idle', 1);
+      }
+      this.vx = 0;
+    }
+    this.listen = { text, until: this.time + 30 };
+  }
+
+  /** Listening to you right now (see listening()). */
+  get listeningNow() {
+    return !!this.listen && this.time < this.listen.until;
+  }
+
   /** Something his mind decided to do while talking (see ACTIONS in src/main/mind/thinker.js). */
   mindAction(action) {
-    if (!action || action === 'none' || !this.isGrounded() || this.game || this.nudge) return;
+    if (!action || action === 'none' || !this.isGrounded() || this.game || this.nudge || this.menuHeld) return;
     if (this.reminder && !this.reminder.acknowledged) return;
     if (!INTERRUPTIBLE.includes(this.state) && !['happy', 'curious', 'shy'].includes(this.state)) return;
     this.vx = 0;
+    // Study buddy is off (moments.js): even if it's asked for, he never starts it.
+    // this.studying = action === 'studyBuddy';
+    this.studying = false;
     switch (action) {
       case 'wave':
         this.enter('wave', 2.2);
@@ -1152,6 +1514,22 @@ class Companion {
       case 'askToPlay':
         if (!this.context.quiet) this.startGame(GAMES[Math.floor(this.rng() * GAMES.length)]);
         break;
+      // Phase 12 moments: built from poses every character has, plus
+      // particle effects drawn outside the character (renderer.js).
+      case 'celebrate':
+        this.emit('confetti');
+        if (!this.paused) this.startActivity('jump');
+        else this.enter('happy', 1.4);
+        break;
+      case 'comfort':
+        // (Not 'heart': that means you petted him.)
+        this.emit('comfort');
+        this.enter('hug', 3);
+        break;
+      // Study buddy is off (moments.js).
+      // case 'studyBuddy':
+      //   this.enter('backView', STUDY_SIT);
+      //   break;
       default:
     }
   }
@@ -1165,7 +1543,7 @@ class Companion {
 
   /** Curious when the cursor lingers nearby, shy when it rests on him, waves when it returns. */
   reactToCursor(dt, cursor) {
-    if (this.watching) return; // busy watching
+    if (this.watching || this.studying) return; // busy watching or studying
     const dist = Math.hypot(cursor.x - this.x, cursor.y - (this.y - HIT.cy));
     const on = this.isOver(cursor);
     const near = !on && dist < 180;
@@ -1210,6 +1588,14 @@ class Companion {
       this.goWatch();
       return;
     }
+    if (this.studying) {
+      // Still studying with you; once you're away the work has stopped.
+      if (!this.context.userAway) {
+        this.enter('backView', STUDY_SIT);
+        return;
+      }
+      this.studying = false;
+    }
     const scored = brain.scoreActivities(this.needs, this.mood, this.context, {
       paused: this.paused || this.asking(),
       cursorKnown: !!this.lastCursor,
@@ -1222,6 +1608,7 @@ class Companion {
         this.time - this.lastSeekAt >= brain.NEEDS.seekCooldown * this.backoff() &&
         this.time - this.lastAttentionAt >= brain.NEEDS.attentionGrace,
       sadReady: this.time - this.lastSadAt >= brain.NEEDS.sadCooldown * this.backoff(),
+      character: this.character,
       rng: this.rng,
     });
     this.lastScores = scored.slice(0, 6);
@@ -1261,7 +1648,7 @@ class Companion {
       if (showing) this.enter('sit', rand(24, 60, this.rng));
     }
     if (!this.isGrounded() || this.state === 'grabbed') return;
-    if (!BUSY_WHEN_QUIET.includes(this.state)) return;
+    if (!BUSY_WHEN_QUIET.includes(this.state) && !this.own(this.state)) return;
     if (this.afterMove && this.afterMove.state === 'sign') return; // on his way to show you a reminder
     this.route = null;
     this.crossing = null;
@@ -1427,34 +1814,37 @@ class Companion {
       const key = kind === 'now' ? 'meetingNow' : kind === '30' ? 'meeting30' : 'meeting5';
       return {
         style: 'sign',
-        line1: say(key, band),
+        line1: say(key, band, this.character.lines.signs),
         line2: this.reminder.event.title || '',
         tag: 'OK ✓',
         join: !!this.meetingLink(),
         urgent: kind === 'now',
       };
     }
+    // Mori's "Please don't." after being thrown around too much.
+    const rule = this.character.thrownTooMuch;
+    if (rule && this.state === rule.state) return { style: 'sign', line1: say(rule.state, band, this.character.lines.signs), line2: '', tag: null };
     const g = this.game;
     if (this.state === 'offerBall' && g) {
-      return { style: 'bubble', line1: say(g.rounds ? 'fetchAgain' : 'fetch', band), line2: 'Grab the ball and throw it!', tag: null };
+      return { style: 'bubble', line1: say(g.rounds ? 'fetchAgain' : 'fetch', band, this.character.lines.signs), line2: 'Grab the ball and throw it!', tag: null };
     }
-    if (this.state === 'offerGame' && g) return { style: 'bubble', line1: say('ttt', band), line2: 'Click me to play', tag: 'Play ✓' };
+    if (this.state === 'offerGame' && g) return { style: 'bubble', line1: say('ttt', band, this.character.lines.signs), line2: 'Click me to play', tag: 'Play ✓' };
     if (!n || this.state !== NUDGE[n.kind].state) return null;
     switch (n.kind) {
       case 'note':
-        return { style: 'note', line1: n.note.text, line2: say('note', band), tag: 'OK ✓' };
+        return { style: 'note', line1: n.note.text, line2: say('note', band, this.character.lines.signs), tag: 'OK ✓' };
       case 'water': {
         const g = this.nudges.water;
-        return { style: 'bubble', line1: say('water', band), line2: g ? `${g} glass${g === 1 ? '' : 'es'} today` : 'first one today', tag: 'Drank ✓' };
+        return { style: 'bubble', line1: say('water', band, this.character.lines.signs), line2: g ? `${g} glass${g === 1 ? '' : 'es'} today` : 'first one today', tag: 'Drank ✓' };
       }
       case 'stretch': {
         const m = this.nudges.minutesSinceBreak();
-        return { style: 'bubble', line1: say('stretch', band), line2: m ? `${m} min without a break` : '', tag: 'Done ✓' };
+        return { style: 'bubble', line1: say('stretch', band, this.character.lines.signs), line2: m ? `${m} min without a break` : '', tag: 'Done ✓' };
       }
       case 'bedtime':
-        return { style: 'bubble', line1: say('bedtime', band), line2: `It's ${clockTime(this.context.now)}`, tag: 'OK ✓' };
+        return { style: 'bubble', line1: say('bedtime', band, this.character.lines.signs), line2: `It's ${clockTime(this.context.now)}`, tag: 'OK ✓' };
       case 'eyes':
-        return { style: 'bubble', line1: say('eyes', band), line2: `${Math.max(0, Math.ceil(this.stateDuration - this.stateTime))} s`, tag: null };
+        return { style: 'bubble', line1: say('eyes', band, this.character.lines.signs), line2: `${Math.max(0, Math.ceil(this.stateDuration - this.stateTime))} s`, tag: null };
       default:
         return null;
     }
@@ -1519,7 +1909,7 @@ class Companion {
 
   /** Slower when tired or the battery is low. */
   speedFactor() {
-    let f = 1;
+    let f = this.character.speed || 1; // Mori walks slowly
     const c = this.context;
     if (c.onBattery && c.batteryLevel != null && c.batteryLevel < 0.2) f *= 0.75;
     if (this.needs.energy < 0.2) f *= 0.8;
@@ -1570,6 +1960,7 @@ class Companion {
     if (!g || !this.isGrounded()) return false;
     if (g.kind === 'fetch') {
       if (g.step === 'offer') {
+        if (this.ball.state === 'away') this.holdBall(); // a new one (Nomi's bubble popped)
         if (!this.headingFor('offerBall')) this.goToCursorThen({ state: 'offerBall', duration: Infinity }, g.rounds ? 'run' : 'walk');
       } else if (g.step === 'held' || this.ball.state === 'flying') {
         this.vx = 0;
@@ -1634,9 +2025,9 @@ class Companion {
     this.afterMove = null;
     this.vx = 0;
     if (reason === 'gaveUp') {
-      // Nobody to play with: fine, he'll play with his own ball.
+      // Nobody to play with: fine, he'll play on his own.
       this.emit('gaveUp');
-      this.startActivity('play');
+      this.startActivity(this.character.soloPlay, this.character.soloVariant);
     } else if (reason === 'done' && g.rounds) {
       this.emit('thatWasFun');
       this.enter('happy', 1.5);
@@ -1704,7 +2095,7 @@ class Companion {
   }
 
   /** Run to where the ball stopped (through the screen edges if need be) and pick it up. */
-  fetchBall() {
+  fetchBall(resumed = false) {
     const b = this.ball;
     const then = { state: 'pickBall', duration: GAME.pickUp };
     if (this.screens.length > 1) {
@@ -1716,8 +2107,26 @@ class Companion {
         b.y = this.bounds.floor - BALL.r;
       }
     }
-    this.emit('fetch');
-    this.walkTo(clamp(b.x, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth), 'run', then);
+    const x = clamp(b.x, this.bounds.left + this.halfWidth, this.bounds.right - this.halfWidth);
+    // Nomi's dream bubble sometimes pops: she's surprised, then blows a new one.
+    const pop = this.character.fetchPop;
+    if (pop && !resumed && this.rng() < pop.chance) {
+      b.putAway();
+      this.game.step = 'offer';
+      this.game.deadline = this.time + GAME.waitFor;
+      this.emit(pop.event);
+      this.vx = 0;
+      this.enter('surprised', 1.4);
+      return;
+    }
+    if (!resumed) this.emit('fetch');
+    // Some characters get distracted halfway (Mori: a leaf), then carry on.
+    const d = this.character.fetchDistraction;
+    if (d && !resumed && Math.abs(x - this.x) > 160 && this.rng() < d.chance) {
+      this.walkTo(this.x + (x - this.x) / 2, 'run', { state: d.state, duration: d.duration });
+      return;
+    }
+    this.walkTo(x, 'run', then);
   }
 
   /** Bent down by the ball: pick it up and bring it back to you. */
@@ -1805,6 +2214,9 @@ class Companion {
     if (!this.isGrounded()) return;
     this.vx = 0;
     if (outcome === 'me') {
+      this.wonGameAt = this.time;
+      // The finished board (Nomi makes a little constellation of it).
+      this.wonBoard = { mine: g.ttt.board.map((m) => (m ? (m === g.ttt.me ? 1 : 2) : 0)), line: g.ttt.result.line };
       this.emit('tttIWin');
       this.enter('happy', 2);
     } else if (outcome === 'you') {
@@ -1875,6 +2287,7 @@ class Companion {
   brainSnapshot() {
     return {
       state: this.state,
+      stateLabel: (this.own(this.state) || this.ownState(this.state) || {}).label || null,
       needs: { ...this.needs },
       mood: this.mood,
       band: this.moodBand(),
@@ -1903,9 +2316,12 @@ class Companion {
   }
 
   /** Start one activity (used by chooseNext and doActivity). */
-  startActivity(name) {
+  startActivity(name, variant = null) {
     const rng = this.rng;
     this.lastActivity = name;
+    // Some of his own activities can turn out more than one way (or the way asked for).
+    const a = this.own(name);
+    this.variant = a && a.variants ? variant || pickVariant(a.variants, rng) : null;
     this.applyEffect(name);
     switch (name) {
       case 'walk':
@@ -1914,16 +2330,6 @@ class Companion {
       case 'run':
         this.startMove('run', 150, 700);
         break;
-      case 'play':
-        this.startMove('play', 120, 320);
-        this.emit('play');
-        break;
-      case 'adventure': {
-        const width = this.bounds.right - this.bounds.left;
-        this.startMove('adventure', width * 0.5, Math.min(width * 0.9, 1600));
-        this.emit('adventure');
-        break;
-      }
       case 'jump':
         this.vy = -rand(500, 800, rng);
         this.vx = this.facing * rand(0, 120, rng);
@@ -1942,14 +2348,6 @@ class Companion {
       case 'talk':
         this.enter('talk', rand(4, 6, rng));
         this.emit('talk');
-        break;
-      case 'eat':
-        this.enter('eat', 5);
-        this.emit('eat');
-        break;
-      case 'flower':
-        this.enter('flower', rand(6, 10, rng));
-        this.emit('flower');
         break;
       case 'backView':
         this.enter('backView', rand(6, 10, rng) * (this.context.quiet ? 2 : 1));
@@ -1981,7 +2379,7 @@ class Companion {
       }
       case 'invite':
         // Getting bored: ask you to play one of his games.
-        if (!this.startGame(GAMES[Math.floor(rng() * GAMES.length)])) this.startActivity('play');
+        if (!this.startGame(GAMES[Math.floor(rng() * GAMES.length)])) this.startActivity(this.character.soloPlay, this.character.soloVariant);
         break;
       case 'seek':
         // Lonely: go and stand under your cursor hoping for attention.
@@ -1989,10 +2387,29 @@ class Companion {
         this.lastSadAt = this.time; // the sad face at the end counts as a sad spell
         this.ignoredAsks += 1; // reset as soon as you give him attention
         this.emit('lonely');
-        this.goToCursorThen({ state: 'sad', duration: rand(4, 7, rng) });
+        // To the window you're working in, to look up at it (Phase 9);
+        // without app watching, under your cursor with a sad face as before.
+        if (this.workWindow) this.goToWindowThen({ state: 'lookUp', duration: LONELY.lookUp });
+        else this.goToCursorThen({ state: 'sad', duration: rand(4, 7, rng) });
         break;
-      default:
-        throw new Error(`unknown activity ${name}`);
+      default: {
+        // One of the character's own activities (src/characters/<id>/index.js).
+        const a = this.own(name);
+        if (!a) throw new Error(`unknown activity ${name}`);
+        if (a.move) {
+          const d = typeof a.move.distance === 'function' ? a.move.distance(this.bounds.right - this.bounds.left) : a.move.distance;
+          this.startMove(name, d[0], d[1]);
+        } else if (a.fly) {
+          // Flying about for its `stay` time (updateFlying).
+          const [min, max] = a.stay.duration;
+          this.enter(name, rand(min, max, rng));
+          this.targetX = this.x;
+        } else {
+          const [min, max] = a.stay.duration;
+          this.enter(name, min === max ? min : rand(min, max, rng));
+        }
+        this.emit(name);
+      }
     }
   }
 
@@ -2019,11 +2436,14 @@ class Companion {
 
   /** Data the renderer needs each frame. */
   snapshot() {
+    // Your right-click menu is open: his standing pose (standingForMenu).
+    const stand = this.standingForMenu();
+    const listen = this.listeningNow;
     return {
-      state: this.state,
-      stateTime: this.stateTime,
+      state: stand ? 'idle' : this.state,
+      stateTime: stand ? this.time - (listen ? this.listenAt : this.menuHeldAt) : this.stateTime,
       facing: this.facing,
-      vx: this.vx,
+      vx: stand ? 0 : this.vx,
       vy: this.vy,
       swing: this.swing,
       grabOffset: this.grabOffset,
@@ -2036,15 +2456,25 @@ class Companion {
       reminderKind: this.reminder && !this.reminder.acknowledged ? this.reminder.kind : null,
       petting: this.petting,
       quiet: !!this.context.quiet,
-      board: this.board(),
+      board: listen ? null : this.board(),
       grumpy: this.time < this.grumpyUntil,
       holdingBall: this.ball.state === 'held',
       // Where the ball is, relative to his feet, while it's loose (he watches it).
       ball: this.ball.loose ? { x: this.ball.x - this.x, y: this.ball.y - this.y } : null,
       thinking: this.state === 'ttt' && !!this.game && !!this.game.ttt && this.game.ttt.myTurn,
-      speech: this.speaking() ? this.speech.text : null,
-      answers: this.asking() ? this.speech.answers : null,
+      // Listening: just the 👂 bubble; what he was showing comes back afterwards.
+      speech: listen ? this.listen.text : this.speaking() ? this.speech.text : null,
+      answers: !listen && this.asking() ? this.speech.answers : null,
+      speechBadge: !listen && this.speaking() ? this.speech.badge || null : null,
       watching: !!this.watching,
+      watchMood: !stand && this.state === 'watchReact' ? this.watchMood : null,
+      byWindow: !stand && this.state === 'sit' && this.byWindow,
+      variant: !stand && (this.own(this.state) || this.ownState(this.state)) ? this.variant : null,
+      // How far ahead his walk ends (px), while one of his own activities moves him.
+      ahead: !stand && this.own(this.state) && this.own(this.state).move ? this.targetX - this.x : null,
+      // Just beat you at tic-tac-toe (Mori wears a mushroom for a while).
+      wonGame: this.time - this.wonGameAt < 10,
+      wonBoard: this.time - this.wonGameAt < 10 ? this.wonBoard : null,
       time: this.time,
     };
   }

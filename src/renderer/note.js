@@ -1,6 +1,6 @@
 'use strict';
 
-// "Remind me" window: write a note, pick when, and Togepi brings it to you.
+// "Remind me" window: write a note, pick when, and he brings it to you.
 
 const $ = (id) => document.getElementById(id);
 const text = $('text');

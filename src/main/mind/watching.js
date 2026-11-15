@@ -5,21 +5,24 @@
 // on and sits in its bottom-right corner with his back to you, watching too,
 // quiet, until you stop. Only real playback counts: the playback pages of
 // streaming sites (by their address) and video player apps, not browsing.
-// It starts once you've stayed on it 30 s and ends once you've been
-// somewhere else for 30 s (Sushant, 2026-10-22: YouTube no longer waits
-// longer). A paused video can't be told apart from a playing one.
+// It starts once you've stayed on it 5 s and ends once you've been
+// somewhere else for 5 s (Sushant, 2026-10-25; it was 30 s). A paused video
+// can't be told apart from a playing one.
 //
 // Sites not on the list (and browsers that can't tell us the tab's address,
 // like Firefox) are judged by the decision model from the tab's title and
-// address: main.js asks it once per page (see `needsGuess` / GUESS_QUESTION)
+// address: main.js asks it once per page (see `needsGuess` / guessQuestion)
 // and passes the answer in. YouTube is also recognised by its title.
 // No Electron imports, so it can be unit tested.
 
+const { user } = require('./names');
+
 const WATCH = {
-  start: 30, // s on a playback page or player before it counts
-  stopAfter: 30, // s somewhere else before it's over
+  start: 5, // s on a playback page or player before it counts
+  stopAfter: 5, // s somewhere else before it's over
   gap: 15, // s away from it (a quick look elsewhere) that don't reset the wait before it starts
   maxIdle: 3 * 3600, // s without mouse or keyboard while watching before you count as away
+  glance: 120, // s between his glances at the screen while you watch (Phase 9)
 };
 
 // Playback pages, by address (host and path, without "www.").
@@ -44,15 +47,20 @@ const SITES = [
 const BROWSER = /chrome|chromium|safari|firefox|\barc\b|brave|edge|opera|vivaldi|browser|comet|^dia$|^zen$|orion|duckduckgo/i;
 
 // The decision model's question for a page not on the list.
-const GUESS_QUESTION = {
+const guessQuestion = () => ({
   type: 'choice',
-  instructions: 'Is Sushant watching a movie, a TV series, a show, a video or a live stream in this window right now?',
+  instructions: `Is ${user()} watching a movie, a TV series, a show, a video or a live stream in this window right now?`,
   criteria: {
     A: 'yes: watching a movie, series, show, video or stream',
     B: 'no: browsing, searching, reading, shopping, working or anything else',
   },
-};
-const GUESS_YES = 0.6; // probability of "yes" that counts
+});
+// Probability of "yes" that counts. The decision model says about 0.9-0.99
+// for real playback pages and about 0.5 when the title says nothing either
+// way, so 0.6 let unsure guesses through: the SBU Hacks site ("SBUHacks
+// 2026", 0.48 measured here, over 0.6 on a Mac) and Spotify's web player
+// (0.72) counted as watching (2026-10-25).
+const GUESS_YES = 0.85;
 
 // Video player apps (by app name).
 const APPS = {
@@ -79,6 +87,19 @@ function hostOf(url) {
   }
 }
 
+// Tab titles that say nothing about the page: a new or empty tab, the
+// browser's own pages, or just the browser's name ("Brave Browser"). Never
+// playback, and never asked about: the decision model once took Brave itself
+// for something being watched (2026-10-25).
+const BLANK_TITLE = /^(new tab|new private tab|new incognito tab|private browsing|start page|untitled|blank page|about:blank|favorites|favourites|top sites|speed dial|settings|history|downloads|bookmarks|extensions|wallet|rewards)$/i;
+
+function blankTitle(w) {
+  const t = withoutBrowser(w.title).trim();
+  if (!t || t.toLowerCase() === String(w.app || '').trim().toLowerCase()) return true;
+  if (BROWSER.test(t) && t.split(/\s+/).length <= 2) return true;
+  return BLANK_TITLE.test(t);
+}
+
 /** By address, player app or (YouTube) title, without the model; or null. */
 function known(w) {
   if (w.url) {
@@ -102,7 +123,7 @@ function watchingIn(w, guess = null) {
   if (!w || w.private) return null;
   const k = known(w);
   if (k) return k;
-  if (guess && guess.video) return { name: hostOf(w.url) || w.app };
+  if (guess && guess.video && !blankTitle(w)) return { name: hostOf(w.url) || w.app };
   return null;
 }
 
@@ -112,7 +133,7 @@ function watchingIn(w, guess = null) {
  * as playback. One answer per page (address and title).
  */
 function needsGuess(w) {
-  if (!w || w.private || !w.title || known(w)) return null;
+  if (!w || w.private || !w.title || known(w) || blankTitle(w)) return null;
   if (!w.url && !BROWSER.test(w.app || '')) return null;
   return `${w.url ? urlPart(w.url) : w.app}|${w.title}`;
 }
@@ -124,7 +145,7 @@ function guessState(w) {
 
 /** A window title without the browser's name some browsers add ("… — Mozilla Firefox"). */
 function withoutBrowser(title) {
-  return String(title || '').replace(/\s[-–—]\s*(Mozilla Firefox|Google Chrome|Brave|Microsoft\u200b? Edge|Opera|Vivaldi|Chromium|Safari)\s*$/i, '');
+  return String(title || '').replace(/\s[-–—]\s*(Mozilla Firefox|Google Chrome|Brave( Browser)?|Microsoft\u200b? Edge|Opera|Vivaldi|Chromium|Safari)\s*$/i, '');
 }
 
 /** The show or video's name from a window title, if it says more than the site's name. */
@@ -193,6 +214,7 @@ class Watching {
 function explain(w, guess) {
   if (!w) return 'no window to look at (needs "Notice which app I\'m using")';
   if (w.private) return 'a private window (he never looks)';
+  if (!known(w) && (w.url || BROWSER.test(w.app || '')) && blankTitle(w)) return `${w.app}: a new or empty tab, not a video`;
   if (BROWSER.test(w.app || '') && !w.url) {
     return guess ? `${w.app} doesn't show him the tab's address; the decision model says it isn't a video` : `${w.app} doesn't show him the tab's address; waiting for the decision model`;
   }
@@ -200,4 +222,4 @@ function explain(w, guess) {
   return `${w.app} isn't a video page or player`;
 }
 
-module.exports = { Watching, WATCH, GUESS_QUESTION, GUESS_YES, watchingIn, needsGuess, guessState, showTitle };
+module.exports = { Watching, WATCH, guessQuestion, GUESS_YES, watchingIn, needsGuess, guessState, showTitle };

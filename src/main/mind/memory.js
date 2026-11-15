@@ -3,7 +3,8 @@
 // Togepi's long-term memory (Phase 2 in docs/mind/PLAN.md), as Markdown files
 // in his mind folder that you can read and edit:
 //   journal/YYYY-MM-DD.md  his diary for each day, in his own words
-//   about-sushant.md       what he's learned about you, plus your own notes
+//   about-you.md           what he's learned about you, plus your own notes
+//                          (about-sushant.md before Phase 9; renamed on load)
 //   about-me.md            his opinions and running jokes
 // Each remembered line keeps its date and how important it is in a hidden
 // comment, e.g. "- Sushant applies to lots of jobs <!-- 2026-10-20 i7 -->".
@@ -25,6 +26,14 @@ const MEMORY = {
   journalHalfLife: 7, // days: how fast diary memories fade from mind
   factHalfLife: 60, // facts and opinions fade much more slowly
   notesChars: 1200, // your own notes, put into every prompt
+  // Recall by meaning (Phase 10): EmbeddingGemma's cosine similarity mapped
+  // to 0..1 relevance; at or below `meaningFloor` it has nothing to do with
+  // the moment, at `meaningTop` it's as relevant as it gets. Measured with
+  // your name left out of both (it's in almost every memory): unrelated
+  // memories 0.13-0.29, "applying to jobs" for a job post 0.45, "stays up
+  // late coding" at 1 am in Code 0.59.
+  meaningFloor: 0.28,
+  meaningTop: 0.5,
 };
 
 const DAY = 24 * 3600 * 1000;
@@ -65,6 +74,12 @@ function relevance(query, text) {
   let both = 0;
   for (const w of q) if (m.has(w)) both++;
   return both / Math.sqrt(q.size * m.size);
+}
+
+/** A cosine similarity as 0..1 relevance (0 when it isn't among the closest). */
+function meaningRelevance(sim) {
+  if (!Number.isFinite(sim)) return 0;
+  return Math.max(0, Math.min(1, (sim - MEMORY.meaningFloor) / (MEMORY.meaningTop - MEMORY.meaningFloor)));
 }
 
 // ------------------------------------------------------------------ files
@@ -141,12 +156,20 @@ class Memory {
 
   load() {
     if (!this.dir) return;
-    const about = read(this.file('about-sushant.md'));
+    // Before Phase 9 the file was named after Sushant.
+    if (read(this.file('about-you.md')) == null && read(this.file('about-sushant.md')) != null) {
+      try {
+        fs.renameSync(this.file('about-sushant.md'), this.file('about-you.md'));
+      } catch {
+        // read it from the old name below
+      }
+    }
+    const about = read(this.file('about-you.md')) ?? read(this.file('about-sushant.md'));
     if (about == null) {
       this.saveAbout();
     } else {
       const s = sections(about);
-      this.notes = (s['notes from sushant'] || [])
+      this.notes = (s['your notes'] || s['notes from sushant'] || [])
         .join('\n')
         .replace(NOTES_HELP, '')
         .trim();
@@ -198,11 +221,11 @@ class Memory {
   saveAbout() {
     if (!this.dir) return;
     write(
-      this.file('about-sushant.md'),
+      this.file('about-you.md'),
       [
-        '# About Sushant',
+        '# About you',
         '',
-        '## Notes from Sushant',
+        '## Your notes',
         '',
         this.notes || NOTES_HELP,
         '',
@@ -321,8 +344,10 @@ class Memory {
    * The memories that fit `query` best right now: [{ kind, text, date, score }].
    * Score = recency + importance + relevance, each 0..1 (equal weights).
    * `exclude`: texts already in his prompt (his core).
+   * `meaning`: Map text -> similarity from the database (Phase 10); without
+   * it, relevance is shared words.
    */
-  recall(query, n = MEMORY.recall, exclude = []) {
+  recall(query, n = MEMORY.recall, exclude = [], meaning = null) {
     const now = this.now();
     const skip = new Set(exclude);
     const cands = [
@@ -335,7 +360,7 @@ class Memory {
     const scored = cands.map((c) => {
       const age = c.date ? Math.max(0, (now - dayStart(c.date)) / DAY) : 30;
       const half = c.kind === 'journal' ? MEMORY.journalHalfLife : MEMORY.factHalfLife;
-      const rel = relevance(query, c.text);
+      const rel = meaning ? meaningRelevance(meaning.get(c.text)) : relevance(query, c.text);
       return { kind: c.kind, text: c.text, date: c.date, relevance: rel, score: 0.5 ** (age / half) + c.importance / 10 + rel };
     });
     // Something that has nothing to do with the moment needs to matter a lot to come to mind.
@@ -409,4 +434,4 @@ function journalDue(events, memory, { now = Date.now(), endOfDay = false, minEve
   return null;
 }
 
-module.exports = { Memory, MEMORY, relevance, parseItems, readEvents, pruneEvents, journalDue, dayString, dayStart };
+module.exports = { Memory, MEMORY, relevance, meaningRelevance, parseItems, readEvents, pruneEvents, journalDue, dayString, dayStart };

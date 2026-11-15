@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { user, them } = require('./names');
 
 // [key, label, one-line explanation] per facet, grouped by dimension.
 const TRAITS = {
@@ -106,46 +107,9 @@ const RELATIONSHIP = [
   ['familiarity', 'Familiarity', 'how well he knows you'],
 ];
 
-// Togepi as he is in the games and anime (approved 2026-10-20, see
-// docs/mind/togepi-personality.md). The relationship starts at "just met".
-const TOGEPI = {
-  traits: {
-    openness: { fantasy: 85, aesthetics: 70, feelings: 90, actions: 85, ideas: 35, values: 60 },
-    conscientiousness: { competence: 30, order: 15, dutifulness: 30, achievement: 20, self_discipline: 20, deliberation: 15 },
-    extraversion: { warmth: 90, gregariousness: 80, assertiveness: 55, activity: 80, excitement_seeking: 80, positive_emotions: 95 },
-    agreeableness: { trust: 85, straightforwardness: 75, altruism: 80, compliance: 35, modesty: 45, tender_mindedness: 80 },
-    neuroticism: { anxiety: 25, angry_hostility: 30, depression: 15, self_consciousness: 20, impulsiveness: 85, vulnerability: 55 },
-    honesty_humility: { sincerity: 85, fairness: 70, greed_avoidance: 50, modesty: 45 },
-  },
-  values: {
-    self_direction_thought: 45,
-    self_direction_action: 75,
-    stimulation: 90,
-    hedonism: 90,
-    achievement: 20,
-    power_dominance: 20,
-    power_resources: 20,
-    face: 40,
-    security_personal: 60,
-    security_societal: 25,
-    tradition: 20,
-    conformity_rules: 15,
-    conformity_interpersonal: 40,
-    humility: 45,
-    benevolence_dependability: 80,
-    benevolence_caring: 85,
-    universalism_concern: 55,
-    universalism_nature: 65,
-    universalism_tolerance: 65,
-  },
-  relationship: { affection: 25, trust: 25, familiarity: 5 },
-  // How far each layer may move per weekly reflection (Phase 4).
-  change: { traits: 3, values: 1, relationship: 10 },
-};
-
-const SELF = `I'm Togepi! I hatched from an egg and kept the shell. My shell is full of joy,
-and I feed on the happy feelings of the people around me. I'm curious, I wander
-off, I do things my own way, and I bring good luck to people who are kind.`;
+// Togepi's starting values, the reference for temperament() (see below).
+// Every character's own are in src/characters/<id>/index.js.
+const TOGEPI = require('../../characters/togepi').personality;
 
 function clampScore(v) {
   return Math.max(0, Math.min(100, Math.round(Number(v))));
@@ -155,9 +119,9 @@ function clone(o) {
   return JSON.parse(JSON.stringify(o));
 }
 
-/** A fresh personality: Togepi's starting values. */
-function defaultPersonality() {
-  return { version: 1, ...clone(TOGEPI), self: SELF, locked: [] };
+/** A fresh personality: character `ch`'s starting values (Togepi's by default). */
+function defaultPersonality(ch = require('../../characters').get()) {
+  return { version: 1, ...clone(ch.personality), self: ch.self, locked: [] };
 }
 
 /** Every slider as [path, label, explanation], e.g. ['traits.openness.fantasy', 'Fantasy', '…']. */
@@ -185,9 +149,9 @@ function setScore(personality, p, value) {
   return true;
 }
 
-/** Fill in anything missing or out of range from the defaults (old or hand-edited files). */
-function normalize(p) {
-  const base = defaultPersonality();
+/** Fill in anything missing or out of range from character `ch`'s defaults (old or hand-edited files). */
+function normalize(p, ch) {
+  const base = defaultPersonality(ch);
   const out = clone(base);
   if (!p || typeof p !== 'object') return out;
   for (const [sp] of sliders()) {
@@ -245,9 +209,9 @@ function parseFlowMap(s) {
 }
 
 /** Parse personality.md. Unknown or broken parts fall back to the defaults. */
-function parse(text) {
+function parse(text, ch) {
   const m = String(text).match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
-  if (!m) return normalize(null);
+  if (!m) return normalize(null, ch);
   const data = {};
   let section = null;
   for (const raw of m[1].split('\n')) {
@@ -274,15 +238,15 @@ function parse(text) {
     if (sub && section) data[section][sub[1]] = sub[2].trim().startsWith('{') ? parseFlowMap(sub[2]) : parseScalar(sub[2]);
   }
   const self = m[2].replace(/^\s*#\s*Who I am\s*\n/, '').trim();
-  return normalize({ ...data, self });
+  return normalize({ ...data, self }, ch);
 }
 
-/** Personality from `file`, or Togepi's defaults (written to `file`) on first run. */
-function load(file) {
+/** Personality from `file`, or character `ch`'s defaults (written to `file`) on first run. */
+function load(file, ch) {
   try {
-    return parse(fs.readFileSync(file, 'utf8'));
+    return parse(fs.readFileSync(file, 'utf8'), ch);
   } catch (e) {
-    const p = defaultPersonality();
+    const p = defaultPersonality(ch);
     if (e.code === 'ENOENT') save(file, p);
     return p;
   }
@@ -332,9 +296,9 @@ function describeRelationship(p) {
   const r = p.relationship;
   const level = (v, low, mid, high) => (v < 35 ? low : v < 65 ? mid : high);
   return [
-    level(r.familiarity, 'only just met Sushant', 'getting to know Sushant', 'knows Sushant well'),
-    level(r.affection, 'likes him a little so far', 'likes him', 'adores him'),
-    level(r.trust, 'still learning to trust him', 'trusts him', 'trusts him completely'),
+    level(r.familiarity, `only just met ${user()}`, `getting to know ${user()}`, `knows ${user()} well`),
+    level(r.affection, `likes ${them()} a little so far`, `likes ${them()}`, `adores ${them()}`),
+    level(r.trust, `still learning to trust ${them()}`, `trusts ${them()}`, `trusts ${them()} completely`),
   ].join(', ');
 }
 

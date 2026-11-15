@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const P = require('./personality');
-const { INTERACTIONS } = require('./interactions');
+const { interactionKey } = require('./interactions');
 const { dayString, dayStart } = require('./memory');
 
 const GROWTH = {
@@ -31,7 +31,6 @@ const GROWTH = {
 const DAY = 24 * 3600 * 1000;
 
 // What each kind of day-event does to the relationship: [metric, amount, daily cap].
-const KEY_BY_TEXT = Object.fromEntries(Object.entries(INTERACTIONS).map(([k, text]) => [text, k]));
 const RULES = {
   heart: [['affection', 0.6, 3]],
   throw: [['affection', -0.7, -4], ['trust', -0.5, -3]],
@@ -63,7 +62,7 @@ function dayRelationship(events) {
   const perKey = {};
   for (const e of events) {
     let key = null;
-    if (e.kind === 'interact') key = KEY_BY_TEXT[e.text] || null;
+    if (e.kind === 'interact') key = e.key || interactionKey(e.text);
     if (key && RULES[key]) {
       for (const [metric, amount, cap] of RULES[key]) {
         const k = `${key}:${metric}`;

@@ -1,14 +1,20 @@
 {
   "name": "digital-companion",
   "version": "0.1.0",
+  "productName": "Filo",
   "description": "A little desktop pet that wanders around your screen. Pick him up, throw him, pet him.",
   "author": "Sushant Patil",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node scripts/build-helpers.js && electron .",
     "test": "node --test test/*.test.js",
-    "dist": "node scripts/fetch-models.js && node scripts/clean-dist.js && electron-builder --mac --dir && node scripts/adhoc-sign.js",
-    "fetch-models": "node scripts/fetch-models.js"
+    "dist": "node scripts/fetch-models.js && node scripts/build-helpers.js && node scripts/clean-dist.js && electron-builder --mac --dir && node scripts/sign.js",
+    "fetch-models": "node scripts/fetch-models.js",
+    "fetch-icons": "node scripts/fetch-icons.js",
+    "make-cert": "bash scripts/make-signing-cert.sh",
+    "reset-permissions": "bash scripts/reset-permissions.sh",
+    "build-helpers": "node scripts/build-helpers.js",
+    "creator": "node dev/server.js"
   },
   "keywords": [
     "desktop-pet",
@@ -21,8 +27,8 @@
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "com.sushantpatil.togepi",
-    "productName": "Togepi",
+    "appId": "com.sushantpatil.filo",
+    "productName": "Filo",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -44,9 +50,11 @@
       "identity": null,
       "extendInfo": {
         "LSUIElement": true,
-        "NSCalendarsUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
-        "NSCalendarsFullAccessUsageDescription": "Togepi reads your upcoming events so he can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
-        "NSAppleEventsUsageDescription": "Togepi checks which app is in front so he can keep quiet during meetings and know what you're working on. Nothing leaves your Mac."
+        "NSCalendarsUsageDescription": "Filo reads your upcoming events so it can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
+        "NSCalendarsFullAccessUsageDescription": "Filo reads your upcoming events so it can remind you before meetings and keep quiet during them. Nothing leaves your Mac.",
+        "NSAppleEventsUsageDescription": "Filo checks which app is in front so it can keep quiet during meetings and know what you're working on. Nothing leaves your Mac.",
+        "NSMicrophoneUsageDescription": "Filo listens only after you press ⌥ Space or 🎤 to talk to it, and only until you stop talking, so it can do what you ask.",
+        "NSSpeechRecognitionUsageDescription": "Filo turns what you say to it into text on your Mac, so it can do what you ask."
       }
     },
     "extraResources": [
@@ -61,7 +69,14 @@
           "*.gguf",
           "models.json"
         ]
+      },
+      {
+        "from": "helpers",
+        "to": "helpers"
       }
     ]
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }

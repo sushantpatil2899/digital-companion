@@ -1,5 +1,8 @@
-// Procedural drawing of the companion: Togepi, a little egg-shell Pokémon.
-// Everything is drawn relative to his feet at (0, 0); up is negative y.
+// Togepi's looks: procedural drawing of a little egg-shell Pokémon, plus
+// how his own activities look (eat, flower, play, adventure). Everything is
+// drawn relative to his feet at (0, 0); up is negative y. Loaded by the
+// companion window (src/renderer/index.html) and the fetch ball window; it
+// registers itself as window.Characters.togepi (see src/characters/README.md).
 // Wrapped in an IIFE so its helpers don't leak into the page's global scope.
 (function () {
 'use strict';
@@ -358,6 +361,24 @@ const HELD = { x: 2.6, y: CY - 3, r: 12 };
 // Where the hands sit on the ball's sides (from its centre), and the arm's angle.
 const GRIP = { reach: HELD.r - 3, shoulder: 13, angle: 1.75 };
 
+// Holding an item (arms: 'item', from the holdItem / playItem states): a
+// picture from the brain (pose.item = { img, w, h }) up in the hand on the
+// left of the body, waved around as much as pose.itemWave (0..1) says.
+function itemArm(p) {
+  return 1.75 + (p.itemWave || 0) * (0.25 + Math.sin((p.t || 0) * 7) * 0.55);
+}
+
+/** The item in the hand at (x, y), turned with the arm (`a`); the hand covers its bottom. */
+function drawItem(ctx, p, x, y, a) {
+  const it = p.item;
+  if (!it || !it.img) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((a - 1.75) * 0.8);
+  ctx.drawImage(it.img, -it.w / 2, -it.h * 0.8, it.w, it.h);
+  ctx.restore();
+}
+
 function armAngle(side, p) {
   // Local +y of the nub points along the arm. Angle a gives direction (-sin a, cos a).
   const lead = side === p.facing;
@@ -388,6 +409,8 @@ function armAngle(side, p) {
     case 'grip':
       // Both hands on the sides of the ball.
       return side * GRIP.angle;
+    case 'item':
+      return side < 0 ? itemArm(p) : -side * 0.3;
     default:
       return -side * (0.3 + Math.sin(p.walkPhase + (side > 0 ? 0 : Math.PI)) * p.armSwing);
   }
@@ -937,6 +960,10 @@ function drawCharacter(ctx, p) {
     if (p.prop === 'backpack') drawBackpackStraps(ctx, p);
     // The Pokeball for fetch, held out in front with his hands on its sides.
     if (p.prop === 'pokeball') drawBall(ctx, p.facing * HELD.x, HELD.y, 0, HELD.r);
+    if (p.arms === 'item') {
+      const a = itemArm(p);
+      drawItem(ctx, p, -43 - Math.sin(a) * 14, CY - 9 + Math.cos(a) * 14, a);
+    }
     drawArm(ctx, -1, p);
     drawArm(ctx, 1, p);
     // The apple is held up in front, over his hands.
@@ -1148,469 +1175,132 @@ function defaultPose() {
     propProgress: 0,
     ballX: 0,
     ballRot: 0,
+    item: null, // what's in the hand for arms 'item': { img, w, h } (see itemArm)
+    itemWave: 0,
   };
 }
 
-// --------------------------------------------------------------- effects
+// --------------------------------------------------------------- his activities
 
-function drawHeart(ctx, x, y, size, alpha) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(x, y);
-  ctx.scale(size / 10, size / 10);
-  ctx.beginPath();
-  ctx.moveTo(0, 3);
-  ctx.bezierCurveTo(-10, -4, -6, -12, 0, -6);
-  ctx.bezierCurveTo(6, -12, 10, -4, 0, 3);
-  ctx.closePath();
-  ctx.fillStyle = '#f2596f';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#b8304d';
-  ctx.stroke();
-  ctx.restore();
-}
+// How his own activities look, called by computePose in
+// src/renderer/renderer.js with the pose so far (`p`), the frame from the
+// main process (`f`) and a kit: { t, st, duration, dt, clamp, walkCycle,
+// overlay }.
+let ballRot = 0;
 
-function drawStar(ctx, x, y, size, rot, alpha) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(x, y);
-  ctx.rotate(rot);
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const r = i % 2 === 0 ? size : size * 0.45;
-    const a = (i / 10) * TAU - Math.PI / 2;
-    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-  }
-  ctx.closePath();
-  ctx.fillStyle = '#ffd84a';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#a07a10';
-  ctx.stroke();
-  ctx.restore();
-}
+const ACTIVITY_POSES = {
+  play(p, f, k) {
+    k.walkCycle(p, f, 12, 6);
+    p.prop = 'ball';
+    // The ball rolls just ahead of him; each step gives it a little kick.
+    p.ballX = f.facing * (46 + Math.abs(Math.sin(p.walkPhase * 0.5)) * 8);
+    ballRot += (f.vx * k.dt) / 11;
+    p.ballRot = ballRot;
+    p.mouth = 'open';
+    p.lookX = f.facing;
+    p.lookY = 0.6;
+  },
+  adventure(p, f, k) {
+    k.walkCycle(p, f, 10, 5);
+    p.prop = 'backpack';
+    p.mouth = 'open';
+    p.armSwing = 0.35;
+  },
+  eat(p, f, k) {
+    p.feet = 'sit';
+    p.arms = 'hold';
+    p.prop = 'apple';
+    p.propProgress = k.clamp(k.st / k.duration, 0, 1);
+    p.eyes = 'content';
+    p.mouth = 'chew';
+    p.blush = 0.7;
+  },
+  flower(p, f, k) {
+    p.arms = 'hold';
+    p.prop = 'flower';
+    p.eyes = 'content';
+    p.mouth = 'smallSmile';
+    p.blush = 0.8;
+    p.tilt = Math.sin(k.t * 1.5) * 0.04;
+    k.overlay('flower');
+  },
+};
 
-function drawText(ctx, text, x, y, size, alpha, color = PALETTE.outline) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.font = `bold ${size}px "Chalkboard SE", "Comic Sans MS", "Segoe Print", system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.strokeText(text, x, y);
-  ctx.fillStyle = color;
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
+// --------------------------------------------------------------- watching together
 
-function drawPuff(ctx, x, y, r, alpha) {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ellipse(ctx, x, y, r, r * 0.7);
-  ctx.fillStyle = '#efe9e0';
-  ctx.fill();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = 'rgba(120,100,90,0.5)';
-  ctx.stroke();
-  ctx.restore();
-}
-
-// Overlay symbols from the reference sheet, drawn near his head.
-function drawSoundLines(ctx, x, y, t) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  const pulse = 1 + Math.sin(t * 14) * 0.15;
-  for (const [a, len] of [[-1.0, 9], [-0.45, 10], [0.1, 8]]) {
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
-    ctx.lineTo(Math.cos(a) * (6 + len * pulse), Math.sin(a) * (6 + len * pulse));
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawAngerMark(ctx, x, y, t) {
-  ctx.save();
-  ctx.translate(x, y);
-  const s = 1 + Math.sin(t * 10) * 0.12;
-  ctx.scale(s, s);
-  ctx.strokeStyle = '#e0303e';
-  ctx.lineWidth = 2.6;
-  ctx.lineCap = 'round';
-  for (let i = 0; i < 4; i++) {
-    ctx.save();
-    ctx.rotate((i * Math.PI) / 2);
-    ctx.beginPath();
-    ctx.moveTo(2.5, -8);
-    ctx.quadraticCurveTo(2.5, -2.5, 8, -2.5);
-    ctx.stroke();
-    ctx.restore();
-  }
-  ctx.restore();
-}
-
-function drawScribble(ctx, x, y, t) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.strokeStyle = '#3a2f2a';
-  ctx.lineWidth = 1.3;
-  ctx.beginPath();
-  for (let i = 0; i <= 120; i++) {
-    const a = i * 0.55 + t * 3;
-    const r = 7 + Math.sin(i * 0.37) * 3.5;
-    const px = Math.cos(a) * r * 1.25 + Math.sin(i * 0.11) * 3;
-    const py = Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-8, 10);
-  ctx.lineTo(-11, 15);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawSweat(ctx, x, y, t) {
-  ctx.save();
-  ctx.translate(x, y + Math.sin(t * 3) * 1.5);
-  ctx.beginPath();
-  ctx.moveTo(0, -6);
-  ctx.quadraticCurveTo(5, 2, 0, 4);
-  ctx.quadraticCurveTo(-5, 2, 0, -6);
-  ctx.fillStyle = '#9fd3f5';
-  ctx.fill();
-  ctx.lineWidth = 1.4;
-  ctx.strokeStyle = '#4b8fc0';
-  ctx.stroke();
-  for (const [dx, dy, r] of [[8, -12, 2.2], [12, -6, 1.6]]) {
-    ellipse(ctx, dx, dy, r, r);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-// Fit `text` in `maxWidth` by shrinking the font (down to 8px).
-function fitFont(ctx, text, size, weight, maxWidth) {
-  let px = size;
-  do {
-    ctx.font = `${weight}${px}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
-    px -= 0.5;
-  } while (ctx.measureText(text).width > maxWidth && px > 8);
-}
-
-// Split `text` into at most two lines that fit `maxWidth` at `size`px.
-function wrapTwo(ctx, text, size, weight, maxWidth) {
-  ctx.font = `${weight}${size}px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif`;
-  if (ctx.measureText(text).width <= maxWidth) return [text];
-  const words = text.split(/\s+/);
-  let first = '';
-  let i = 0;
-  for (; i < words.length; i++) {
-    const next = first ? `${first} ${words[i]}` : words[i];
-    if (ctx.measureText(next).width > maxWidth && first) break;
-    first = next;
-  }
-  let rest = words.slice(i).join(' ');
-  if (!rest) return [first];
-  if (ctx.measureText(rest).width > maxWidth) {
-    while (rest.length > 1 && ctx.measureText(`${rest}…`).width > maxWidth) rest = rest.slice(0, -1);
-    rest = `${rest.trimEnd()}…`;
-  }
-  return [first, rest];
-}
-
-// Little clickable tag hanging off the bottom of a board: green "OK ✓" on the
-// right, blue "Join ▸" on the left.
-function drawTag(ctx, x, y, text, color) {
-  ctx.font = 'bold 10px system-ui, sans-serif';
-  const w = Math.max(30, ctx.measureText(text).width + 12);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, y, w, 15, 7);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y + 7.8);
-}
-
-function drawSticks(ctx, top, h) {
-  ctx.lineCap = 'round';
-  for (const side of [-1, 1]) {
-    ctx.beginPath();
-    ctx.moveTo(side * 30, top + h - 2);
-    ctx.lineTo(side * 41, -76);
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = PALETTE.outline;
-    ctx.stroke();
-    ctx.lineWidth = 2.6;
-    ctx.strokeStyle = '#c99a62';
-    ctx.stroke();
+// His reaction to a moment of what you're watching (Phase 9), called by
+// computePose with the mood of that moment. Sitting in his spot, mostly
+// with his back to you; for sad, scary and boring he turns to you.
+function watchPose(mood, p, f, k) {
+  p.feet = 'sit';
+  p.scaleY *= 0.95;
+  p.scaleX = 1.03;
+  switch (mood) {
+    case 'exciting':
+      // Leaning in, little bounces.
+      p.view = 'back';
+      p.scaleY *= 1.03;
+      p.bob = -Math.abs(Math.sin(k.t * 9)) * 3;
+      break;
+    case 'funny':
+      // A happy wiggle.
+      p.view = 'back';
+      p.tilt = Math.sin(k.t * 14) * 0.08;
+      p.bob = -Math.abs(Math.sin(k.t * 7)) * 2;
+      break;
+    case 'beautiful':
+      // Swaying a little, sparkles around him.
+      p.view = 'back';
+      p.tilt = Math.sin(k.t * 1.5) * 0.05;
+      break;
+    case 'sad':
+      // Droops and turns to you with a sad face.
+      p.eyes = 'sad';
+      p.mouth = 'frown';
+      p.blush = 0.25;
+      p.scaleY *= 0.97;
+      p.lookY = 0.4;
+      break;
+    case 'scary':
+      // Turns to you and hides: shy, trembling, a sweat drop.
+      p.eyes = 'squint';
+      p.mouth = 'wavy';
+      p.arms = 'hold';
+      p.blush = 0.9;
+      p.lookX = -f.facing * 0.6;
+      p.lookY = 0.5;
+      p.tilt = Math.sin(k.t * 30) * 0.02;
+      k.overlay('sweat');
+      break;
+    case 'boring':
+      // Turns around and looks at you.
+      p.eyes = 'meh';
+      p.mouth = 'flat';
+      p.lookX = 0;
+      p.lookY = -0.1;
+      break;
+    default:
+      p.view = 'back';
   }
 }
 
-// A board he holds up over his head: the meeting sign ("Meeting in 5!") or a
-// sticky note ("remind me"). `b` = { style: 'sign'|'note', line1, line2, tag,
-// join, urgent } from the main process (see Companion.board()). `urgent`
-// makes it bounce more (the meeting is starting now).
-function drawSign(ctx, b, t) {
-  const note = b.style === 'note';
-  const w = note ? 114 : 108;
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lines = note ? wrapTwo(ctx, b.line1 || '', 12, 'bold ', w - 14) : null;
-  const h = note ? 22 + lines.length * 14 : b.line2 ? 38 : 26;
-  const bob = b.urgent ? Math.abs(Math.sin(t * 9)) * -4 : Math.sin(t * 5) * 1.5;
-  const top = (note ? -129 - h : -167 + (b.line2 ? 0 : 6)) + bob;
-  drawSticks(ctx, top, h);
-  // Board (a sticky note, slightly crooked, with a folded corner).
-  ctx.save();
-  if (note) ctx.rotate(-0.03);
-  ctx.beginPath();
-  if (note) {
-    ctx.moveTo(-w / 2, top);
-    ctx.lineTo(w / 2, top);
-    ctx.lineTo(w / 2, top + h - 10);
-    ctx.lineTo(w / 2 - 10, top + h);
-    ctx.lineTo(-w / 2, top + h);
-    ctx.closePath();
-  } else {
-    ctx.roundRect(-w / 2, top, w, h, 8);
-  }
-  ctx.fillStyle = note ? '#fff1a0' : b.urgent ? '#ffe9d6' : '#fff7e2';
-  ctx.fill();
-  ctx.lineWidth = 2.2;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  if (note) {
-    ctx.beginPath();
-    ctx.moveTo(w / 2, top + h - 10);
-    ctx.lineTo(w / 2 - 10, top + h - 10);
-    ctx.lineTo(w / 2 - 10, top + h);
-    ctx.fillStyle = '#e9d67c';
-    ctx.fill();
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
-  }
-  ctx.fillStyle = PALETTE.outline;
-  if (note) {
-    // Header ("Reminder"), then your text on up to two lines.
-    fitFont(ctx, b.line2 || '', 10, '', w - 14);
-    ctx.fillStyle = '#8a6d2a';
-    ctx.fillText(b.line2 || '', 0, top + 10);
-    ctx.fillStyle = PALETTE.outline;
-    ctx.font = 'bold 12px "Chalkboard SE", "Comic Sans MS", system-ui, sans-serif';
-    lines.forEach((line, i) => {
-      fitFont(ctx, line, 12, 'bold ', w - 12);
-      ctx.fillText(line, 0, top + 24 + i * 14);
-    });
-  } else {
-    fitFont(ctx, b.line1 || '', 13, 'bold ', w - 12);
-    ctx.fillText(b.line1 || '', 0, top + (b.line2 ? 12 : h / 2 + 0.5));
-    if (b.line2) {
-      fitFont(ctx, b.line2, 11, '', w - 12);
-      ctx.fillStyle = '#7a6656';
-      ctx.fillText(b.line2, 0, top + 27);
-    }
-  }
-  ctx.restore();
-  if (b.tag) drawTag(ctx, w / 2 - 20, top + h - 6, b.tag, '#6cb86a');
-  if (b.join) drawTag(ctx, -w / 2 + 22, top + h - 6, 'Join ▸', PALETTE.blue);
-  ctx.restore();
-}
-
-// A speech bubble over his head for wellbeing nudges ("Water break?").
-// `b` = { line1, line2, tag } (tag: e.g. "Drank ✓", or null when there's
-// nothing to click).
-function drawBubble(ctx, b, t) {
-  const w = 116;
-  const h = b.line2 ? 38 : 26;
-  const bob = Math.sin(t * 2.5) * 1.2;
-  const top = -174 + (b.line2 ? 0 : 8) + bob;
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.beginPath();
-  ctx.roundRect(-w / 2, top, w, h, 12);
-  // Tail down towards his head.
-  ctx.moveTo(-6, top + h);
-  ctx.lineTo(4, top + h + 9);
-  ctx.lineTo(8, top + h);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(-6, top + h);
-  ctx.lineTo(-w / 2 + 12, top + h);
-  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
-  ctx.arcTo(-w / 2, top, w / 2, top, 12);
-  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
-  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
-  ctx.lineTo(8, top + h);
-  ctx.lineTo(4, top + h + 9);
-  ctx.closePath();
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = PALETTE.outline;
-  fitFont(ctx, b.line1 || '', 13, 'bold ', w - 14);
-  ctx.fillText(b.line1 || '', 0, top + (b.line2 ? 12 : h / 2 + 0.5));
-  if (b.line2) {
-    fitFont(ctx, b.line2, 10.5, '', w - 14);
-    ctx.fillStyle = '#7a6656';
-    ctx.fillText(b.line2, 0, top + 27);
-  }
-  if (b.tag) drawTag(ctx, w / 2 - 24, top + h - 6, b.tag, '#6cb86a');
-  ctx.restore();
-}
-
-// A speech bubble with his own words (one short sentence, up to two lines).
-function drawSpeech(ctx, text, t) {
-  const w = 136;
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lines = wrapTwo(ctx, text, 12.5, 'bold ', w - 16);
-  const h = 12 + lines.length * 15;
-  const bob = Math.sin(t * 2.5) * 1.2;
-  const top = -138 - h + bob;
-  ctx.beginPath();
-  ctx.moveTo(-6, top + h);
-  ctx.lineTo(-w / 2 + 12, top + h);
-  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
-  ctx.arcTo(-w / 2, top, w / 2, top, 12);
-  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
-  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
-  ctx.lineTo(8, top + h);
-  ctx.lineTo(4, top + h + 9);
-  ctx.closePath();
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  ctx.fillStyle = PALETTE.outline;
-  lines.forEach((line, i) => {
-    fitFont(ctx, line, 12.5, 'bold ', w - 14);
-    ctx.fillText(line, 0, top + 13.5 + i * 15);
-  });
-  ctx.restore();
-}
-
-// His question with two answer buttons along the bottom (left = answer 0)
-// and a small ✏️ button on the right (type your own answer). The buttons sit
-// at a fixed height so the main process can tell which one you clicked: keep
-// QUESTION in sync with HIT.question / HIT.answers in src/main/companion.js
-// (times the drawing scale, SIZE in renderer.js).
-// `hover`: the cursor in drawing coordinates, or null.
-const QUESTION = { w: 186, bottom: -136, btnTop: -159, btnBottom: -141, gap: 3, own: 22 };
-
-/** Button `i` (0, 1, or 'own'): { x, y, w, h } in drawing coordinates. */
-function questionButton(i) {
-  const q = QUESTION;
-  const outer = q.w / 2 - 7;
-  const y = q.btnTop;
-  const h = q.btnBottom - q.btnTop;
-  if (i === 'own') return { x: outer - q.own, y, w: q.own, h };
-  const each = (2 * outer - q.own - 2 * q.gap) / 2;
-  return { x: i === 0 ? -outer : -outer + each + q.gap, y, w: each, h };
-}
-
-function drawQuestion(ctx, text, answers, hover) {
-  const q = QUESTION;
-  const w = q.w;
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const lines = wrapTwo(ctx, text, 12.5, 'bold ', w - 16);
-  const top = q.btnTop - 9 - lines.length * 14.5;
-  const h = q.bottom - top;
-  ctx.beginPath();
-  ctx.moveTo(-6, top + h);
-  ctx.lineTo(-w / 2 + 12, top + h);
-  ctx.arcTo(-w / 2, top + h, -w / 2, top, 12);
-  ctx.arcTo(-w / 2, top, w / 2, top, 12);
-  ctx.arcTo(w / 2, top, w / 2, top + h, 12);
-  ctx.arcTo(w / 2, top + h, -w / 2, top + h, 12);
-  ctx.lineTo(8, top + h);
-  ctx.lineTo(4, top + h + 9);
-  ctx.closePath();
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-  ctx.fillStyle = PALETTE.outline;
-  lines.forEach((line, i) => {
-    fitFont(ctx, line, 12.5, 'bold ', w - 14);
-    ctx.fillText(line, 0, top + 11.5 + i * 14.5);
-  });
-  answers.forEach((a, i) => {
-    const b = questionButton(i);
-    const over = hover && hover.x >= b.x && hover.x <= b.x + b.w && hover.y >= b.y && hover.y <= b.y + b.h;
-    ctx.beginPath();
-    ctx.roundRect(b.x, b.y, b.w, b.h, 8);
-    ctx.fillStyle = over ? '#ffd86b' : '#fff1c9';
-    ctx.fill();
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = PALETTE.outline;
-    ctx.stroke();
-    let label = String(a);
-    fitFont(ctx, label, 10.5, 'bold ', b.w - 8);
-    while (label.length > 1 && ctx.measureText(label).width > b.w - 8) label = label.slice(0, -1);
-    if (label !== String(a)) label = `${label.trimEnd()}…`;
-    ctx.fillStyle = PALETTE.outline;
-    ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 0.5);
-  });
-  // ✏️: neither answer fits, type your own.
-  const o = questionButton('own');
-  const overOwn = hover && hover.x >= o.x && hover.x <= o.x + o.w && hover.y >= o.y && hover.y <= o.y + o.h;
-  ctx.beginPath();
-  ctx.roundRect(o.x, o.y, o.w, o.h, 8);
-  ctx.fillStyle = overOwn ? '#cfe3f7' : '#eaf2fb';
-  ctx.fill();
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.stroke();
-  ctx.font = '10px system-ui, sans-serif';
-  ctx.fillStyle = PALETTE.outline;
-  ctx.fillText('✏️', o.x + o.w / 2, o.y + o.h / 2 + 0.5);
-  ctx.restore();
-}
-
-window.Character = {
-  drawSpeech,
-  drawQuestion,
-  drawCharacter,
+window.Characters = window.Characters || {};
+window.Characters.togepi = Object.assign(window.Characters.togepi || {}, {
+  draw: drawCharacter,
   defaultPose,
-  drawHeart,
-  drawStar,
-  drawText,
-  drawPuff,
-  drawDaisy,
-  drawBall,
-  drawSoundLines,
-  drawAngerMark,
-  drawScribble,
-  drawSweat,
-  drawSign,
-  drawBubble,
   BODY_CY: CY,
   HEAD_TOP: CY - RY - 16,
-};
+  // Activities where he turns to a 3/4 view towards where he's going.
+  turned: { play: 1, adventure: 1 },
+  activityPose: ACTIVITY_POSES,
+  watchPose,
+  // What he holds while carrying the fetch ball back to you.
+  heldProp: 'pokeball',
+  // Extra marks by his head (the daisy while smelling a flower).
+  overlays: {
+    flower: (ctx, x, y, clock) => drawDaisy(ctx, x, y + Math.sin(clock * 2) * 2, 5),
+  },
+  // The fetch ball, drawn by the ball window (src/renderer/games/ball.js).
+  drawFetchItem: drawBall,
+});
 })();

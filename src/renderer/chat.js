@@ -1,6 +1,6 @@
 'use strict';
 
-// Chat window (Phase 8): today's conversation with Togepi. When he's waiting
+// Chat window (Phase 8): today's conversation with him. When he's waiting
 // on an answer to one of his questions, what you write is your own answer.
 
 const $ = (id) => document.getElementById(id);
@@ -34,11 +34,15 @@ function render(data) {
     $('text').placeholder = 'Your own answer…';
   } else {
     q.style.display = 'none';
-    $('text').placeholder = 'Say something to Togepi…';
+    $('text').placeholder = `Say something to ${window.CHARACTER_NAME}…`;
   }
 
   busy = !!data.busy;
   $('status').textContent = data.status || '';
+  // Phase 11: 🎤 to say it instead (when "Talk to me" is on).
+  $('mic').hidden = !data.canListen;
+  $('mic').classList.toggle('on', !!data.listening);
+  $('mic').disabled = busy && !data.listening;
   $('send').disabled = busy;
   $('text').disabled = busy;
   if (!busy) $('text').focus();
@@ -51,5 +55,7 @@ $('form').addEventListener('submit', (e) => {
   $('text').value = '';
   window.chat.send(text);
 });
+
+$('mic').addEventListener('click', () => window.chat.listen());
 
 window.chat.onLoad(render);

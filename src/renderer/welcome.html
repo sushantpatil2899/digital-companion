@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
-    <title>Welcome to Togepi</title>
+    <title>Welcome to Filo</title>
     <style>
       :root {
         --bg: #fdfaf2;
@@ -33,6 +33,14 @@
       }
       header {
         padding: 16px 18px 6px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      header img {
+        width: 48px;
+        height: 48px;
+        flex: none;
       }
       h1 {
         margin: 0 0 4px;
@@ -91,6 +99,56 @@
         grid-column: 2;
         color: var(--muted);
       }
+      #you input,
+      #geminikey {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 6px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font: inherit;
+      }
+      #you h2.second {
+        margin-top: 14px;
+      }
+      #engines label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 8px;
+        font-weight: 600;
+      }
+      #engines input {
+        margin: 3px 0 0;
+        accent-color: var(--accent);
+      }
+      #engines small,
+      #key-status {
+        display: block;
+        color: var(--muted);
+        font-weight: normal;
+      }
+      #gemini {
+        margin-top: 10px;
+      }
+      #pronouns {
+        display: flex;
+        gap: 18px;
+        margin-top: 6px;
+      }
+      #pronouns label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #pronouns input {
+        width: auto;
+        margin: 0;
+        accent-color: var(--accent);
+      }
       .muted {
         color: var(--muted);
         margin-bottom: 4px;
@@ -123,10 +181,34 @@
   </head>
   <body>
     <header>
-      <h1 id="title">Welcome!</h1>
-      <p id="intro"></p>
+      <img src="filo-icon.png" alt="" />
+      <div>
+        <h1 id="title">Welcome!</h1>
+        <p id="intro"></p>
+      </div>
     </header>
     <main>
+      <section id="you">
+        <h2>What should I call you?</h2>
+        <input id="username" autocomplete="off" maxlength="40" placeholder="Your name" />
+        <h2 class="second">How should I refer to you?</h2>
+        <div id="pronouns">
+          <label><input type="radio" name="pronoun" value="he" /> he / him</label>
+          <label><input type="radio" name="pronoun" value="she" /> she / her</label>
+          <label><input type="radio" name="pronoun" value="they" /> they / them</label>
+        </div>
+      </section>
+      <section id="brain">
+        <h2>How should I think?</h2>
+        <div id="engines">
+          <label><input type="radio" name="engine" value="local" /><span>Gemma, on this Mac<small id="local-help">About 11 GB of memory while I run. Nothing leaves your Mac.</small></span></label>
+          <label><input type="radio" name="engine" value="gemini" /><span>Gemini, online<small>For a Mac with less memory. What I think about (what you’re doing, your screen if you let me read it, my memories, our chat) goes to Google.</small></span></label>
+        </div>
+        <div id="gemini">
+          <input id="geminikey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key" />
+          <small id="key-status"></small>
+        </div>
+      </section>
       <div id="sections"></div>
       <section id="perms">
         <h2>What may I look at?</h2>
@@ -138,6 +220,7 @@
       <small>Open this again any time: Welcome and what’s new… in my menu.</small>
       <button id="done">Let’s go!</button>
     </footer>
+    <script src="name.js"></script>
     <script src="welcome.js"></script>
   </body>
 </html>

@@ -14,7 +14,7 @@ const { run } = require('./run');
 const OCR_SCRIPT = path.join(__dirname, 'ocr.applescript').replace('app.asar', 'app.asar.unpacked');
 
 async function capture(windowId) {
-  const file = path.join(os.tmpdir(), `togepi-look-${process.pid}-${Date.now()}.png`);
+  const file = path.join(os.tmpdir(), `companion-look-${process.pid}-${Date.now()}.png`);
   // -x no sound, -o no shadow, -l just this window (whichever screen it's on).
   await run('/usr/sbin/screencapture', ['-x', '-o', '-l', String(windowId), '-t', 'png', file], 8000);
   let size = 0;
@@ -23,7 +23,7 @@ async function capture(windowId) {
   } catch {
     // no file
   }
-  if (!size) throw new Error('no picture: allow Togepi under System Settings → Privacy & Security → Screen & System Audio Recording');
+  if (!size) throw new Error('no picture: allow Filo under System Settings → Privacy & Security → Screen & System Audio Recording');
   return file;
 }
 

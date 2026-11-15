@@ -15,7 +15,7 @@ const { classifyApp, classifyUrl } = require('../settings');
 const WINDOWS_SCRIPT = path.join(__dirname, 'windows.jxa.js').replace('app.asar', 'app.asar.unpacked');
 
 // Our own app being in front (e.g. while you use his menu) doesn't count.
-const IGNORE = ['togepi', 'electron'];
+const IGNORE = ['companion', 'togepi', 'electron'];
 
 // Parses `lsappinfo info -only <key>` output: "LSDisplayName"="zoom.us"
 function parseLsappinfoName(out) {
@@ -124,7 +124,7 @@ async function browserTabs(browser) {
     return { tabs, urls: tabs.map((t) => t.url) };
   } catch (e) {
     const denied = /-1743|not allowed|not authori[sz]ed/i.test(e.message);
-    return { error: denied ? `Allow Togepi to control ${browser} (Privacy & Security → Automation) so he can spot meetings in its tabs.` : null };
+    return { error: denied ? `Allow Filo to control ${browser} (Privacy & Security → Automation) so he can spot meetings in its tabs.` : null };
   }
 }
 

@@ -4,6 +4,8 @@
 // background process so thinking never stalls his animation:
 // - "voice": the language model that thinks and writes his lines
 // - "decide": the decision model (vLLM d3-nano) that answers typed questions fast
+// - "embed" (optional, Phase 10): EmbeddingGemma, which turns memories into
+//   meaning fingerprints so he recalls by meaning (src/main/mind/store.js)
 // Both listen on 127.0.0.1 only; nothing leaves your computer.
 //
 // Files (downloaded by scripts/fetch-models.js, bundled into the app):
@@ -15,6 +17,7 @@
 const fs = require('fs');
 const net = require('net');
 const path = require('path');
+const { user: userName } = require('./names');
 const { spawn, execFile, execFileSync } = require('child_process');
 
 const START_TIMEOUT = 180 * 1000; // ms to load a model
@@ -43,7 +46,8 @@ function locate(root = defaultRoot()) {
   const model = (role) => (manifest[role] && manifest[role].file ? path.join(root, 'models', manifest[role].file) : null);
   // The voice model's vision add-on (optional): lets him look at pictures of windows.
   const vision = manifest.voice && manifest.voice.mmproj ? path.join(root, 'models', manifest.voice.mmproj) : null;
-  const files = { server, voice: model('voice'), decide: model('decide'), vision: vision && fs.existsSync(vision) ? vision : null, manifest };
+  const embed = model('embed');
+  const files = { server, voice: model('voice'), decide: model('decide'), vision: vision && fs.existsSync(vision) ? vision : null, embed: embed && fs.existsSync(embed) ? embed : null, manifest };
   files.missing = ['server', 'voice', 'decide'].filter((k) => !files[k] || !fs.existsSync(files[k]));
   return files;
 }
@@ -60,6 +64,19 @@ function freePort() {
   });
 }
 
+// Half of a character outside the Basic Multilingual Plane (an emoji cut in
+// two when screen text or a title is shortened): llama-server rejects the
+// whole request ("invalid string: surrogate…", a 400), so drop it.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** `value` with every string's broken half-characters removed (deeply). */
+function wellFormed(value) {
+  if (typeof value === 'string') return value.replace(LONE_SURROGATE, '');
+  if (Array.isArray(value)) return value.map(wellFormed);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wellFormed(v)]));
+  return value;
+}
+
 async function fetchJson(url, body, timeout = REQUEST_TIMEOUT) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
@@ -67,7 +84,7 @@ async function fetchJson(url, body, timeout = REQUEST_TIMEOUT) {
     const res = await fetch(url, {
       method: body ? 'POST' : 'GET',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? JSON.stringify(wellFormed(body)) : undefined,
       signal: ctl.signal,
     });
     const text = await res.text();
@@ -151,15 +168,20 @@ function isOurServer(pid) {
 
 class Engine {
   /**
-   * @param {object} [opts] { root, pidFile }
+   * @param {object} [opts] { root, pidFile, voice }
    *   pidFile: where the servers' process ids are kept, so ones left running
    *   after a crash (holding gigabytes of memory) are stopped next time.
+   *   voice: false to run only the decision (and embedding) model, when his
+   *   voice is elsewhere (gemini.js).
    */
   constructor(opts = {}) {
     this.pidFile = opts.pidFile || null;
+    this.withVoice = opts.voice !== false;
     this.files = locate(opts.root);
+    if (!this.withVoice) this.files.missing = this.files.missing.filter((k) => k !== 'voice');
     this.voice = null;
     this.decider = null;
+    this.embedder = null;
     this.state = this.files.missing.length ? 'not installed' : 'stopped';
     this.run = 0; // each start/stop; a start that was stopped meanwhile leaves the state alone
     this.starting = null;
@@ -178,13 +200,18 @@ class Engine {
     return !!this.decider && this.decider.ready;
   }
 
+  /** Meaning fingerprints are available (the optional embedding model is running). */
+  get canEmbed() {
+    return !!this.embedder && this.embedder.ready;
+  }
+
   /** The voice model can look at pictures (its vision add-on is installed). */
   get canSee() {
     return this.ready && !!this.files.vision;
   }
 
   start() {
-    if (this.state === 'running' && this.ready) return Promise.resolve(true);
+    if (this.state === 'running' && (this.withVoice ? this.ready : this.canDecide)) return Promise.resolve(true);
     if (!this.starting) this.starting = this.startServers().finally(() => (this.starting = null));
     return this.starting;
   }
@@ -203,29 +230,33 @@ class Engine {
     // instead of read again (measured: 487 of ~700 tokens reused vs 215).
     const voiceArgs = ['-m', f.voice, '-c', '4096', '-ngl', 'all', '-np', '1', '--swa-full', ...(f.vision ? ['--mmproj', f.vision] : []), ...((f.manifest.voice && f.manifest.voice.args) || [])];
     const decideArgs = ['-m', f.decide, '-c', '4096', '-ngl', 'all', '-np', '1', '-ub', '2048', '-b', '2048', ...((f.manifest.decide && f.manifest.decide.args) || [])];
-    this.voice = new Server('voice', voiceArgs, f.server);
+    this.voice = this.withVoice ? new Server('voice', voiceArgs, f.server) : null;
     this.decider = new Server('decide', decideArgs, f.server);
-    const started = Promise.allSettled([this.voice.start(), this.decider.start()]);
+    // Small (~330 MB) and optional: if it doesn't start, recall falls back to words.
+    this.embedder = f.embed ? new Server('embed', ['-m', f.embed, '--embeddings', '-c', '2048', '-ub', '2048', '-b', '2048', '-ngl', 'all', '-np', '1', ...((f.manifest.embed && f.manifest.embed.args) || [])], f.server) : null;
+    if (this.embedder) this.embedder.start().catch((e) => console.error('Embedding model:', e.message)).finally(() => this.savePids());
+    const started = Promise.allSettled([this.voice ? this.voice.start() : Promise.resolve(), this.decider.start()]);
     this.savePids();
     const results = await started;
     if (run !== this.run) return false; // stopped while loading
     this.savePids();
     const failed = results.map((r, i) => (r.status === 'rejected' ? `${['voice', 'decide'][i]}: ${r.reason.message}` : null)).filter(Boolean);
     this.state = failed.length ? `trouble: ${failed.join('; ')}` : 'running';
-    return this.ready;
+    return this.withVoice ? this.ready : this.canDecide;
   }
 
   stop() {
     this.run++;
     if (this.voice) this.voice.stop();
     if (this.decider) this.decider.stop();
+    if (this.embedder) this.embedder.stop();
     this.state = 'stopped';
     this.savePids();
   }
 
   /** Memory the servers use right now, in MB (resident size), or null. */
   memoryMB() {
-    const pids = [this.voice, this.decider].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
+    const pids = [this.voice, this.decider, this.embedder].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
     if (!pids.length) return Promise.resolve(null);
     return new Promise((resolve) => {
       execFile('ps', ['-o', 'rss=', '-p', pids.join(',')], { encoding: 'utf8' }, (err, out) => {
@@ -238,7 +269,7 @@ class Engine {
 
   savePids() {
     if (!this.pidFile) return;
-    const pids = [this.voice, this.decider].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
+    const pids = [this.voice, this.decider, this.embedder].map((sv) => sv && sv.proc && sv.proc.pid).filter(Boolean);
     try {
       fs.mkdirSync(path.dirname(this.pidFile), { recursive: true });
       fs.writeFileSync(this.pidFile, pids.join('\n'));
@@ -282,7 +313,7 @@ class Engine {
         { role: 'system', content: system },
         // Earlier turns of a conversation (the chat window).
         ...history.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user', content: withImage ? `${IMAGE_SLOT}\nThis is a picture of the window Sushant is looking at.\n\n${user}` : user },
+        { role: 'user', content: withImage ? `${IMAGE_SLOT}\nThis is a picture of the window ${userName()} is looking at.\n\n${user}` : user },
       ],
       chat_template_kwargs: { enable_thinking: false },
     });
@@ -315,6 +346,18 @@ class Engine {
     return marker;
   }
 
+  /**
+   * Meaning fingerprints (one vector per text). `query`: what's going on now
+   * (searched with); otherwise memories (searched for). EmbeddingGemma's own
+   * prompt formats.
+   */
+  async embed(texts, { query = false } = {}) {
+    if (!this.canEmbed) throw new Error('embedding model not running');
+    const input = texts.map((t) => (query ? `task: search result | query: ${t}` : `title: none | text: ${t}`));
+    const r = await fetchJson(`${this.embedder.url}/v1/embeddings`, { input }, 30000);
+    return (r && r.data ? r.data : []).sort((a, b) => a.index - b.index).map((d) => d.embedding);
+  }
+
   /** Typed questions about `state` (TypeSafe System One shape); returns the answers. */
   async decide(state, questions) {
     if (!this.canDecide) throw new Error('decision model not running');
@@ -330,4 +373,4 @@ class Engine {
   }
 }
 
-module.exports = { Engine, locate, defaultRoot };
+module.exports = { Engine, locate, defaultRoot, wellFormed };

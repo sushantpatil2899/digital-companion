@@ -12,6 +12,9 @@ const { Mind } = require('../src/main/mind/mind');
 const { INTERACTIONS } = require('../src/main/mind/interactions');
 const P = require('../src/main/mind/personality');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-growth-'));
 }

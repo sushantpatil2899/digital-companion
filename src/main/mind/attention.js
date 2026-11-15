@@ -17,7 +17,7 @@ const ATTENTION = {
 };
 
 // His own windows aren't something you're working in.
-const OWN_APPS = ['togepi', 'electron'];
+const OWN_APPS = ['companion', 'togepi', 'electron'];
 
 function own(w) {
   return OWN_APPS.includes(String(w.app || '').toLowerCase());
@@ -51,6 +51,16 @@ class Attention {
     this.current = null; // the window your attention has settled on
   }
 
+  /**
+   * Start over: the window you're on counts as new again once it settles. A
+   * new mind (another character) learns what you're doing without you first
+   * having to move to another window.
+   */
+  forget() {
+    this.candidate = null;
+    this.current = null;
+  }
+
   /** Call often (every frame is fine) with the cursor position. */
   cursorAt(p) {
     if (!p) return;
@@ -69,7 +79,7 @@ class Attention {
    */
   update({ windows = [], frontApp = null, frontTab = null, displays = [] }) {
     const list = windows.filter((w) => !own(w));
-    const describe = (w) => (w ? { id: w.id || null, app: w.app, title: w.title || null, screen: screenOf(w, displays), x: w.x, y: w.y } : null);
+    const describe = (w) => (w ? { id: w.id || null, app: w.app, title: w.title || null, screen: screenOf(w, displays), x: w.x, y: w.y, width: w.width, height: w.height } : null);
     let typing = frontApp ? list.find((w) => w.app === frontApp) || null : null;
     if (!typing && frontApp) typing = { id: null, app: frontApp, title: null, x: 0, y: 0, width: 0, height: 0 };
     let typingD = describe(typing);

@@ -27,6 +27,13 @@ const DEFAULTS = {
   nudges: { ...NUDGE_DEFAULTS },
   // His own mind: he thinks and talks for himself with local models (src/main/mind).
   mind: true,
+  // Where his voice model runs: 'local' (on this Mac) or 'gemini' (Google's
+  // Gemini API, online; needs GEMINI_API_KEY). Mind → Think with changes it;
+  // MIND_ENGINE, when set, sets it at start (and it's kept).
+  // `gemini`: optional { model, images, localDecider, generationConfig,
+  // timeoutMs }; missing ones use the defaults in src/main/mind/gemini.js.
+  mindEngine: 'local',
+  gemini: {},
   // He chirps when he talks.
   sounds: true,
   // Your own privacy blocklist on top of the built-in one (private windows,
@@ -47,6 +54,27 @@ const DEFAULTS = {
   restBattery: 20,
   // The welcome window shows what's new since this version (src/main/welcome.js).
   welcomeSeen: 0,
+  // What he calls you, and how he refers to you: 'he', 'she' or 'they'
+  // (asked on first run).
+  userName: '',
+  userPronoun: '',
+  // The character on your screen (src/characters), and whether you've picked
+  // one (a new install shows "Pick your companion" after the welcome).
+  character: 'togepi',
+  characterChosen: false,
+  // Phase 10: once a week the character writes a song about your week and
+  // ElevenLabs sings it (only the song's words are sent). Off until you turn
+  // it on and add your key. The singer is the same for every character.
+  weeklySong: false,
+  songSinger: 'sweet female vocals',
+  // Phase 11: talk to him. Off until you turn it on; the microphone only
+  // opens while you use the shortcut (or 🎤 in the chat). speechEngine:
+  // 'apple' (on this Mac) or 'elevenlabs' (Scribe, online). speechLocale:
+  // e.g. 'en-US' ('' = your Mac's language).
+  voiceCommands: false,
+  speechEngine: 'apple',
+  listenShortcut: 'Alt+Space',
+  speechLocale: '',
 };
 
 

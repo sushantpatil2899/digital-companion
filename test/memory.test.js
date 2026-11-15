@@ -5,10 +5,13 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Memory, relevance, readEvents, pruneEvents, journalDue, dayString, dayStart } = require('../src/main/mind/memory');
+const { Memory, relevance, meaningRelevance, readEvents, pruneEvents, journalDue, dayString, dayStart } = require('../src/main/mind/memory');
 const { writeDay, writeWeek, dayDigest } = require('../src/main/mind/journal');
 const { Mind } = require('../src/main/mind/mind');
 const P = require('../src/main/mind/personality');
+
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
 
 const DAY = 24 * 3600 * 1000;
 
@@ -23,13 +26,13 @@ function at(day, hour) {
 test('memory files are created, read back and editable by hand', () => {
   const dir = tmpDir();
   const m = new Memory(dir, () => at('2026-10-20', 12));
-  assert.match(fs.readFileSync(path.join(dir, 'about-sushant.md'), 'utf8'), /## Notes from Sushant/);
+  assert.match(fs.readFileSync(path.join(dir, 'about-you.md'), 'utf8'), /## Your notes/);
   assert.ok(fs.existsSync(path.join(dir, 'about-me.md')));
   m.addFacts([{ text: 'Sushant is job hunting', importance: 8 }]);
   m.addOpinions([{ text: 'Fetch is the best game', importance: 6 }]);
   m.writeJournal('2026-10-20', [{ text: 'Sushant applied to Amazon!', importance: 7 }], at('2026-10-20', 20));
   // Sushant writes his own notes in the file.
-  const f = path.join(dir, 'about-sushant.md');
+  const f = path.join(dir, 'about-you.md');
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/\(Write anything[^)]*\)/, 'I am a CS student at Stony Brook.'));
   const back = new Memory(dir, () => at('2026-10-20', 12));
   assert.equal(back.notes, 'I am a CS student at Stony Brook.');
@@ -61,6 +64,39 @@ test('recall: relevant, important and recent memories come to mind', () => {
   assert.equal(got[0].text, 'Sushant is applying to software engineering jobs at Amazon and Stripe');
   assert.ok(!got.some((g) => g.text.includes('lofi')), 'unrelated, unimportant things stay out');
   assert.ok(relevance('Amazon job', 'jobs at Amazon') > 0.5);
+});
+
+test('recall by meaning (Phase 10): what fits the moment without sharing a word, and back to words without it', async () => {
+  const now = at('2026-10-20', 12);
+  const m = new Memory(null, () => now);
+  m.addFacts([
+    { text: 'Sushant gets nervous before interviews', date: '2026-10-18', importance: 4 },
+    { text: 'Sushant likes lofi music', date: '2026-10-18', importance: 4 },
+  ]);
+  const query = 'Sushant is on a LinkedIn job post';
+  // By words: nothing about interviews shares a word with the job post.
+  assert.ok(!m.recall(query).some((g) => g.text.includes('nervous')));
+  // By meaning (similarities from the database): it does come to mind, the music doesn't.
+  const meaning = new Map([
+    ['Sushant gets nervous before interviews', 0.55],
+    ['Sushant likes lofi music', 0.18],
+  ]);
+  const got = m.recall(query, 5, [], meaning);
+  assert.equal(got[0].text, 'Sushant gets nervous before interviews');
+  assert.ok(!got.some((g) => g.text.includes('lofi')));
+  assert.equal(meaningRelevance(0.18), 0);
+  assert.equal(meaningRelevance(0.9), 1);
+  assert.equal(meaningRelevance(undefined), 0);
+
+  // The mind asks the database first and says how it recalled.
+  const mind = new Mind({ memory: m, meaning: async () => meaning, now: () => now });
+  mind.coreFacts = []; // (both facts would otherwise be his core, always on his mind)
+  const r = await mind.recall({ text: query }, null);
+  assert.equal(r[0].text, 'Sushant gets nervous before interviews');
+  assert.equal(mind.recalledBy, 'meaning');
+  const broken = new Mind({ memory: m, meaning: async () => { throw new Error('database down'); }, now: () => now });
+  await broken.recall({ text: query }, null);
+  assert.equal(broken.recalledBy, 'words');
 });
 
 test('he can forget a fact, an opinion or a whole day', () => {

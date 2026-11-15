@@ -134,20 +134,33 @@
         opacity: 0.5;
         cursor: default;
       }
+      #mic {
+        padding: 6px 10px;
+      }
+      #mic.on {
+        background: #e9a23b;
+        border-color: #e9a23b;
+        color: #fff;
+      }
+      #mic[hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <header>
-      <h1>Chat with Togepi</h1>
+      <h1>Chat with <span class="name">Togepi</span></h1>
       <p>Today's chat. It starts fresh tomorrow; he keeps what matters in his diary.</p>
     </header>
     <div id="messages"></div>
     <div id="question"></div>
     <div id="status"></div>
     <form id="form">
-      <input id="text" autocomplete="off" maxlength="1000" placeholder="Say something to Togepi…" autofocus />
+      <input id="text" autocomplete="off" maxlength="1000" placeholder="Say something…" autofocus />
+      <button id="mic" type="button" title="Say it (the microphone is only on while you talk)" hidden>🎤</button>
       <button id="send" type="submit">Send</button>
     </form>
+    <script src="name.js"></script>
     <script src="chat.js"></script>
   </body>
 </html>

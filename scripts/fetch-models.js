@@ -4,7 +4,7 @@
 //   engine/  llama.cpp's llama-server for this computer
 //   models/  the language model ("voice") and the decision model ("decide"),
 //            plus models/models.json naming them
-// `npm run dist` runs this first and bundles both folders into Togepi.app, so
+// `npm run dist` runs this first and bundles both folders into Filo.app, so
 // the app itself never needs the internet. Re-running skips what's already
 // there. See docs/mind/PLAN.md.
 
@@ -36,6 +36,8 @@ const MODELS = {
   // mmproj: the vision add-on, so he can look at pictures of windows (Phase 3).
   voice: { repo: 'ggml-org/gemma-4-12B-it-GGUF', file: 'gemma-4-12B-it-Q4_0.gguf', mmproj: 'mmproj-gemma-4-12B-it-Q8_0.gguf', args: [] },
   decide: { repo: 'ggml-org/vllm-d3-nano-GGUF', file: 'vllm-d3-nano-Q8_0.gguf', args: [] },
+  // Phase 10: turns memories into "meaning fingerprints" for recall (optional).
+  embed: { repo: 'ggml-org/embeddinggemma-300M-GGUF', file: 'embeddinggemma-300M-Q8_0.gguf', args: [] },
 };
 
 function mb(n) {

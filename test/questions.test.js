@@ -13,6 +13,9 @@ const { describeEvent } = require('../src/main/mind/events');
 const { dayRelationship } = require('../src/main/mind/growth');
 const { Companion, HIT } = require('../src/main/companion');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 const bounds = { left: 0, right: 1920, top: 0, floor: 1040 };
 
 function engine(answers) {
@@ -57,7 +60,7 @@ const ASKING = {
   urge: 0.9,
   lines: ['Sip sip!'],
   action: 'curious',
-  question: { text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], aboutSushant: true },
+  question: { text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], aboutUser: true },
 };
 
 // ------------------------------------------------------------------ prompt
@@ -67,7 +70,7 @@ test('his instructions give no example topics or sounds, only to try to name the
   assert.doesNotMatch(sys, /job hunting|coding|emails|videos|games/);
   assert.doesNotMatch(sys, /Toge!|Priii/);
   assert.doesNotMatch(sys, /\(the company|\(his skills/);
-  assert.match(sys, /Try to name the actual thing\./);
+  assert.match(sys, /Try to name the actual thing, in the line or question itself, not only in your thought\./);
   assert.match(sys, /At most 8 words, one short sentence\./);
   // No fixed tone: his voice comes from his personality only.
   assert.doesNotMatch(sys, /baby|cute/i);
@@ -76,7 +79,7 @@ test('his instructions give no example topics or sounds, only to try to name the
 
 test('he is told he may ask (never yes or no) only when he can, and the question is optional', () => {
   const s = { trigger: { text: 'Hi.' }, self: { hour: 10 }, events: [], now: Date.now() };
-  assert.match(T.situationPrompt({ ...s, canAsk: true }), /"question".*never yes or no.*"aboutSushant": true only if his answer tells you something lasting about him, worth remembering/s);
+  assert.match(T.situationPrompt({ ...s, canAsk: true }), /"question".*never yes or no.*"aboutUser": true only if his answer tells you something lasting about him, worth remembering/s);
   assert.doesNotMatch(T.situationPrompt(s), /question/);
   assert.ok(T.SCHEMA_WITH_QUESTION.properties.question);
   assert.ok(!T.SCHEMA_WITH_QUESTION.required.includes('question'));
@@ -85,7 +88,7 @@ test('he is told he may ask (never yes or no) only when he can, and the question
 });
 
 test('a question needs two different answers that are not yes or no', () => {
-  assert.deepEqual(T.cleanQuestion(ASKING.question), { text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], aboutSushant: true });
+  assert.deepEqual(T.cleanQuestion(ASKING.question), { text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], aboutUser: true });
   assert.equal(T.cleanQuestion({ text: 'Done?', answers: ['Yes!', '👎 No'] }), null);
   assert.equal(T.cleanQuestion({ text: 'Done?', answers: ['Sure', 'Nope'] }), null);
   assert.equal(T.cleanQuestion({ text: 'For me?', answers: ['Yes, my friend! 💖', 'Just for fun! 🎨'] }), null);
@@ -95,7 +98,7 @@ test('a question needs two different answers that are not yes or no', () => {
   assert.equal(T.cleanQuestion({ text: 'Are you an AI fan?', answers: ['A', 'B'] }), null);
   const long = T.cleanQuestion({ text: 'Which?', answers: ['A very very long answer here', '🌙 Night'] });
   assert.equal(long.answers[0].length, T.MAX_ANSWER);
-  assert.equal(long.aboutSushant, false);
+  assert.equal(long.aboutUser, false);
   // Without a question the thought looks as before.
   assert.equal(T.parseThought(JSON.stringify({ thought: 'x', urge: 5, lines: ['Hi'], action: 'none' })).question, undefined);
 });
@@ -108,7 +111,7 @@ test('when he writes a question he asks it instead of a line, and waits for the 
   mind.interact('Sushant petted you.');
   await flush();
   assert.deepEqual(spoken, []);
-  assert.deepEqual(asked, [{ text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], action: 'curious', band: 'cheerful' }]);
+  assert.deepEqual(asked, [{ text: 'Tea or coffee?', answers: ['🍵 Tea', '☕ Coffee'], action: 'curious', band: 'cheerful', badge: null }]);
   assert.equal(eng.calls[0].schema, T.SCHEMA_WITH_QUESTION);
   assert.match(eng.calls[0].user, /never yes or no/);
   assert.equal(mind.blockedBy({ interactive: true }), 'waiting for your answer');
@@ -137,7 +140,7 @@ test('your answer is remembered when it tells him about you, and wakes him to re
 });
 
 test('an answer that says nothing about you is not remembered', async () => {
-  const q = { ...ASKING, question: { text: 'Bug or feature?', answers: ['🐛 Bug', '✨ Feature'], aboutSushant: false } };
+  const q = { ...ASKING, question: { text: 'Bug or feature?', answers: ['🐛 Bug', '✨ Feature'], aboutUser: false } };
   const { mind, facts } = makeMind(engine(q));
   mind.interact('Sushant petted you.');
   await flush();
@@ -179,7 +182,7 @@ test('ignoring a question costs nothing, but after two in a row he stops asking 
 });
 
 test('he never asks about anything on your privacy blocklist', async () => {
-  const q = { ...ASKING, question: { text: 'More Tinder later?', answers: ['🔥 Sure thing', '🙈 Never'], aboutSushant: true } };
+  const q = { ...ASKING, question: { text: 'More Tinder later?', answers: ['🔥 Sure thing', '🙈 Never'], aboutUser: true } };
   const { mind, spoken, asked } = makeMind(engine(q), { blocklist: { apps: ['Tinder'], sites: [], words: [] } });
   mind.interact('Sushant petted you.');
   await flush();
@@ -252,11 +255,11 @@ test('nobody answers: after 30 s the question goes away and he shrugs', () => {
 test('the answer buttons the main process checks match the ones drawn', () => {
   const src = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', f), 'utf8');
   const size = Number(src('renderer.js').match(/const SIZE = ([\d.]+)/)[1]);
-  const q = Object.fromEntries([...src('character.js').match(/const QUESTION = \{([^}]+)\}/)[1].matchAll(/(\w+): (-?[\d.]+)/g)].map((m) => [m[1], Number(m[2])]));
+  const q = Object.fromEntries([...src('ui.js').match(/const QUESTION = \{([^}]+)\}/)[1].matchAll(/(\w+): (-?[\d.]+)/g)].map((m) => [m[1], Number(m[2])]));
   const near = (a, b) => assert.ok(Math.abs(a - b) <= 1.5, `${a} vs ${b}`);
   near(HIT.answers.bottom, -q.btnBottom * size);
   near(HIT.answers.top, -q.btnTop * size);
-  // Same layout as questionButton() in character.js.
+  // Same layout as questionButton() in ui.js.
   const outer = q.w / 2 - 7;
   const each = (2 * outer - q.own - 2 * q.gap) / 2;
   const nearRange = (r, [l, rr]) => (near(r[0], l * size), near(r[1], rr * size));

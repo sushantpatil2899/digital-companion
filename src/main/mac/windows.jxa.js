@@ -2,7 +2,7 @@
 // normal windows showing on any screen, front to back, with where they are, as
 // JSON: {"windows":[{"id":123,"app":"zoom.us","title":"…","x":0,"y":25,"width":1280,"height":800}]}
 // App names, window ids and positions come without any permission prompt.
-// Window titles only come once Togepi may record the screen ("Let him read my
+// Window titles only come once Filo may record the screen ("Let him read my
 // screen"); otherwise macOS leaves them out and `title` is null.
 
 ObjC.import('CoreGraphics');

@@ -1,7 +1,9 @@
 'use strict';
 
-// Togepi's "brain": needs, mood and how he decides what to do next.
-// Pure functions over plain objects so it can be unit tested without Electron.
+// The character's "brain": needs, mood and how he decides what to do next.
+// The same for every character; a character's own activities (eat, play…)
+// come from its folder (src/characters/<id>/index.js). Pure functions over
+// plain objects so it can be unit tested without Electron.
 //
 // Needs are 0..1:
 //   energy    1 = rested, 0 = exhausted        (drains while active, refills asleep)
@@ -14,6 +16,8 @@
 // which lifts his mood), so he can't simply cheer himself up.
 // Rough handling also makes him grumpy for a few minutes (grumpiness, kept by
 // the companion), which overrides the mood band.
+
+const characters = require('../characters');
 
 const NEEDS = {
   // Per-second drift rates.
@@ -40,21 +44,19 @@ const NEEDS = {
   // every 2-3 hours then, about two an hour when he's left alone).
   inviteFrom: 0.3,
   inviteTo: 0.8,
-  // How hard each kind of state works him (multiplies energyDrain).
-  effort: { run: 3, play: 3, adventure: 2.5, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },
+  // How hard each kind of state works him (multiplies energyDrain). The
+  // character's own activities have their own `effort`.
+  effort: { run: 3, jump: 2.5, walk: 1.5, grabbed: 1.5, fall: 1.5, sit: 0.4, sleep: 0 },
   // States where he's not doing anything interesting (boredom rises).
-  still: ['idle', 'sit', 'lookAround', 'backView', 'sad'],
-  // States where he's exploring (boredom falls).
-  busy: ['run', 'play', 'adventure', 'eat', 'flower', 'talk', 'jump', 'watchBall', 'pickBall', 'ttt'],
+  still: ['idle', 'sit', 'lookAround', 'backView', 'sad', 'lookUp'],
+  // States where he's exploring (boredom falls), and his own activities.
+  busy: ['run', 'talk', 'jump', 'watchBall', 'pickBall', 'ttt'],
 };
 
-// One-off changes when he starts an activity (or is interacted with).
+// One-off changes when he starts an activity (or is interacted with). The
+// character's own activities have their own `effects`.
 const EFFECTS = {
-  eat: { hunger: -0.65, energy: 0.05 },
-  play: { boredom: -0.4, energy: -0.04 },
-  adventure: { boredom: -0.55, energy: -0.06 },
   visitScreen: { boredom: -0.35, energy: -0.04 },
-  flower: { boredom: -0.15 },
   talk: { boredom: -0.1 },
   run: { boredom: -0.12 },
   jump: { boredom: -0.08 },
@@ -91,6 +93,7 @@ function defaultContext() {
     quiet: false, // in a meeting / presenting: keep still and quiet
     quietReason: null,
     watching: null, // what you're watching together ('Netflix'…): he sits and watches, quietly
+    music: null, // music you're playing ('Spotify'…), for activities that need it (Pip conducting)
     frontApp: null,
     visibleApps: [], // apps with a window showing on any screen
     nextEvent: null, // { title, start, end } (ms epoch)
@@ -143,11 +146,13 @@ function moodBand(mood, grumpiness = 0) {
 
 /** Advance needs and mood by `dt` seconds while in `state`. Returns the new mood. */
 /** `temperament`: { offset, speed } from his personality (personality.temperament). */
-function drift(needs, mood, state, dt, ctx = defaultContext(), temperament = { offset: 0, speed: 1 }) {
+/** `ch`: the character (src/characters), for its own activities. */
+function drift(needs, mood, state, dt, ctx = defaultContext(), temperament = { offset: 0, speed: 1 }, ch = characters.get()) {
+  const own = characters.activity(ch, state);
   if (state === 'sleep') {
     needs.energy = clamp01(needs.energy + NEEDS.energySleep * dt);
   } else {
-    let effort = NEEDS.effort[state] != null ? NEEDS.effort[state] : 1;
+    let effort = own ? (own.effort != null ? own.effort : 1) : NEEDS.effort[state] != null ? NEEDS.effort[state] : 1;
     if (ctx.batteryLevel != null && ctx.onBattery && ctx.batteryLevel < 0.2) effort *= 1.6; // low battery tires him
     if (ctx.hour >= 23 || ctx.hour < 6) effort *= 1.4; // and so does staying up late
     needs.energy = clamp01(needs.energy - NEEDS.energyDrain * effort * dt);
@@ -155,7 +160,7 @@ function drift(needs, mood, state, dt, ctx = defaultContext(), temperament = { o
   // Hunger rises slower while asleep.
   needs.hunger = clamp01(needs.hunger + NEEDS.hungerRise * (state === 'sleep' ? 0.4 : 1) * dt);
   if (NEEDS.still.includes(state)) needs.boredom = clamp01(needs.boredom + NEEDS.boredomRise * dt);
-  else if (NEEDS.busy.includes(state)) needs.boredom = clamp01(needs.boredom - NEEDS.boredomFall * dt);
+  else if (own || NEEDS.busy.includes(state)) needs.boredom = clamp01(needs.boredom - NEEDS.boredomFall * dt);
   // He misses you less while asleep or while you're away from the computer.
   const missing = state === 'sleep' || ctx.userAway ? 0.3 : 1;
   needs.affection = clamp01(needs.affection - NEEDS.affectionDecay * missing * dt);
@@ -177,23 +182,28 @@ function catchUp(needs, mood, seconds, temperament = { offset: 0, speed: 1 }) {
   return mood + (moodTarget(needs, temperament.offset) - mood) * Math.min(1, s / 600);
 }
 
-const ALL = ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', 'eat', 'flower', 'play', 'adventure', 'visitScreen', 'backView', 'sleep', 'sad', 'seek', 'invite'];
-// Still, silent things he may do while "Stay put" is on or you're in a meeting.
-const STAY = ['idle', 'sit', 'lookAround', 'eat', 'flower', 'backView', 'sleep', 'sad', 'talk'];
+// Everything he may choose, with the character's own activities (`ids`) in the middle.
+const allOf = (ids) => ['walk', 'run', 'idle', 'sit', 'lookAround', 'jump', 'talk', ...ids, 'visitScreen', 'backView', 'sleep', 'sad', 'seek', 'invite'];
+// Still, silent things he may do while "Stay put" is on or you're in a meeting
+// (and his own activities marked `whilePaused`).
+const stayOf = (ids) => ['idle', 'sit', 'lookAround', ...ids, 'backView', 'sleep', 'sad', 'talk'];
+const STAY = stayOf(characters.get().activities.filter((a) => a.whilePaused).map((a) => a.id));
 // In a meeting he keeps still: no walking, no props, nothing that catches your eye.
 const QUIET = ['idle', 'sit', 'backView', 'sleep'];
-const ENERGETIC = ['run', 'jump', 'play', 'adventure', 'visitScreen'];
+// Damped at night and on low battery (and his own `energetic` activities).
+const ENERGETIC = ['run', 'jump', 'visitScreen'];
 
 /**
  * Score every activity he could start now. Higher = more appealing.
  * @param {object} needs
  * @param {number} mood
  * @param {object} ctx context (see defaultContext)
- * @param {object} opts { paused, cursorKnown, last, rng, canVisitScreen, screenStay, ... }
+ * @param {object} opts { paused, cursorKnown, last, rng, canVisitScreen, screenStay, character, ... }
  * @returns {{name:string, score:number, why:string}[]} sorted, best first
  */
 function scoreActivities(needs, mood, ctx, opts = {}) {
   const { energy, hunger, boredom, affection } = needs;
+  const own = (opts.character || characters.get()).activities;
   const tired = 1 - energy;
   const happy = Math.max(0, mood);
   const night = ctx.hour >= 22 || ctx.hour < 6;
@@ -214,10 +224,7 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     lookAround: [0.2 + 0.25 * boredom, 'curious'],
     jump: [energy > 0.4 ? 0.08 + 0.3 * happy * energy : 0, 'happy hop'],
     talk: [0.15 + 0.3 * happy, 'chatty'],
-    eat: [hunger > 0.5 ? 1.6 * hunger * hunger : 0, 'hungry'],
-    flower: [0.12 + 0.2 * happy, 'smell flowers'],
-    play: [energy > 0.3 ? 0.05 + 1.2 * boredom * energy : 0, 'bored'],
-    adventure: [energy > 0.5 ? 0.04 + 0.8 * boredom * energy : 0, 'restless'],
+    ...Object.fromEntries(own.map((a) => [a.id, a.score({ energy, hunger, boredom, affection, happy }, ctx)])),
     backView: [0.12, 'watch your screen'],
     // Only offered when there's another screen he can walk to.
     visitScreen: [opts.canVisitScreen && energy > 0.25 && wanderlust > 0 ? wanderlust + 0.3 * boredom : 0, `been on this screen ${Math.round(stay / 60)} min`],
@@ -236,15 +243,26 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     s[name][0] *= f;
     why[name].push(reason);
   };
+  // His own activities' changes for mood `band` (see src/characters/togepi/index.js).
+  const moodsOf = (band, reason) => {
+    for (const a of own) {
+      const m = a.moods && a.moods[band];
+      if (!m) continue;
+      if (m.add != null) add(a.id, m.add, reason);
+      const f = typeof m.scale === 'function' ? m.scale(needs) : m.scale;
+      if (f != null && f !== 1) scale(a.id, f, reason);
+    }
+  };
+  const energetic = [...ENERGETIC, ...own.filter((a) => a.energetic).map((a) => a.id)];
 
   if (night) {
     add('sleep', 0.5 + 0.6 * tired, 'night');
-    for (const n of ENERGETIC) scale(n, 0.4, 'night');
+    for (const n of energetic) scale(n, 0.4, 'night');
   }
   if (lowBattery) {
     add('sleep', criticalBattery ? 1.2 : 0.3, 'battery low');
     add('sit', 0.35, 'battery low');
-    for (const n of ENERGETIC) scale(n, 0.3, 'battery low');
+    for (const n of energetic) scale(n, 0.3, 'battery low');
   }
   if (ctx.userAway) {
     // Nothing to do without you around: nap.
@@ -252,7 +270,7 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     scale('seek', 0, 'you are away');
     scale('invite', 0, 'you are away');
     scale('sad', 0.3, 'you are away');
-    for (const n of ['walk', 'run', 'play', 'adventure', 'visitScreen', 'talk', 'jump']) scale(n, 0.4, 'you are away');
+    for (const n of ['walk', 'run', ...own.filter((a) => a.move).map((a) => a.id), 'visitScreen', 'talk', 'jump']) scale(n, 0.4, 'you are away');
   }
   // Sad and seeking you don't make sense when he's fairly content.
   if (mood > 0.4) scale('sad', 0.3, 'in a good mood');
@@ -260,11 +278,10 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
   // His mood colours what he feels like doing.
   const band = moodBand(mood, opts.grumpiness || 0);
   if (band === 'sad') {
-    for (const n of ['run', 'jump', 'adventure', 'invite']) scale(n, 0, 'feeling sad');
+    for (const n of ['run', 'jump', 'invite']) scale(n, 0, 'feeling sad');
     scale('visitScreen', 0.5, 'feeling sad');
-    if (boredom < 0.85) scale('play', 0.3, 'feeling sad');
     scale('talk', 0.3, 'feeling sad');
-    scale('flower', 0.5, 'feeling sad');
+    moodsOf('sad', 'feeling sad');
     add('sit', 0.3, 'feeling sad');
     add('idle', 0.1, 'feeling sad');
   } else if (band === 'meh') {
@@ -272,16 +289,17 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     scale('talk', 0.6, 'meh');
     add('walk', 0.1, 'meh');
     add('sit', 0.1, 'meh');
+    moodsOf('meh', 'meh');
   } else if (band === 'cheerful') {
     add('jump', 0.15, 'cheerful');
     add('run', 0.1, 'cheerful');
     add('talk', 0.15, 'cheerful');
-    add('flower', 0.1, 'cheerful');
+    moodsOf('cheerful', 'cheerful');
   } else if (band === 'grumpy') {
     scale('talk', 0.2, 'grumpy');
     scale('seek', 0, 'grumpy');
     scale('invite', 0, 'grumpy');
-    scale('flower', 0.5, 'grumpy');
+    moodsOf('grumpy', 'grumpy');
   }
   // After a long walk, have a rest.
   if (opts.afterLongWalk) {
@@ -289,8 +307,8 @@ function scoreActivities(needs, mood, ctx, opts = {}) {
     add('idle', 0.1, 'just walked a long way');
   }
 
-  let allowed = ALL;
-  if (opts.paused) allowed = STAY;
+  let allowed = allOf(own.map((a) => a.id));
+  if (opts.paused) allowed = stayOf(own.filter((a) => a.whilePaused).map((a) => a.id));
   if (ctx.quiet) allowed = allowed.filter((n) => QUIET.includes(n));
 
   const out = [];

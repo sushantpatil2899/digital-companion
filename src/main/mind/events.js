@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { user } = require('./names');
 
 const KEEP = 200; // recent entries held in memory
 const MAX_FILE = 5 * 1024 * 1024; // events.jsonl is rotated to events.1.jsonl past this size
@@ -17,10 +18,12 @@ class EventLog {
    * @param {object} [opts]
    * @param {string} [opts.file] events.jsonl path (none = memory only, for tests)
    * @param {() => number} [opts.now] clock (ms epoch)
+   * @param {(e: object) => void} [opts.onAdd] also called with each entry (the database, src/main/mind/store.js)
    */
   constructor(opts = {}) {
     this.file = opts.file || null;
     this.now = opts.now || (() => Date.now());
+    this.onAdd = opts.onAdd || null;
     this.items = [];
   }
 
@@ -30,6 +33,13 @@ class EventLog {
     this.items.push(e);
     if (this.items.length > KEEP) this.items.splice(0, this.items.length - KEEP);
     this.append(e);
+    if (this.onAdd) {
+      try {
+        this.onAdd(e);
+      } catch (err) {
+        console.error('Event log hook:', err.message);
+      }
+    }
     return e;
   }
 
@@ -75,19 +85,21 @@ function describeEvent(e, now) {
   const when = ago(now - e.t);
   switch (e.kind) {
     case 'observe':
-      if (e.private) return `${when}: Sushant switched to something private (you can't see it)`;
-      return `${when}: Sushant is in ${e.app || 'an app'}${e.title ? `: "${e.title}"` : ''}${e.site ? ` (${e.site})` : ''}`;
+      if (e.private) return `${when}: ${user()} switched to something private (you can't see it)`;
+      return `${when}: ${user()} is in ${e.app || 'an app'}${e.title ? `: "${e.title}"` : ''}${e.site ? ` (${e.site})` : ''}`;
     case 'interact':
       return `${when}: ${e.text}`;
     case 'said':
-      if (e.answers) return `${when}: you asked "${e.text}" (answers: "${e.answers.join('" or "')}")${e.reaction ? ` (Sushant ${e.reaction})` : ''}`;
-      return `${when}: you said "${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`;
+      if (e.answers) return `${when}: you asked "${e.text}" (answers: "${e.answers.join('" or "')}")${e.reaction ? ` (${user()} ${e.reaction})` : ''}`;
+      return `${when}: you said "${e.text}"${e.reaction ? ` (${user()} ${e.reaction})` : ''}`;
     case 'chat':
-      return `${when}: in the chat, ${e.from === 'you' ? `Sushant wrote "${e.text}"` : `you replied "${e.text}"`}`;
+      return `${when}: in the chat, ${e.from === 'you' ? `${user()} wrote "${e.text}"` : `you replied "${e.text}"`}`;
     case 'silent':
       return `${when}: you thought "${e.thought}" but stayed quiet`;
     case 'changed':
       return `${when}: you felt different: ${e.text}`;
+    case 'watched':
+      return `${when}: while watching ${e.what} with ${user()} you saw: ${e.scene} (${e.mood})`;
     default:
       return `${when}: ${e.text || e.kind}`;
   }

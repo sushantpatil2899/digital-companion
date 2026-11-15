@@ -1,13 +1,14 @@
 'use strict';
 
 // Togepi's weekly reflection (Phase 4): the language model reads the week's
-// diary, what he learned about Sushant and what they did together, and
+// diary, what he learned about you and what they did together, and
 // proposes a few small personality changes with a reason each, plus a few
-// insights about Sushant. growth.js clamps and applies them.
+// insights about you. growth.js clamps and applies them.
 // No Electron imports, so it can be unit tested.
 
 const P = require('./personality');
 const T = require('./thinker');
+const { user } = require('./names');
 const { dayString, dayStart } = require('./memory');
 const { GROWTH } = require('./growth');
 
@@ -58,15 +59,15 @@ function userPrompt(personality, diary, memory, together) {
     'Your diary this week:',
     ...diary.map((d) => `- ${d.day}: ${d.lines.join(' ')}`),
     '',
-    together ? `You and Sushant this week: ${together}` : '',
-    memory.facts.length ? `What you know about Sushant:\n${memory.facts.slice(-15).map((f) => `- ${f.text}`).join('\n')}` : '',
+    together ? `You and ${user()} this week: ${together}` : '',
+    memory.facts.length ? `What you know about ${user()}:\n${memory.facts.slice(-15).map((f) => `- ${f.text}`).join('\n')}` : '',
     '',
     'Your personality now (0-100, 50 = average):',
     ...scores,
     '',
     'Answer in JSON:',
     `- changes: 0 to ${GROWTH.maxChanges} small changes this week's experiences really explain, each with a short reason. Traits by -${GROWTH.stepCap.traits}..${GROWTH.stepCap.traits}, values (paths starting with "values.") by -${GROWTH.stepCap.values}..${GROWTH.stepCap.values}. Most weeks only 1-3 changes. Stay Togepi.`,
-    '- insights: up to 3 new things you understood about Sushant this week (plain, specific).',
+    `- insights: up to 3 new things you understood about ${user()} this week (plain, specific).`,
   ]
     .filter((l) => l !== '')
     .join('\n');
@@ -80,7 +81,7 @@ async function reflect(engine, personality, memory, { now = Date.now(), together
   const diary = weekDiary(memory, now);
   if (diary.length < GROWTH.minDiaryDays) return null;
   const raw = await engine.think({
-    system: `${T.systemPrompt(personality, memory.notes)}\n\nRight now you are quietly reflecting on your week, not talking to Sushant.`,
+    system: `${T.systemPrompt(personality, memory.notes)}\n\nRight now you are quietly reflecting on your week, not talking to ${user()}.`,
     user: userPrompt(personality, diary, memory, together),
     schema: schema(),
   });

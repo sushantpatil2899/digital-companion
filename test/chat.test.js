@@ -14,6 +14,9 @@ const { dayRelationship } = require('../src/main/mind/growth');
 const { describeEvent } = require('../src/main/mind/events');
 const { dayDigest } = require('../src/main/mind/journal');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 function makeMind(reply, { dir = null, clock } = {}) {
   let t = clock ? clock.t : 10_000_000;
   const calls = [];
@@ -118,7 +121,7 @@ test('no chat without his mind running', async () => {
 
 // ------------------------------------------------------------------ your own answer
 
-const ASK = { thought: 'Food?', urge: 0.9, lines: ['Yum?'], action: 'curious', question: { text: 'Pizza or pasta?', answers: ['🍕 Pizza', '🍝 Pasta'], aboutSushant: true } };
+const ASK = { thought: 'Food?', urge: 0.9, lines: ['Yum?'], action: 'curious', question: { text: 'Pizza or pasta?', answers: ['🍕 Pizza', '🍝 Pasta'], aboutUser: true } };
 
 test('your own answer (✏️) is remembered, counts as answering, and he reacts to it in the chat', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-own-'));

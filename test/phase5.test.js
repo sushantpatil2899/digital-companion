@@ -12,6 +12,9 @@ const { buildReport } = require('../src/main/report');
 const { WELCOME_VERSION, WHATS_NEW, SWITCHES, welcomeFor } = require('../src/main/welcome');
 const { DEFAULTS } = require('../src/main/settings');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 function at(day, hour) {
   return dayStart(day) + hour * 3600 * 1000;
 }
@@ -206,5 +209,5 @@ test('welcome on first run, what’s new once after an update, both from the men
 test('every version has a what’s new entry (the rule for future changes)', () => {
   assert.deepEqual(WHATS_NEW.map((w) => w.version), Array.from({ length: WELCOME_VERSION }, (_, i) => i + 1));
   for (const w of WHATS_NEW) assert.ok(w.title && w.items.length, `version ${w.version}`);
-  assert.deepEqual(SWITCHES.map(([k]) => k), ['watchApps', 'readScreen', 'readCalendar', 'openAtLogin']);
+  assert.deepEqual(SWITCHES.map(([k]) => k), ['watchApps', 'readScreen', 'readCalendar', 'voiceCommands', 'weeklySong', 'openAtLogin']);
 });

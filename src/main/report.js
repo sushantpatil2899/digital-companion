@@ -1,7 +1,7 @@
 'use strict';
 
 // Phase 5: "Mind → Copy a report". A short text to paste to whoever helps
-// with Togepi: versions, how his models are doing, permissions, settings and
+// with him: versions, how his models are doing, permissions, settings and
 // recent problems. It never contains anything from your screen (apps,
 // titles, addresses, what he read), what he said or thought, his memories,
 // your notes or your lists. Only switches, numbers and error messages (which
@@ -53,7 +53,7 @@ function buildReport(src) {
   const c = src.context || {};
   const p = src.permissions || {};
   const n = src.counts || {};
-  const lines = [`Togepi report, ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')} UTC`, ''];
+  const lines = [`Filo report, ${new Date(now).toISOString().slice(0, 16).replace('T', ' ')} UTC`, ''];
 
   lines.push('App');
   lines.push(`- version ${a.version || '?'}, Electron ${a.electron || '?'}, ${a.platform || '?'} ${a.osRelease || ''} ${a.arch || ''}`.trimEnd());
@@ -86,13 +86,17 @@ function buildReport(src) {
     const l = m.looked;
     if (l) lines.push(`- last screen look: ${l.skipped ? 'skipped' : `${l.chars} characters${l.picture ? ' + a picture' : ''}`}`);
   }
+  if (src.database) lines.push(`- database (Tiger Data): ${err(src.database)}`);
+  if (src.hearing) lines.push(`- talk to me: ${err(src.hearing)}`);
+  if (src.song) lines.push(`- weekly song: ${src.song.weekly ? 'on' : 'off'}, ElevenLabs key ${src.song.key ? 'set' : 'not set'}, ${src.song.songs} songs${src.song.last ? ` (last try: ${err(src.song.last)})` : ''}`);
   lines.push(`- remembers: ${n.facts || 0} facts, ${n.opinions || 0} opinions, ${n.diaryDays || 0} diary days; ${n.growthWeeks || 0} growth weeks, ${n.locked || 0} locked sliders`);
   lines.push('');
 
   lines.push('Permissions');
   lines.push(`- notice which app I'm using: ${onOff(s.watchApps)}${p.apps ? ` (${err(p.apps)})` : ''}`);
   lines.push(`- read my screen: ${onOff(s.readScreen)}, Screen Recording: ${p.screen || 'unknown'}`);
-  lines.push(`- read my calendar: ${onOff(s.readCalendar)}${p.calendar ? ` (${err(p.calendar)})` : ''}`);
+  lines.push(`- read my calendar: ${onOff(s.readCalendar)}${p.calendar ? ` (${err(p.calendar)})` : ''}${p.calendarRead ? `, last read${ago(p.calendarRead, now)}` : ''}`);
+  if (p.signing) lines.push(`- signed: ${p.signing}${p.signing === 'adhoc' ? ' (macOS forgets permissions with every rebuild)' : ''}`);
   lines.push('');
 
   lines.push('Settings');

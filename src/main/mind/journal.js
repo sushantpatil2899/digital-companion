@@ -1,13 +1,14 @@
 'use strict';
 
 // Writes Togepi's diary for a day: a short entry in his own voice, new
-// things he learned about Sushant, and his own opinions and running jokes
+// things he learned about you, and his own opinions and running jokes
 // (memory.js stores them). Run when you're away at the end of the day, or the
 // next time the app runs for days it missed.
 // Email subjects never reach long-term memory: email is just "read emails".
 // No Electron imports, so it can be unit tested.
 
 const T = require('./thinker');
+const { user, character, they, their, v } = require('./names');
 const { dayString, dayStart } = require('./memory');
 
 const DAY = 24 * 3600 * 1000;
@@ -26,11 +27,11 @@ const SCHEMA = {
 };
 
 // Asked of the decision model for each new memory.
-const IMPORTANCE = {
+const importance = () => ({
   type: 'score',
-  instructions: 'How important is this for Togepi, Sushant\'s companion, to remember about his day or about Sushant?',
+  instructions: `How important is this for ${character()}, ${user()}'s companion, to remember about his day or about ${user()}?`,
   criteria: ['trivial', 'minor', 'somewhat important', 'important', 'very important'],
-};
+});
 
 function isMail(e) {
   return MAIL_SITES.some((s) => (e.site || '').endsWith(s)) || MAIL_APPS.includes(String(e.app || '').toLowerCase());
@@ -41,6 +42,8 @@ function clock(ms) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+const WATCHED_PER_SHOW = 8; // glances at a show that reach the diary
+
 /** A compact summary of one day's events for the diary prompt. */
 function dayDigest(events) {
   const screen = new Map(); // "app (site)" -> { n, titles: Set }
@@ -49,6 +52,7 @@ function dayDigest(events) {
   const together = new Map(); // interaction text -> count
   const said = [];
   const chat = [];
+  const watched = new Map(); // what you watched together -> ["scene (mood)", …]
   let silent = 0;
   for (const e of events) {
     if (e.kind === 'observe') {
@@ -64,9 +68,11 @@ function dayDigest(events) {
     } else if (e.kind === 'interact') {
       together.set(e.text, (together.get(e.text) || 0) + 1);
     } else if (e.kind === 'said') {
-      said.push(`${e.answers ? 'asked ' : ''}"${e.text}"${e.reaction ? ` (Sushant ${e.reaction})` : ''}`);
+      said.push(`${e.answers ? 'asked ' : ''}"${e.text}"${e.reaction ? ` (${user()} ${e.reaction})` : ''}`);
     } else if (e.kind === 'chat') {
-      chat.push(`${e.from === 'you' ? 'Sushant' : 'You'}: ${e.text}`);
+      chat.push(`${e.from === 'you' ? user() : 'You'}: ${e.text}`);
+    } else if (e.kind === 'watched') {
+      watched.set(e.what, [...(watched.get(e.what) || []), `${e.scene} (${e.mood})`]);
     } else if (e.kind === 'silent') {
       silent++;
     }
@@ -75,17 +81,22 @@ function dayDigest(events) {
   if (events.length) lines.push(`From ${clock(events[0].t)} to ${clock(events[events.length - 1].t)}.`);
   const top = [...screen.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 8);
   if (top.length || mail || privateCount) {
-    lines.push('', 'What Sushant did on his computer:');
+    lines.push('', `What ${user()} did on ${their()} computer:`);
     for (const [k, s] of top) lines.push(`- ${k}${s.titles.size ? `: ${[...s.titles].map((t) => `"${t}"`).join(', ')}` : ''}`);
     if (mail) lines.push('- read emails');
     if (privateCount) lines.push('- some private things (you could not see them)');
   }
   if (together.size) {
-    lines.push('', 'What you and Sushant did together:');
+    lines.push('', `What you and ${user()} did together:`);
     for (const [text, n] of together) lines.push(`- ${text}${n > 1 ? ` (${n} times)` : ''}`);
   }
+  if (watched.size) {
+    // At most the last few moments of each show (Sushant, 2026-10-24).
+    lines.push('', `What you saw while watching with ${user()}:`);
+    for (const [what, seen] of watched) lines.push(`- ${what}: ${seen.slice(-WATCHED_PER_SHOW).join('; ')}`);
+  }
   if (chat.length) {
-    lines.push('', 'What you and Sushant wrote in the chat:');
+    lines.push('', `What you and ${user()} wrote in the chat:`);
     for (const c of chat.slice(-16)) lines.push(`- ${c}`);
   }
   if (said.length || silent) {
@@ -104,12 +115,12 @@ function userPrompt(day, digest, memory) {
     '',
     digest,
     '',
-    known.length ? `Things you already know about Sushant (don't repeat them):\n${known.join('\n')}` : 'You don\'t know much about Sushant yet.',
+    known.length ? `Things you already know about ${user()} (don't repeat them):\n${known.join('\n')}` : `You don't know much about ${user()} yet.`,
     jokes.length ? `\nYour opinions and jokes so far:\n${jokes.join('\n')}` : '',
     '',
     'Answer in JSON:',
-    '- diary: 2 to 6 short sentences about your day, in your own voice ("I", "Sushant"). Mention the real things that happened: the companies, sites, games and what he did with you.',
-    '- facts: up to 5 NEW things you learned about Sushant today (his work, interests, habits, how he treats you). Plain words, and specific: name the companies, sites and projects, e.g. "Sushant applied to Amazon and Stripe on JobRight". Never email contents or private things. None if nothing new.',
+    `- diary: 2 to 6 short sentences about your day, in your own voice ("I", "${user()}"). Mention the real things that happened: the companies, sites, games and what ${they()} did with you.`,
+    `- facts: up to 5 NEW things you learned about ${user()} today (${their()} work, interests, habits, how ${they()} ${v('treats', 'treat')} you). Plain words, and specific: name the companies, sites and projects, e.g. "${user()} applied to Amazon and Stripe on JobRight". Never email contents or private things. None if nothing new.`,
     '- opinions: up to 3 of your own opinions or running jokes, if you have any.',
   ].join('\n');
 }
@@ -128,7 +139,7 @@ async function rateImportance(engine, texts) {
     // One request per memory: the question is the same, the state differs.
     const out = [];
     for (const t of texts) {
-      const a = await engine.decide(`Memory: ${t}`, { m: IMPORTANCE });
+      const a = await engine.decide(`Memory: ${t}`, { m: importance() });
       const score = a && a.m ? Number(a.m.score) : NaN; // 0..4
       out.push(Number.isFinite(score) ? Math.max(1, Math.min(10, Math.round(1 + (score / 4) * 9))) : 5);
     }
@@ -145,7 +156,7 @@ async function rateImportance(engine, texts) {
 async function writeDay(engine, memory, personality, due) {
   const digest = dayDigest(due.events);
   const raw = await engine.think({
-    system: `${T.systemPrompt(personality)}\n\nRight now you are writing in your own diary, not talking to Sushant.`,
+    system: `${T.systemPrompt(personality)}\n\nRight now you are writing in your own diary, not talking to ${user()}.`,
     user: userPrompt(due.day, digest, memory),
     schema: SCHEMA,
   });
@@ -189,14 +200,14 @@ async function writeWeek(engine, memory, personality, week) {
   const diary = days.filter((d) => memory.journal[d] && memory.journal[d].lines.length).flatMap((d) => [`${d}:`, ...memory.journal[d].lines.map((l) => `- ${l.text}`)]);
   if (!diary.length) return null;
   const raw = await engine.think({
-    system: `${T.systemPrompt(personality)}\n\nRight now you are writing in your own diary, not talking to Sushant.`,
+    system: `${T.systemPrompt(personality)}\n\nRight now you are writing in your own diary, not talking to ${user()}.`,
     user: [
       `The week that started on ${week} is over. Here is your diary for it:`,
       '',
       ...diary,
       '',
       'Answer in JSON:',
-      '- summary: 3 to 4 short sentences about your week, in your own voice ("I", "Sushant"). Mention the most important real things that happened (the companies, events and what he did with you), then how you feel about them.',
+      `- summary: 3 to 4 short sentences about your week, in your own voice ("I", "${user()}"). Mention the most important real things that happened (the companies, events and what ${they()} did with you), then how you feel about them.`,
     ].join('\n'),
     schema: WEEK_SCHEMA,
   });
@@ -212,4 +223,4 @@ async function writeWeek(engine, memory, personality, week) {
   return summary;
 }
 
-module.exports = { writeDay, writeWeek, dayDigest, isMail, SCHEMA, IMPORTANCE };
+module.exports = { writeDay, writeWeek, dayDigest, isMail, SCHEMA, importance };

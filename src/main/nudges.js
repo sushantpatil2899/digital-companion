@@ -226,88 +226,12 @@ class NudgeTracker {
 
 // What he says, by mood: cheerful | content | meh | sad | grumpy. When he's
 // sad or cross he still reminds you, just not with a smile.
-const TEXT = {
-  water: {
-    cheerful: 'Water time! 💧',
-    content: 'Water break?',
-    meh: '…water.',
-    sad: 'Drink some water…',
-    grumpy: 'Drink. Water.',
-  },
-  stretch: {
-    cheerful: 'Stretch time!',
-    content: 'Stretch break?',
-    meh: '…stretch?',
-    sad: 'Please stretch…',
-    grumpy: 'Up. Stretch.',
-  },
-  eyes: {
-    cheerful: 'Look far away!',
-    content: 'Rest your eyes',
-    meh: '…eyes.',
-    sad: 'Rest your eyes…',
-    grumpy: 'Eyes. Away.',
-  },
-  bedtime: {
-    cheerful: 'Bedtime soon?',
-    content: 'Getting late…',
-    meh: '…bed?',
-    sad: 'Go to bed…',
-    grumpy: 'Bed. Now.',
-  },
-  note: {
-    cheerful: 'Reminder!',
-    content: 'Reminder',
-    meh: '…reminder',
-    sad: "Don't forget…",
-    grumpy: 'Remember this.',
-  },
-  meeting30: {
-    cheerful: 'Meeting in 30 min',
-    content: 'Meeting in 30 min',
-    meh: '…meeting in 30',
-    sad: 'Meeting in 30…',
-    grumpy: 'Meeting. 30 min.',
-  },
-  meeting5: {
-    cheerful: 'Meeting in 5!',
-    content: 'Meeting in 5',
-    meh: '…meeting in 5',
-    sad: 'Meeting in 5…',
-    grumpy: 'Meeting. 5 min.',
-  },
-  meetingNow: {
-    cheerful: 'Meeting now!',
-    content: 'Meeting now!',
-    meh: '…meeting now',
-    sad: 'Meeting now…',
-    grumpy: 'Meeting. Now.',
-  },  // Games (src/main/games/).
-  fetch: {
-    cheerful: 'Play fetch?!',
-    content: 'Play fetch?',
-    meh: '…fetch?',
-    sad: 'Play with me…?',
-    grumpy: 'Throw it. Now.',
-  },
-  fetchAgain: {
-    cheerful: 'Again! Again!',
-    content: 'Again?',
-    meh: '…again?',
-    sad: 'One more…?',
-    grumpy: 'Again.',
-  },
-  ttt: {
-    cheerful: 'Tic-tac-toe?!',
-    content: 'Tic-tac-toe?',
-    meh: '…tic-tac-toe?',
-    sad: 'Play with me…?',
-    grumpy: 'Tic-tac-toe. Now.',
-  },
-};
+// Togepi's sign texts (the active character's are passed to say()).
+const TEXT = require('../characters/togepi/lines').signs;
 
-function say(key, band) {
-  const t = TEXT[key];
+/** The text for sign `key` in mood `band`, from `texts` (a character's signs). */
+function say(key, band, texts = TEXT) {
+  const t = texts[key];
   return (t && (t[band] || t.content)) || '';
 }
 

@@ -57,7 +57,8 @@ const MIND = {
 // model isn't available.
 const FEEL_DIFFERENT = 'Huh? I feel… different!';
 
-const { INTERACTIONS } = require('./interactions');
+const { INTERACTIONS, interaction } = require('./interactions');
+const { user, character, them, their } = require('./names');
 // Interactions that are also a reaction to what he just said.
 const REACTIONS = { heart: 'petted', throw: 'threw' };
 
@@ -80,6 +81,7 @@ class Mind {
    * @param {(s: {text, action, band}) => void} opts.onSpeak
    * @param {(q: {text, answers, action, band}) => void} [opts.onAsk] show a question with two answers
    * @param {() => object} [opts.getBlocklist] { apps, sites, words }
+   * @param {(query: string) => Promise<Map|null>} [opts.meaning] memories by meaning (Phase 10): text -> similarity
    * @param {() => number} [opts.now] ms epoch
    * @param {() => number} [opts.rng]
    * @param {object} [opts.memory]      long-term memory (memory.js), Phase 2
@@ -99,10 +101,16 @@ class Mind {
     this.onSpeak = opts.onSpeak;
     this.onAsk = opts.onAsk || null;
     this.getBlocklist = opts.getBlocklist || (() => ({}));
+    this.meaning = opts.meaning || null;
+    this.recalledBy = 'words';
     this.enabled = true;
     this.thinking = false;
     this.pending = null; // the trigger waiting for the current think to finish
     this.lastSpokeAt = -Infinity;
+    // The calendar event on his mind ({ title, start, call }) and the start
+    // of the last one he talked about: after that he moves on to the next.
+    this.upcoming = null;
+    this.upcomingAfter = -Infinity;
     this.lastObserveThink = -Infinity;
     this.nextHeartbeat = this.now() + this.heartbeatDelay();
     this.awaiting = null; // { entry, until } the line whose reaction we're waiting for
@@ -197,7 +205,7 @@ class Mind {
     const t = this.now();
     if (t - this.lastObserveThink >= MIND.observeThinkGap * 1000) {
       this.lastObserveThink = t;
-      this.wake({ kind: 'observe', text: `Sushant switched to ${entry.app}${entry.title ? `: "${entry.title}"` : ''}.`, interactive: false, seen: added });
+      this.wake({ kind: 'observe', text: `${user()} switched to ${entry.app}${entry.title ? `: "${entry.title}"` : ''}.`, interactive: false, seen: added });
     }
   }
 
@@ -241,8 +249,8 @@ class Mind {
   }
 
   /** You did something with him (petted, threw, played…). Always wakes him. */
-  interact(text) {
-    this.log.add({ kind: 'interact', text });
+  interact(text, key = null) {
+    this.log.add({ kind: 'interact', text, ...(key ? { key } : {}) });
     this.wake({ kind: 'interact', text, interactive: true });
   }
 
@@ -256,7 +264,7 @@ class Mind {
         if (t - (this.lastPetNoted || -Infinity) < 15000) continue; // one long pet, not twenty
         this.lastPetNoted = t;
       }
-      this.interact(INTERACTIONS[e]);
+      this.interact(interaction(e), e);
     }
   }
 
@@ -287,9 +295,9 @@ class Mind {
     this.ignoredStreak = 0;
     this.questionsIgnored = 0;
     this.log.add({ kind: 'reaction', to: q.text, reaction: q.reaction });
-    if (q.aboutSushant && this.memory) this.memory.addFacts([{ text: `Sushant picked "${answer}" when asked "${q.text}"`, importance: 6 }]);
+    if (q.aboutUser && this.memory) this.memory.addFacts([{ text: `${user()} picked "${answer}" when asked "${q.text}"`, importance: 6 }]);
     // He reacts even if you answered within seconds of the question.
-    const text = `Sushant answered your question "${q.text}" with "${answer}".`;
+    const text = `${user()} answered your question "${q.text}" with "${answer}".`;
     this.log.add({ kind: 'interact', text, answer: true });
     this.wake({ kind: 'interact', text, interactive: true, answered: true });
     return true;
@@ -302,17 +310,49 @@ class Mind {
    */
   startedWatching({ name, title }) {
     const what = title ? `"${title}" on ${name}` : name;
-    const text = `Sushant started watching ${what}. Tell him in your own words what you two are watching today. Then you go and sit in the corner of his screen with your back to him to watch it together.`;
-    this.log.add({ kind: 'interact', text: `You sat down to watch ${what} with Sushant.` });
+    const text = `${user()} started watching ${what}. Tell ${them()} in your own words what you two are watching today. Then you go and sit in the corner of ${their()} screen with your back to ${them()} to watch it together.`;
+    this.log.add({ kind: 'interact', text: `You sat down to watch ${what} with ${user()}.` });
     this.wake({ kind: 'watching', text, interactive: true, watching: true });
   }
 
   /** You stopped watching: he gets up (and decides himself whether to say anything). */
   stoppedWatching({ name, title }) {
     const what = title ? `"${title}" on ${name}` : name;
-    const text = `Sushant stopped watching ${what}. You get up from your spot in the corner.`;
-    this.log.add({ kind: 'interact', text: `You and Sushant stopped watching ${what}.` });
+    const text = `${user()} stopped watching ${what}. You get up from your spot in the corner.`;
+    this.log.add({ kind: 'interact', text: `You and ${user()} stopped watching ${what}.` });
     this.wake({ kind: 'watching', text, interactive: true });
+  }
+
+  /**
+   * While you watch together (Phase 9): a glance at `reading` (a picture of
+   * the window, from the screen reader) of `w` ({ name, title }). Returns
+   * { scene, mood } for his body to show, or null (busy, no picture, no
+   * usable answer). What he saw goes into his day as text; the picture
+   * never does.
+   */
+  async glance(reading, w) {
+    if (!this.enabled || !this.engine || !this.engine.ready || !this.engine.canSee) return null;
+    if (this.thinking || this.writingJournal || !reading || !reading.picture || reading.skipped) return null;
+    const what = w.title ? `"${w.title}" on ${w.name}` : w.name;
+    this.thinking = true;
+    try {
+      const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
+      const raw = await this.engine.think({
+        system: T.systemPrompt(this.personality, notes, { core: this.coreFacts }),
+        user: T.glancePrompt({ what, text: reading.text }),
+        schema: T.GLANCE_SCHEMA,
+        image: reading.picture,
+      });
+      const g = T.parseGlance(raw);
+      this.lastGlance = g ? { ...g, what, at: this.now() } : { error: 'no usable answer', at: this.now() };
+      if (g) this.log.add({ kind: 'watched', what, scene: g.scene, mood: g.mood });
+      return g;
+    } catch (e) {
+      this.lastGlance = { error: e.message, at: this.now() };
+      return null;
+    } finally {
+      this.thinking = false;
+    }
   }
 
   // ------------------------------------------------------------ chat (Phase 8)
@@ -349,7 +389,7 @@ class Mind {
     const messages = this.todaysChat();
     const history = messages.slice(-MIND.chatHistory).map((m) => ({ role: m.from === 'you' ? 'user' : 'assistant', content: m.text }));
     // Once per conversation it counts like a pat.
-    if (t - this.lastChatAt > MIND.conversationGap * 1000) this.log.add({ kind: 'interact', text: INTERACTIONS.chatted });
+    if (t - this.lastChatAt > MIND.conversationGap * 1000) this.log.add({ kind: 'interact', text: interaction('chatted'), key: 'chatted' });
     this.lastChatAt = t;
     const question = answering ? this.pendingQuestion() : null;
     if (question) this.answeredOwn(text);
@@ -357,11 +397,13 @@ class Mind {
     this.log.add({ kind: 'chat', from: 'you', text });
     this.writeJson(this.chatFile, this.chatLog);
     const self = this.getSelf();
-    const memories = this.recall({ text }, this.log.last(['observe']));
+    const memories = await this.recall({ text }, this.log.last(['observe']));
     const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
-    const user = T.chatPrompt({ self, view: this.view, memories, answering: question, text, now: t });
+    // What's coming up is on his mind in chat too (chatting about it doesn't use it up).
+    this.updateUpcoming(self);
+    const prompt = T.chatPrompt({ self, view: this.view, memories, answering: question, text, now: t, upcoming: this.upcoming });
     try {
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { chat: true, core: this.coreFacts }), user, schema: T.CHAT_SCHEMA, history });
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { chat: true, core: this.coreFacts, moments: true }), user: prompt, schema: T.CHAT_SCHEMA, history });
       const r = T.parseReply(raw);
       if (!r) return { error: "he couldn't find the words" };
       this.lastSpokeAt = this.now();
@@ -380,11 +422,11 @@ class Mind {
     if (!a || !a.question) return false;
     this.awaiting = null;
     const q = a.entry;
-    q.reaction = `answered in his own words "${text}"`;
+    q.reaction = `answered in ${their()} own words "${text}"`;
     this.ignoredStreak = 0;
     this.questionsIgnored = 0;
     this.log.add({ kind: 'reaction', to: q.text, reaction: q.reaction });
-    if (q.aboutSushant && this.memory) this.memory.addFacts([{ text: `Asked "${q.text}", Sushant answered "${text}"`, importance: 6 }]);
+    if (q.aboutUser && this.memory) this.memory.addFacts([{ text: `Asked "${q.text}", ${user()} answered "${text}"`, importance: 6 }]);
     this.ownAnswers = [...this.ownAnswers, { question: q.text, offered: q.answers, answer: text.slice(0, 120), day: memoryDay(this.now()) }].slice(-MIND.ownAnswersKept);
     this.writeJson(this.ownAnswersFile, this.ownAnswers);
     return true;
@@ -413,6 +455,7 @@ class Mind {
   /** Call about once a second. */
   tick() {
     const t = this.now();
+    this.updateUpcoming();
     if (t >= this.nextJournalCheck) {
       this.nextJournalCheck = t + MIND.journalCheckEvery * 1000;
       this.maybeWriteJournal().then(() => this.maybeGrow());
@@ -445,7 +488,11 @@ class Mind {
     if (t >= this.nextHeartbeat) {
       this.nextHeartbeat = t + this.heartbeatDelay();
       const self = this.getSelf();
-      if (!self.away && !self.quiet && !self.asleep && !self.watching) this.wake({ kind: 'heartbeat', text: 'Nothing special. You are just hanging around on the screen.', interactive: false });
+      if (!self.away && !self.quiet && !self.asleep && !self.watching) {
+        // With something coming up, his mind goes there on its own.
+        const up = this.upcoming;
+        this.wake({ kind: 'heartbeat', text: up ? T.upcomingHeartbeat(up) : 'Nothing special. You are just hanging around on the screen.', interactive: false });
+      }
     }
   }
 
@@ -649,24 +696,26 @@ class Mind {
     this.thinking = true;
     try {
       const t = this.now();
-      const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed', 'chat']);
+      const events = this.log.recent(MIND.recentEvents, ['observe', 'interact', 'changed', 'chat', 'watched']);
       const decisions = this.log.recent(MIND.recentDecisions, ['said', 'silent']);
       const self = this.getSelf();
       const screen = this.log.last(['observe']);
       const reading = screen && !screen.private && this.reading && this.reading.app === screen.app ? this.reading : null;
-      const memories = this.recall(trigger, screen, reading);
+      const memories = await this.recall(trigger, screen, reading);
       // No questions while you watch something together.
       // No questions while you watch something together, and his reaction
       // to your answer is never another question.
       const canAsk = this.canAsk() && !self.watching && !trigger.answered;
       const ownAnswers = canAsk ? this.ownAnswers.slice(-MIND.ownAnswersShown) : [];
-      const user = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk, ownAnswers });
+      this.updateUpcoming(self);
+      const upcoming = this.upcoming;
+      const prompt = T.situationPrompt({ trigger, self, screen, view: this.view, reading, memories, events: [...events, ...decisions], now: t, canAsk, ownAnswers, upcoming });
       const recentLines = this.log.recent(10, ['said']).map((e) => e.text);
       const notes = this.memory ? this.memory.notes.slice(0, MEMORY.notesChars) : '';
       const image = reading && reading.picture && this.engine.canSee ? reading.picture : null;
       this.lastLook = reading ? { app: reading.app, chars: reading.text ? reading.text.length : 0, picture: !!image, skipped: reading.skipped || null, at: reading.at } : null;
       const started = this.now();
-      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { core: this.coreFacts }), user, schema: canAsk ? T.SCHEMA_WITH_QUESTION : T.SCHEMA, image });
+      const raw = await this.engine.think({ system: T.systemPrompt(this.personality, notes, { core: this.coreFacts, moments: true }), user: prompt, schema: canAsk ? T.SCHEMA_WITH_QUESTION : T.SCHEMA, image });
       this.thinkTimes = [...(this.thinkTimes || []).slice(-9), (this.now() - started) / 1000];
       const thought = T.parseThought(raw, recentLines);
       if (!thought) return;
@@ -682,15 +731,47 @@ class Mind {
     }
   }
 
-  /** Long-term memories that fit what's going on (Phase 2). */
-  recall(trigger, screen, reading = null) {
+  /**
+   * this.upcoming: the first calendar event (self.calendar) inside the
+   * T.UPCOMING window that starts after the last one he talked about, as
+   * { title, start, call }, or null. A title naming something on your privacy
+   * blocklist is left out.
+   */
+  updateUpcoming(self = this.getSelf()) {
+    const now = this.now();
+    const events = (self.calendar || []).filter((e) => e && e.start > this.upcomingAfter && T.upcomingSoon(e, now));
+    // Same start: the shorter one first, then by title.
+    events.sort((a, b) => a.start - b.start || a.end - a.start - (b.end - b.start) || String(a.title).localeCompare(String(b.title)));
+    const ev = events[0];
+    const title = ev && ev.title && !this.mentionsBlocked([ev.title]) ? ev.title : null;
+    this.upcoming = ev ? { title, start: ev.start, call: !!ev.link } : null;
+  }
+
+  /** He talked about what's coming up: it's off his mind, on to the next one (usually none). */
+  doneWithUpcoming(about) {
+    if (about !== 'upcoming' || !this.upcoming) return;
+    this.upcomingAfter = this.upcoming.start;
+    this.updateUpcoming();
+  }
+
+  /** Long-term memories that fit what's going on (Phase 2; by meaning when the database can, Phase 10). */
+  async recall(trigger, screen, reading = null) {
     if (!this.memory) return [];
     const query = [
       trigger.text,
       screen && !screen.private ? `${screen.app} ${screen.title || ''} ${screen.site || ''}` : '',
       reading && reading.text ? reading.text.slice(0, 300) : '',
     ].join(' ');
-    this.lastRecalled = this.memory.recall(query, MEMORY.recall, this.coreFacts);
+    let meaning = null;
+    if (this.meaning) {
+      try {
+        meaning = await this.meaning(query);
+      } catch {
+        meaning = null; // by words, as before
+      }
+    }
+    this.recalledBy = meaning ? 'meaning' : 'words';
+    this.lastRecalled = this.memory.recall(query, MEMORY.recall, this.coreFacts, meaning);
     return this.lastRecalled;
   }
 
@@ -734,7 +815,7 @@ class Mind {
     const wants = (thought.urge >= th || !!trigger.watching) && (thought.lines.length > 0 || !!question);
     this.lastDecision = { urge: thought.urge, threshold: th, rail, asked: !!question, at: this.now() };
     if (!wants || rail) {
-      this.log.add({ kind: 'silent', thought: thought.thought, urge: thought.urge, why: rail || 'not worth saying' });
+      this.log.add({ kind: 'silent', thought: thought.thought, urge: thought.urge, about: thought.about || null, why: rail || 'not worth saying' });
       return;
     }
     if (question && this.onAsk) {
@@ -757,10 +838,10 @@ class Mind {
       criteria[keys[i]] = l;
     });
     const traits = P.describe(this.personality, 6).join(', ');
-    const state = `Togepi is Sushant's companion on his screen. He is ${traits}. ${trigger.text} He is thinking: "${thought.thought}"`;
+    const state = `${character()} is ${user()}'s companion on ${their()} screen. He is ${traits}. ${trigger.text} He is thinking: "${thought.thought}"`;
     try {
       const a = await this.engine.decide(state, {
-        line: { type: 'choice', instructions: 'Which line would Togepi most likely say right now?', criteria },
+        line: { type: 'choice', instructions: `Which line would ${character()} most likely say right now?`, criteria },
       });
       const k = a && a.line && a.line.choice;
       const i = keys.indexOf(k);
@@ -800,25 +881,35 @@ class Mind {
     return [...(b.apps || []), ...(b.sites || []), ...(b.words || [])].some((x) => x && all.includes(String(x).toLowerCase()));
   }
 
-  /** Ask `q` ({ text, answers, aboutSushant }) and wait for you to click an answer. */
+  /** Ask `q` ({ text, answers, aboutUser }) and wait for you to click an answer. */
   ask(q, action, trigger, thought = null) {
     this.lastSpokeAt = this.now();
     this.askedAbout = this.currentThing();
-    const entry = this.log.add({ kind: 'said', text: q.text, answers: q.answers, aboutSushant: q.aboutSushant, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null });
+    const about = thought ? thought.about || null : null;
+    const entry = this.log.add({ kind: 'said', text: q.text, answers: q.answers, aboutUser: q.aboutUser, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null, about });
     this.awaiting = { entry, until: this.now() + MIND.questionWait * 1000, interactive: !!trigger.interactive, question: true };
-    const shown = this.onAsk({ text: q.text, answers: q.answers, action: action || 'none', band: this.getSelf().band });
+    const shown = this.onAsk({ text: q.text, answers: q.answers, action: action || 'none', band: this.getSelf().band, badge: this.badge(about) });
     // He couldn't hold it up (busy with something else): nothing to wait for.
     if (shown === false) {
       this.awaiting = null;
       entry.reaction = "couldn't show it";
+      return;
     }
+    this.doneWithUpcoming(about);
   }
 
   speak({ text, action }, trigger, thought = null) {
     this.lastSpokeAt = this.now();
-    const entry = this.log.add({ kind: 'said', text, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null });
+    const about = thought ? thought.about || null : null;
+    const entry = this.log.add({ kind: 'said', text, action: action || 'none', trigger: trigger.kind, thought: thought ? thought.thought : null, about });
     this.awaiting = { entry, until: this.now() + MIND.reactionWindow * 1000, interactive: !!trigger.interactive };
-    this.onSpeak({ text, action: action || 'none', band: this.getSelf().band });
+    const shown = this.onSpeak({ text, action: action || 'none', band: this.getSelf().band, badge: this.badge(about) });
+    if (shown !== false) this.doneWithUpcoming(about);
+  }
+
+  /** A small sign on his bubble saying what it's about: 📅 for what you have coming up. */
+  badge(about) {
+    return about === 'upcoming' && this.upcoming ? 'calendar' : null;
   }
 
   /** For the brain view. */
@@ -831,6 +922,7 @@ class Mind {
       view: this.view || null,
       looked: this.lastLook || null,
       recalled: this.lastRecalled.map((m) => m.text),
+      recalledBy: this.recalledBy,
       journal: this.writingJournal ? 'writing…' : this.lastJournal,
       growth: this.lastGrowth,
       // Seconds per thought (average of the last 10), for the brain view and the report.
@@ -838,8 +930,10 @@ class Mind {
       lastSaid: said ? { text: said.text, answers: said.answers || null, reaction: said.reaction || null } : null,
       askPausedMin: this.askPausedUntil > this.now() ? Math.ceil((this.askPausedUntil - this.now()) / 60000) : 0,
       thinking: this.thinking,
+      glance: this.lastGlance || null,
       lastThought: this.lastThought,
       lastDecision: this.lastDecision,
+      upcoming: this.upcoming,
       talkativeness: P.talkativeness(this.personality),
     };
   }

@@ -24,6 +24,7 @@ class ContextTracker {
     this.locked = false;
     this.suspended = false;
     this.watching = null; // what you're watching (see src/main/mind/watching.js)
+    this.music = null; // music you're playing (see src/main/mind/music.js)
     this.idleSeconds = 0;
     this.away = false;
     this.awaySince = null;
@@ -36,6 +37,7 @@ class ContextTracker {
     this.lastInEvent = null;
     this.pending = {}; // one-shot flags until the next snapshot
     this.notes = {}; // problems to show in the brain view, by source
+    this.calendarRead = null; // when the calendar was last read (ms)
   }
 
   /** A problem to show in the brain view (e.g. a permission was declined); null clears it. */
@@ -59,6 +61,11 @@ class ContextTracker {
   setWatching(name, maxIdle = 3 * 3600) {
     this.watching = name || null;
     this.watchMaxIdle = maxIdle;
+  }
+
+  /** Music you're playing ('Spotify'…), or null. */
+  setMusic(name) {
+    this.music = name || null;
   }
 
   setOnBattery(v) {
@@ -181,6 +188,7 @@ class ContextTracker {
       quietReason,
       presenting: quietReason === 'presenting',
       watching: this.watching,
+      music: this.music,
       frontApp: a.watching ? a.frontApp : null,
       frontBundle: a.watching ? a.frontBundle : null,
       frontKind: a.watching ? a.frontKind : null,
@@ -188,6 +196,7 @@ class ContextTracker {
       alsoInEvents: cal.alsoIn,
       visibleApps: a.watching && a.visibleApps ? a.visibleApps : [],
       nextEvent: this.calendar.nextEvent,
+      calendarRead: this.calendarRead,
       inEvent: this.calendar.inEvent,
       error: Object.values(this.notes).join(' ') || null,
       ...this.pending,

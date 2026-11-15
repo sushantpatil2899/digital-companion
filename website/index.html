@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Filo · A friend on your screen</title>
+    <meta name="description" content="Filo puts a small companion on your Mac. It walks along your windows, notices your day, reminds you to drink water, and its mind runs on your own Mac." />
+    <meta name="theme-color" content="#F3F3F5" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="Filo · A friend on your screen" />
+    <meta property="og:description" content="Six small companions for your Mac. Download Filo for macOS." />
+    <meta property="og:image" content="assets/media/lineup.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;600;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <!-- Where the download lives (Vultr): change it here only. -->
+    <script>
+      window.FILO_DOWNLOAD = { url: 'downloads/Filo.dmg', file: 'Filo.dmg', version: '1.0', size: '' };
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="bar">
+      <a class="wordmark" href="#top" aria-label="Filo, home" translate="no">
+        <img src="assets/icon.svg" alt="" width="36" height="36" />
+        <span>filo</span>
+      </a>
+      <nav aria-label="Sections">
+        <a href="#companions">Companions</a>
+        <a href="#day">What it does</a>
+        <a href="#mind">Privacy</a>
+        <a href="#questions">Questions</a>
+      </nav>
+      <a class="bubble-btn bubble-btn--small" data-download href="downloads/Filo.dmg" download>Download</a>
+    </header>
+
+    <main id="main">
+      <!-- Hero: the headline, one sentence, the action; a coral speech-bubble stage holds a real Filo window, and Pip stands on its top edge. -->
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero__copy" data-enter>
+          <h1 id="hero-title">A friend on your screen</h1>
+          <p class="lead">Filo puts a small companion on your Mac. It walks along your windows, notices your day, and decides for itself when something is worth saying.</p>
+          <div class="hero__action">
+            <a class="bubble-btn" data-download href="downloads/Filo.dmg" download>Download for Mac</a>
+            <p class="note" data-platform-note>For macOS on Apple silicon · version <span data-version>1.0</span></p>
+          </div>
+        </div>
+        <div class="hero__stage">
+          <div class="stage bubble bubble--up" aria-hidden="false">
+            <figure class="stage__window shutter" data-ui>
+              <img src="assets/ui/chat.jpg" width="760" height="1040" fetchpriority="high" alt="Filo’s chat window: someone asks Pip for help with a demo script, and Pip answers in his own words." />
+            </figure>
+          </div>
+          <div class="hero__friend">
+            <iframe src="live/renderer/live.html?character=pip" title="Pip, a Filo companion. Click him." width="300" height="330" loading="eager"></iframe>
+          </div>
+        </div>
+      </section>
+
+      <!-- Showcase, the live thing: pick a companion; it lives here, drawn by the app's own code. Click it. -->
+      <section class="meet" id="companions" aria-labelledby="meet-title">
+        <div class="meet__plate">
+          <div class="plate bubble" data-plate="pip">
+            <iframe id="live-friend" src="live/renderer/live.html?character=pip" title="Your chosen companion. Click to pat." width="360" height="400" loading="lazy"></iframe>
+          </div>
+        </div>
+        <div class="meet__text">
+          <div class="tabs" role="tablist" aria-label="Companions" translate="no">
+            <button role="tab" aria-selected="false" data-friend="togepi">Togepi</button>
+            <button role="tab" aria-selected="true" data-friend="pip">Pip</button>
+            <button role="tab" aria-selected="false" data-friend="mori">Mori</button>
+            <button role="tab" aria-selected="false" data-friend="nomi">Nomi</button>
+            <button role="tab" aria-selected="false" data-friend="tonk">Tonk</button>
+            <button role="tab" aria-selected="false" data-friend="wolfie">Wolfie</button>
+          </div>
+          <div class="meet__about" role="tabpanel" aria-live="polite">
+            <h2 id="meet-title">Meet <span data-friend-name>Pip</span></h2>
+            <p data-friend-about>A clever little clockwork bird who thinks he’s much smarter than everyone else. He winds himself up, investigates things with a magnifying glass, and conducts the music you play.</p>
+          </div>
+          <div class="meet__actions">
+            <a class="cell cell--ink" data-download href="downloads/Filo.dmg" download>Download Filo</a>
+            <button class="cell cell--tone" type="button" data-pat><span>Pat</span> <span data-friend-name>Pip</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features: what it does with your day, each one shown by a companion doing it, as the app draws them. -->
+      <section class="day" id="day" aria-labelledby="day-title">
+        <div class="day__head" data-enter>
+          <h2 id="day-title">Good company</h2>
+          <p>It looks after the small things, keeps quiet when you’re busy, and is there when something good happens.</p>
+        </div>
+        <div class="day__tiles">
+          <figure class="spec" data-enter>
+            <div class="spec__tile tone-peach"><img src="assets/chars/f-water.webp" width="960" height="1020" alt="Togepi holding up a bubble: Water break? First one today, with a Drank button." loading="lazy" /></div>
+            <figcaption><strong>Water, stretches, eye breaks</strong><span>Every 45, 50 and 20 minutes of work, and it waits while you’re in a meeting.</span></figcaption>
+          </figure>
+          <figure class="spec spec--wide" data-enter>
+            <div class="spec__tile tone-sky spec__tile--ui"><img src="assets/ui/song.jpg" width="840" height="1220" alt="Togepi’s song window: the verse about the week, the line being sung lit up." loading="lazy" /></div>
+            <figcaption><strong>A song about your week</strong><span>Every Sunday evening it writes 30 seconds about your week, and sings it.</span></figcaption>
+          </figure>
+          <figure class="spec" data-enter>
+            <div class="spec__tile tone-mint"><img src="assets/chars/f-meeting.webp" width="960" height="1020" alt="Pip holding up a sign: Meeting in 5! Team sync, with Join and OK buttons." loading="lazy" /></div>
+            <figcaption><strong>Your next meeting</strong><span>A sign 30 and 5 minutes before, with a button that joins the call.</span></figcaption>
+          </figure>
+          <figure class="spec" data-enter>
+            <div class="spec__tile tone-sky"><img src="assets/chars/f-ask.webp" width="1080" height="1080" alt="Togepi asking: Is the meeting important? With two answers to click." loading="lazy" /></div>
+            <figcaption><strong>Asks, or stays quiet</strong><span>It decides for itself when something is worth saying.</span></figcaption>
+          </figure>
+          <figure class="spec" data-enter>
+            <div class="spec__tile tone-peach"><img src="assets/chars/f-listen.webp" width="960" height="1020" alt="Tonk the robot listening, an ear in his bubble." loading="lazy" /></div>
+            <figcaption><strong>Talk to it</strong><span>Press ⌥&nbsp;Space and say “remind me at five to call mom”.</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- About: the mind, on a deep panel; the real brain window in the bubble shape. -->
+      <section class="mind" id="mind" aria-labelledby="mind-title">
+        <div class="mind__panel">
+          <div class="mind__left">
+            <h2 id="mind-title">It thinks on your Mac</h2>
+            <figure class="mind__shot bubble" data-enter>
+              <img src="assets/ui/brain.jpg" width="760" height="1040" alt="Pip’s brain window: his last thought, and that he stayed quiet because it wasn’t worth saying." loading="lazy" />
+            </figure>
+          </div>
+          <div class="mind__right" data-enter>
+            <div>
+              <h3>No account, no cloud</h3>
+              <p>Its mind is a language model that runs right on your Mac. On a smaller Mac you can pick Gemini instead, and Filo tells you exactly what that sends.</p>
+            </div>
+            <div>
+              <h3>Private windows never pass</h3>
+              <p>Private and incognito windows, and anything on your blocklist, never reach its mind. Seeing your apps and reading your screen are both off until you turn them on.</p>
+            </div>
+            <a class="bubble-btn" data-download href="downloads/Filo.dmg" download>Download for Mac</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Gallery: a specimen sheet of Filo in figures and faces. -->
+      <section class="wall" aria-labelledby="wall-title">
+        <ul class="wall__grid">
+          <li class="word tone-coral"><h2 id="wall-title" class="word__big">Filo in figures</h2></li>
+          <li class="word tone-sky"><span class="word__big">6</span><span class="word__cap">companions</span></li>
+          <li class="word word--pic tone-peach"><img src="assets/chars/mori-act.webp" width="1080" height="900" alt="Mori making tea." loading="lazy" /></li>
+          <li class="word tone-mint"><span class="word__big">34</span><span class="word__cap">personality traits each</span></li>
+          <li class="word tone-peach"><span class="word__big">19</span><span class="word__cap">values each</span></li>
+          <li class="word word--pic tone-sky"><img src="assets/chars/nomi-act.webp" width="1080" height="900" alt="Nomi blowing dream bubbles." loading="lazy" /></li>
+          <li class="word tone-ink"><span class="word__big">⌥</span><span class="word__cap">and Space, to talk</span></li>
+          <li class="word tone-mint"><span class="word__big">0</span><span class="word__cap">accounts</span></li>
+          <li class="word word--pic tone-mint"><img src="assets/chars/tonk-act.webp" width="1080" height="900" alt="Tonk fixing himself with a little wrench." loading="lazy" /></li>
+          <li class="word tone-sky"><span class="word__big">30s</span><span class="word__cap">song every Sunday</span></li>
+          <li class="word word--pic tone-peach"><video autoplay muted loop playsinline poster="assets/media/lineup.jpg" width="1280" height="720" aria-label="All six companions in a row, each doing its own thing."><source src="assets/media/lineup.webm" type="video/webm" /><source src="assets/media/lineup.mp4" type="video/mp4" /></video><button class="word__cap word__toggle" type="button" data-video-toggle aria-label="Pause the video of all six companions">All six · pause</button></li>
+          <li class="word tone-coral"><span class="word__big">5s</span><span class="word__cap">to join you watching</span></li>
+        </ul>
+      </section>
+
+      <!-- FAQ: questions filed like cards in a drawer, one open at a time. -->
+      <section class="faq" id="questions" aria-labelledby="faq-title">
+        <h2 id="faq-title">Before you download</h2>
+        <div class="drawer">
+          <article class="card tone-peach" data-open="true">
+            <h3><button type="button" aria-expanded="true" aria-controls="a-install"><span class="card__tab">Install</span><span class="card__q">How do I open it the first time?</span></button></h3>
+            <div class="card__a" id="a-install"><p>Open Filo.dmg and drag Filo into Applications. It isn’t notarized by Apple yet, so the first time, right-click Filo.app, choose Open, then Open again. After that it opens like any app.</p></div>
+          </article>
+          <article class="card tone-sky">
+            <h3><button type="button" aria-expanded="false" aria-controls="a-mac"><span class="card__tab">Your Mac</span><span class="card__q">What Mac do I need?</span></button></h3>
+            <div class="card__a" id="a-mac" hidden><p>A Mac with Apple silicon. Its mind runs on your Mac and uses about 11&nbsp;GB of memory while it runs, so 16&nbsp;GB or more is best. On a smaller Mac, choose Gemini when Filo first asks how it should think.</p></div>
+          </article>
+          <article class="card tone-mint">
+            <h3><button type="button" aria-expanded="false" aria-controls="a-see"><span class="card__tab">Privacy</span><span class="card__q">What can it see?</span></button></h3>
+            <div class="card__a" id="a-see" hidden><p>Only what you allow. “Notice which app I’m using” shows it app names and window titles; “Let him read my screen” lets it read the window you’re looking at. Both are off until you switch them on, and private windows never pass.</p></div>
+          </article>
+          <article class="card tone-peach">
+            <h3><button type="button" aria-expanded="false" aria-controls="a-listen"><span class="card__tab">Listening</span><span class="card__q">Is the microphone always on?</span></button></h3>
+            <div class="card__a" id="a-listen" hidden><p>No. It listens only when you press ⌥&nbsp;Space or the microphone button in the chat, never in meetings, and the recording is deleted as soon as it’s turned into text.</p></div>
+          </article>
+          <article class="card tone-sky">
+            <h3><button type="button" aria-expanded="false" aria-controls="a-switch"><span class="card__tab">Companions</span><span class="card__q">Can I switch companions?</span></button></h3>
+            <div class="card__a" id="a-switch" hidden><p>Any time, from Character in its menu. Your reminders, water count and settings stay, and each companion keeps its own memories.</p></div>
+          </article>
+          <article class="card tone-mint">
+            <h3><button type="button" aria-expanded="false" aria-controls="a-song"><span class="card__tab">Songs</span><span class="card__q">How does the Sunday song work?</span></button></h3>
+            <div class="card__a" id="a-song" hidden><p>From 6 pm on Sunday your companion writes a 30-second song about your week and ElevenLabs sings it. It’s off until you switch it on and add your own ElevenLabs key, and only the song’s words are sent.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- CTA: one row of the board; the action tile between a picture and a flat field. -->
+      <section class="close" aria-labelledby="close-title">
+        <div class="close__row">
+          <div class="close__side close__side--pic"><img src="assets/ui/picker.jpg" width="2680" height="580" alt="Filo’s companion picker with all six companions." loading="lazy" /></div>
+          <div class="close__tile">
+            <div class="close__copy">
+              <h2 id="close-title">Bring a friend home</h2>
+              <p>Filo for macOS on Apple silicon. Download it, drag it into Applications, and pick your companion.</p>
+              <a class="bubble-btn bubble-btn--ink" data-download href="downloads/Filo.dmg" download>Download <span data-file>Filo.dmg</span></a>
+            </div>
+            <img class="close__friend" src="assets/chars/togepi-wave.webp" width="900" height="900" alt="Togepi waving." loading="lazy" />
+          </div>
+          <div class="close__side tone-mint" aria-hidden="true"></div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer: the name, built from blocks. -->
+    <footer class="foot">
+      <div class="foot__mark">
+        <span class="blk tone-coral" style="--h: 100%">f</span><span class="blk tone-ink" style="--h: 72%">i</span><span class="blk tone-sky" style="--h: 88%">l</span><span class="blk tone-peach" style="--h: 64%">o</span>
+      </div>
+      <div class="foot__cols">
+        <nav aria-label="Page">
+          <a href="#companions">Companions</a>
+          <a href="#day">What it does</a>
+          <a href="#mind">Privacy</a>
+          <a href="#questions">Questions</a>
+        </nav>
+        <p>Filo comes from the Greek φίλος, “friend”. Made by a group of computer science students at Stony Brook University, at SBU Hacks 2026.</p>
+      </div>
+      <div class="foot__last">
+        <p>© 2026 Filo</p>
+        <a class="bubble-btn bubble-btn--small" data-download href="downloads/Filo.dmg" download>Download</a>
+      </div>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

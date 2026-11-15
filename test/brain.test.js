@@ -4,6 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 const brain = require('../src/main/brain');
 const { Companion } = require('../src/main/companion');
+const characters = require('../src/characters');
+
+// Togepi's own activities' effects (src/characters/togepi/index.js).
+const OWN = Object.fromEntries(characters.get('togepi').activities.map((a) => [a.id, a.effects]));
 
 // A clock that matches the hour a test says it is (the real clock at night
 // would make a bedtime nudge due in the middle of a daytime test).
@@ -62,9 +66,9 @@ test('sleeping restores energy', () => {
 test('activities satisfy needs; pats raise affection and mood; throws lower mood', () => {
   const n = needs({ hunger: 0.9, boredom: 0.9, affection: 0.2 });
   let mood = 0;
-  mood = brain.apply(n, mood, brain.EFFECTS.eat);
+  mood = brain.apply(n, mood, OWN.eat);
   assert.ok(n.hunger < 0.3);
-  mood = brain.apply(n, mood, brain.EFFECTS.play);
+  mood = brain.apply(n, mood, OWN.play);
   assert.ok(n.boredom < 0.6);
   const before = mood;
   mood = brain.apply(n, mood, brain.EFFECTS.pat);
@@ -328,8 +332,9 @@ test('mood: left alone for an hour he ends up meh or sad, not cheerful; pats bri
 });
 
 test('mood: his own activities don\'t lift his mood directly', () => {
-  for (const name of ['eat', 'play', 'adventure', 'flower', 'talk', 'jump', 'run']) {
-    assert.ok(!brain.EFFECTS[name].mood, name);
+  for (const name of ['talk', 'jump', 'run']) assert.ok(!brain.EFFECTS[name].mood, name);
+  for (const ch of characters.list()) {
+    for (const a of ch.activities) assert.ok(!a.effects.mood, `${ch.id}: ${a.id}`);
   }
 });
 

@@ -1,7 +1,8 @@
 'use strict';
 
 // Reads upcoming events from the Mac Calendar app (macOS only) by running
-// calendar.jxa.js with osascript every few minutes.
+// calendar.jxa.js with osascript every minute (and right away when you open
+// the menu or the brain view, or the Mac wakes up).
 
 const path = require('path');
 const { run } = require('./run');
@@ -9,9 +10,9 @@ const { run } = require('./run');
 const SCRIPT = path.join(__dirname, 'calendar.jxa.js').replace('app.asar', 'app.asar.unpacked');
 
 const MESSAGES = {
-  denied: 'Calendar access was declined. Allow Togepi in System Settings → Privacy & Security → Calendars.',
+  denied: 'Calendar access was declined. Allow Filo in System Settings → Privacy & Security → Calendars.',
   restricted: 'Calendar access is restricted on this Mac.',
-  'write-only': 'Togepi only has "add events" access. Change it to Full Access in System Settings → Privacy & Security → Calendars.',
+  'write-only': 'Filo only has "add events" access. Change it to Full Access in System Settings → Privacy & Security → Calendars.',
   'not determined': 'Calendar permission prompt was not answered (or could not be shown — see the README).',
 };
 
@@ -67,11 +68,13 @@ async function readEvents(hours = 12) {
 
 class CalendarWatcher {
   /** @param {(result: {events?: object[], error?: string}) => void} onResult */
-  constructor(onResult, intervalMs = 5 * 60 * 1000) {
+  constructor(onResult, intervalMs = 60 * 1000) {
     this.onResult = onResult;
     this.intervalMs = intervalMs;
     this.timer = null;
     this.busy = false;
+    this.lastPoll = 0; // when it last started reading (ms)
+    this.lastRead = null; // when it last read the calendar successfully (ms)
   }
 
   start() {
@@ -83,12 +86,19 @@ class CalendarWatcher {
   async poll() {
     if (this.busy || !this.timer) return;
     this.busy = true;
+    this.lastPoll = Date.now();
     try {
       const r = await readEvents();
+      if (!r.error) this.lastRead = Date.now();
       if (this.timer) this.onResult(r);
     } finally {
       this.busy = false;
     }
+  }
+
+  /** Read it now unless it was read in the last `minGapMs` (opening the menu, waking up). */
+  refresh(minGapMs = 15 * 1000) {
+    if (Date.now() - this.lastPoll >= minGapMs) this.poll();
   }
 
   stop() {

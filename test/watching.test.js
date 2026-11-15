@@ -5,12 +5,15 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { Watching, WATCH, watchingIn, needsGuess, guessState, showTitle } = require('../src/main/mind/watching');
+const { Watching, WATCH, GUESS_YES, watchingIn, needsGuess, guessState, showTitle } = require('../src/main/mind/watching');
 const { ContextTracker } = require('../src/main/context');
 const { NudgeTracker } = require('../src/main/nudges');
 const { Mind } = require('../src/main/mind/mind');
 const T = require('../src/main/mind/thinker');
 const { Companion } = require('../src/main/companion');
+
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
 
 const chrome = (url, title = 'Netflix', screen = null) => ({ app: 'Google Chrome', title, url, screen });
 
@@ -51,9 +54,9 @@ test('it starts after 30 s (YouTube too) and ends 30 s after you leave', () => {
   assert.equal(w.update(netflix), 'start');
   assert.deepEqual({ ...w.current, since: 0 }, { name: 'Netflix', title: null, screen: 2, since: 0 });
   // A quick look at something else doesn't end it.
-  t += 20 * 1000;
+  t += 2 * 1000;
   assert.equal(w.update({ app: 'Messages' }), null);
-  t += 20 * 1000;
+  t += (WATCH.stopAfter - 3) * 1000;
   assert.equal(w.update(netflix), null);
   t += 1000;
   assert.equal(w.update(null), null);
@@ -123,7 +126,7 @@ function makeMind(answers, watching) {
 const flush = () => new Promise((r) => setImmediate(r));
 
 test('when you start watching he always says something about it, in his own words, never a question', async () => {
-  const { mind, calls, spoken } = makeMind({ thought: 'Movie time!', urge: 0.1, lines: ['Ooh, Stranger Things tonight!'], action: 'happy', question: { text: 'Scary or funny?', answers: ['👻 Scary', '😂 Funny'], aboutSushant: false } }, 'Netflix');
+  const { mind, calls, spoken } = makeMind({ thought: 'Movie time!', urge: 0.1, lines: ['Ooh, Stranger Things tonight!'], action: 'happy', question: { text: 'Scary or funny?', answers: ['👻 Scary', '😂 Funny'], aboutUser: false } }, 'Netflix');
   mind.startedWatching({ name: 'Netflix', title: 'Stranger Things' });
   await flush();
   assert.deepEqual(spoken.map((s) => s.text), ['Ooh, Stranger Things tonight!']); // even with a low urge
@@ -255,16 +258,16 @@ test('a quick look elsewhere does not reset the wait, and the brain view says wh
   const w = new Watching(() => t);
   const yt = chrome('https://www.youtube.com/watch?v=x', 'Lofi - YouTube');
   w.update(yt);
-  t += 15 * 1000;
+  t += 2 * 1000;
   w.update(yt);
-  assert.equal(w.check, 'YouTube for 15 s (he joins at 30 s)');
-  t += 5 * 1000;
+  assert.equal(w.check, 'YouTube for 2 s (he joins at 5 s)');
+  t += 1000;
   w.update({ app: 'Messages', title: 'Mom' });
   assert.equal(w.check, "Messages isn't a video page or player");
-  t += 5 * 1000;
+  t += 1000;
   w.update(yt);
-  t += 5 * 1000;
-  assert.equal(w.update(yt), 'start'); // 30 s since it began, despite the look away
+  t += 1000;
+  assert.equal(w.update(yt), 'start'); // 5 s since it began, despite the look away
   assert.equal(w.check, 'watching YouTube');
   assert.equal(new Watching().update(null), null);
   const ff = new Watching();
@@ -272,3 +275,32 @@ test('a quick look elsewhere does not reset the wait, and the brain view says wh
   assert.match(ff.check, /Firefox doesn't show him the tab's address; waiting for the decision model/);
 });
 
+
+test('the waits are 5 s each way (Sushant, 2026-10-25)', () => {
+  assert.equal(WATCH.start, 5);
+  assert.equal(WATCH.stopAfter, 5);
+});
+
+test('a browser by itself is never something you watch (Brave, 2026-10-25)', () => {
+  const yes = { video: true };
+  for (const title of ['Brave Browser', 'Brave', 'New Tab', 'New Private Tab', 'Google Chrome', 'Start Page', 'Settings - Brave Browser', 'New Tab - Brave', '']) {
+    const brave = { app: 'Brave Browser', title };
+    assert.equal(needsGuess(brave), null, `not asked about "${title}"`);
+    assert.equal(watchingIn(brave, yes), null, `not watching "${title}" even if the model said so`);
+    assert.equal(watchingIn({ ...brave, url: 'brave://newtab/' }, yes), null);
+  }
+  // A real page in Brave is still asked about, and YouTube still counts.
+  assert.ok(needsGuess({ app: 'Brave Browser', title: 'Some Show S1E2 - Watch online' }));
+  assert.deepEqual(watchingIn({ app: 'Brave Browser', title: 'Cat does a flip - YouTube - Brave' }), { name: 'YouTube' });
+  assert.deepEqual(watchingIn({ app: 'Brave Browser', title: 'Cat does a flip - YouTube', url: 'https://www.youtube.com/watch?v=x' }), { name: 'YouTube' });
+  // The brain view says why.
+  const w = new Watching(() => 0);
+  w.update({ app: 'Brave Browser', title: 'Brave Browser' });
+  assert.match(w.check, /new or empty tab/);
+});
+
+test('only a sure guess counts as watching (SBU Hacks, 2026-10-25)', () => {
+  // Measured with the decision model: real playback 0.89-0.99; unsure pages
+  // "SBUHacks 2026" 0.48 and "Spotify - Web Player" 0.72.
+  assert.ok(GUESS_YES > 0.72 && GUESS_YES < 0.89, String(GUESS_YES));
+});

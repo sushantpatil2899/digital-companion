@@ -298,3 +298,44 @@ test('"Come here" and moving activities end "Stay put"', () => {
   c.doActivity('play');
   assert.ok(!c.paused);
 });
+
+test('while your right-click menu is open he holds still, so the menu stays put', () => {
+  const c = new Companion({ bounds, y: bounds.floor, rng: seeded(3) });
+  run(c, 2);
+  // Wandering: he stops and stands, and nothing moves him until the menu closes.
+  c.walkTo(1800, 'walk');
+  run(c, 0.5);
+  c.holdForMenu(true);
+  assert.equal(c.state, 'idle');
+  const x = c.x;
+  run(c, 20);
+  assert.equal(c.x, x);
+  c.say('Hi!', 'jump');
+  assert.notEqual(c.state, 'jump'); // his mind's actions wait too
+  c.holdForMenu(false);
+  run(c, 30);
+  assert.ok(!c.menuHeld);
+
+  // Walking somewhere for a reason: paused where he is, then he carries on.
+  const d = new Companion({ bounds, y: bounds.floor, rng: seeded(5) });
+  run(d, 2);
+  d.walkTo(1800, 'walk', { state: 'sit', duration: 5 });
+  d.route = [{}]; // as if crossing to another screen
+  run(d, 0.3);
+  d.holdForMenu(true);
+  const dx = d.x;
+  run(d, 5);
+  assert.equal(d.x, dx);
+  assert.equal(d.state, 'walk');
+  d.route = null;
+  d.holdForMenu(false);
+  run(d, 1);
+  assert.ok(d.x > dx, 'walks on after the menu closes');
+
+  // A menu that never says it closed lets him go after a minute.
+  const e = new Companion({ bounds, y: bounds.floor, rng: seeded(9) });
+  run(e, 2);
+  e.holdForMenu(true);
+  run(e, 61);
+  assert.equal(e.menuHeld, false);
+});

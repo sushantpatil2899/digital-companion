@@ -4,7 +4,7 @@
 //   {"events":[{"title":"Standup","start":1760000000000,"end":1760000900000,
 //               "url":"…","location":"…","notes":"…"}]}
 // or {"error":"denied"|"restricted"|"…"} if it can't read them.
-// The first time, macOS asks whether Togepi may access your calendars.
+// The first time, macOS asks whether Filo may access your calendars.
 
 ObjC.import('EventKit');
 ObjC.import('Foundation');

@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src blob:" />
+    <title>Our week’s song</title>
+    <style>
+      :root {
+        --bg: #fdfaf2;
+        --card: #ffffff;
+        --ink: #3a2d25;
+        --muted: #8a7a6c;
+        --line: #eadfcf;
+        --accent: #e9a23b;
+        --now: #ffe49a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #2d2925;
+          --card: #3a352f;
+          --ink: #f4ece0;
+          --muted: #b3a593;
+          --line: #4a433b;
+          --accent: #f0b65a;
+          --now: #5a4a24;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      h1 {
+        font-size: 19px;
+        margin: 0 0 2px;
+      }
+      .by {
+        color: var(--muted);
+        margin-bottom: 12px;
+      }
+      .player {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px;
+      }
+      #play {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        flex: none;
+      }
+      #play:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #bar {
+        flex: 1;
+        height: 6px;
+        background: var(--line);
+        border-radius: 3px;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      #fill {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+      }
+      #time {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        min-width: 74px;
+        text-align: right;
+      }
+      .lyrics {
+        margin: 14px 0;
+        padding: 4px 0;
+      }
+      .part {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 10px 0 2px;
+      }
+      .line {
+        padding: 2px 8px;
+        border-radius: 6px;
+        transition: background 0.2s;
+      }
+      .line.now {
+        background: var(--now);
+        font-weight: 600;
+      }
+      .week {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        color: var(--muted);
+      }
+      .week b {
+        color: var(--ink);
+      }
+      #status {
+        margin: 10px 0;
+        color: var(--muted);
+        min-height: 1.4em;
+      }
+      #status.error {
+        color: #c0392b;
+      }
+      .older {
+        margin-top: 12px;
+      }
+      .older a {
+        display: block;
+        color: var(--ink);
+        text-decoration: none;
+        padding: 3px 0;
+        cursor: pointer;
+      }
+      .older a.sel {
+        font-weight: 600;
+      }
+      .older a span {
+        color: var(--muted);
+      }
+      details {
+        margin-top: 14px;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+        margin: 8px 0;
+      }
+      input[type='password'] {
+        flex: 1;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+      }
+      button.small {
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      #make {
+        width: 100%;
+        margin-top: 10px;
+        padding: 8px;
+        border: none;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #make:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .help {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .empty {
+        color: var(--muted);
+        margin: 18px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="song">
+      <h1 id="title">🎵</h1>
+      <div class="by" id="by"></div>
+      <div class="player">
+        <button id="play" title="Play" disabled>▶</button>
+        <div id="bar"><div id="fill"></div></div>
+        <div id="time">0:00 / 0:30</div>
+      </div>
+      <div class="lyrics" id="lyrics"></div>
+      <div class="week" id="week"></div>
+    </div>
+    <div class="empty" id="empty" hidden></div>
+    <div id="status"></div>
+    <button id="make">Make this week’s song now</button>
+    <div class="older" id="older"></div>
+    <details id="settings">
+      <summary>Settings</summary>
+      <label class="row"><input type="checkbox" id="weekly" /> Make a song every week (Sunday evening)</label>
+      <div class="help">Only the words of the song (title, lyrics, style) go to ElevenLabs, never anything private. The song and its words are kept in the character’s memory folder.</div>
+      <div class="row">
+        <input type="password" id="key" placeholder="ElevenLabs API key" autocomplete="off" />
+        <button class="small" id="saveKey">Save</button>
+        <button class="small" id="removeKey">Remove</button>
+      </div>
+      <div class="help" id="keyHelp"></div>
+    </details>
+    <script src="song.js"></script>
+  </body>
+</html>

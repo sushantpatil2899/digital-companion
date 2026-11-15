@@ -15,6 +15,9 @@ const { locate } = require('../src/main/mind/engine');
 const { parseTabs } = require('../src/main/mac/front-app');
 const { Companion } = require('../src/main/companion');
 
+// He calls you Sushant (he/him) in these tests (settings since Phase 9).
+require('../src/main/mind/names').setNames({ user: 'Sushant', pronoun: 'he' });
+
 // ------------------------------------------------------------------ personality
 
 test('personality has 34 traits, 19 values and the relationship, all from Togepi', () => {
@@ -191,7 +194,7 @@ test('he speaks when he wants to, and remembers saying it', async () => {
   const { mind, spoken } = makeMind(fakeEngine({ thought: 'Pets!', urge: 0.9, lines: ['Hehe, more pets!'], action: 'happy' }));
   mind.interact('Sushant petted you.');
   await flush();
-  assert.deepEqual(spoken, [{ text: 'Hehe, more pets!', action: 'happy', band: 'cheerful' }]);
+  assert.deepEqual(spoken, [{ text: 'Hehe, more pets!', action: 'happy', band: 'cheerful', badge: null }]);
   assert.equal(mind.log.last(['said']).text, 'Hehe, more pets!');
 });
 
@@ -403,4 +406,236 @@ test('your own clips: by mood, or for any mood', () => {
 test('the engine reports what is missing before anything is downloaded', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'togepi-engine-'));
   assert.deepEqual(locate(dir).missing, ['server', 'voice', 'decide']);
+});
+
+// ------------------------------------------------------------------ what you have coming up
+
+const MIN = 60 * 1000;
+
+// A mind whose clock starts at `t` with your next calendar event `minsAway` from then.
+function upcomingMind(answers, { minsAway = 45, title = 'CS exam', link = null, self = {}, blocklist = {}, onAsk = null, more = [] } = {}) {
+  let t = 1_000_000;
+  const spoken = [];
+  const asked = [];
+  const engine = fakeEngine(answers);
+  const event = { title, start: t + minsAway * MIN, end: t + (minsAway + 60) * MIN, ...(link ? { link } : {}) };
+  // More events: [{ title, minsAway, mins }] (mins: how long it lasts).
+  const calendar = [event, ...more.map((m) => ({ title: m.title, start: t + m.minsAway * MIN, end: t + (m.minsAway + (m.mins || 60)) * MIN }))];
+  const mind = new Mind({
+    engine,
+    now: () => t,
+    rng: () => 0.5,
+    getSelf: () => ({ band: 'cheerful', needs: {}, state: 'idle', hour: 14, quiet: false, away: false, asleep: false, busy: false, calendar, ...self }),
+    onSpeak: (s) => spoken.push(s),
+    ...(onAsk ? { onAsk: (q) => (asked.push(q), onAsk(q)) } : {}),
+    getBlocklist: () => blocklist,
+  });
+  // His first heartbeat comes after heartbeatMin..Max (rng 0.5: halfway).
+  const heartbeat = async () => {
+    t += MIND.heartbeatMax * 1000;
+    mind.tick();
+    await flush();
+    await flush();
+  };
+  return { mind, engine, spoken, asked, heartbeat, calendar };
+}
+
+test('the next event is on his mind from an hour until the 30-minute sign', () => {
+  const now = 1_000_000;
+  const at = (mins) => T.upcomingSoon({ start: now + mins * MIN }, now);
+  assert.equal(at(61), false);
+  assert.equal(at(60), true);
+  assert.equal(at(59), true);
+  assert.equal(at(31), true);
+  assert.equal(at(30), false, 'the 30-minute sign takes over');
+  assert.equal(at(29), false);
+  assert.equal(T.upcomingSoon(null, now), false);
+});
+
+test('the coming-up line names the event, its time, how long until, and a video call', () => {
+  const now = new Date(2026, 9, 24, 14, 15).getTime();
+  const start = new Date(2026, 9, 24, 15, 0).getTime();
+  assert.equal(T.upcomingLine({ title: 'CS exam', start, call: false }, now), 'Coming up: Sushant has "CS exam" at 15:00 (in 45 minutes).');
+  assert.equal(T.upcomingLine({ title: 'Office meeting', start, call: true }, now), 'Coming up: Sushant has "Office meeting" at 15:00 (in 45 minutes), a video call.');
+  assert.equal(T.upcomingLine({ title: null, start, call: false }, now), 'Coming up: Sushant has an event at 15:00 (in 45 minutes).');
+});
+
+test('in the window his heartbeat wanders to the event, and the prompt says what is coming up', async () => {
+  const { engine, heartbeat } = upcomingMind({ thought: 'A big exam!', urge: 0.2, lines: ['Good luck on your CS exam!'], action: 'jump', about: 'upcoming' });
+  await heartbeat();
+  assert.equal(engine.calls.length, 1);
+  const { system, user } = engine.calls[0];
+  assert.match(user, /Coming up: Sushant has "CS exam" at \d\d:\d\d \(in \d+ minutes\)\./);
+  assert.match(user, /Just now: Your mind wanders to what Sushant has coming up: "CS exam" at \d\d:\d\d\./);
+  assert.match(user, /"upcoming" \(what he has coming up\)/);
+  assert.doesNotMatch(user, /Nothing special/);
+  assert.match(system, /name the actual thing, in the line or question itself/);
+  // No instruction what to say about it: how he reacts comes from his personality.
+  assert.doesNotMatch(`${system}\n${user}`, /help him|get ready|prepare/i);
+});
+
+test('outside the window his heartbeat is the usual one, with nothing about events', async () => {
+  for (const minsAway of [90, 20]) {
+    const { engine, heartbeat } = upcomingMind({ thought: 'Hm.', urge: 0.1, lines: ['Hm.'], action: 'none', about: 'yourself' }, { minsAway });
+    await heartbeat();
+    const { user } = engine.calls[0];
+    assert.match(user, /Just now: Nothing special\. You are just hanging around on the screen\./);
+    assert.doesNotMatch(user, /Coming up|"upcoming"/);
+  }
+});
+
+test('an event title on your privacy blocklist is never shown to him', async () => {
+  const { engine, mind, heartbeat } = upcomingMind({ thought: 'Hm.', urge: 0.1, lines: ['Hm.'], action: 'none', about: 'upcoming' }, { title: 'Therapy session', blocklist: { words: ['therapy'] } });
+  await heartbeat();
+  const { user } = engine.calls[0];
+  assert.doesNotMatch(user, /Therapy/i);
+  assert.match(user, /Coming up: Sushant has an event at/);
+  assert.match(user, /coming up: an event at/);
+  assert.equal(mind.status().upcoming.title, null);
+});
+
+test('"about" is read from his answer, and anything else is dropped', () => {
+  const base = { thought: 'Hi', urge: 5, lines: ['Hello there!'], action: 'none' };
+  assert.equal(T.parseThought(JSON.stringify({ ...base, about: 'upcoming' })).about, 'upcoming');
+  assert.equal(T.parseThought(JSON.stringify({ ...base, about: 'the moon' })).about, undefined);
+  assert.equal(T.parseThought(JSON.stringify(base)).about, undefined);
+  assert.ok(T.SCHEMA.required.includes('about'));
+  assert.deepEqual(T.SCHEMA_WITH_QUESTION.properties.about.enum, T.ABOUT);
+});
+
+test('a line about what is coming up gets a 📅 on his bubble, and is remembered as about it', async () => {
+  const { spoken, mind, heartbeat } = upcomingMind({ thought: 'A big exam!', urge: 0.9, lines: ['Good luck on your CS exam!'], action: 'jump', about: 'upcoming' });
+  await heartbeat();
+  assert.deepEqual(spoken, [{ text: 'Good luck on your CS exam!', action: 'jump', band: 'cheerful', badge: 'calendar' }]);
+  assert.equal(mind.log.last(['said']).about, 'upcoming');
+  assert.equal(mind.lastThought.about, 'upcoming');
+});
+
+test('no 📅 when the line is about something else, or nothing is coming up', async () => {
+  const other = upcomingMind({ thought: 'Cozy.', urge: 0.9, lines: ['So cozy here!'], action: 'happy', about: 'yourself' });
+  await other.heartbeat();
+  assert.equal(other.spoken[0].badge, null);
+  const later = upcomingMind({ thought: 'Hm.', urge: 0.9, lines: ['Something is coming!'], action: 'none', about: 'upcoming' }, { minsAway: 120 });
+  await later.heartbeat();
+  assert.equal(later.spoken[0].badge, null, 'he said "upcoming" but nothing is on his mind');
+});
+
+test('his question about what is coming up gets a 📅 too', async () => {
+  const { asked, spoken, heartbeat } = upcomingMind(
+    { thought: 'A test!', urge: 0.8, lines: ['You can do it!'], action: 'curious', about: 'upcoming', question: { text: 'Nervous about the exam?', answers: ['A little 😰', 'Ready ✨'], aboutSushant: true } },
+    { onAsk: () => true },
+  );
+  await heartbeat();
+  assert.deepEqual(spoken, []);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].badge, 'calendar');
+});
+
+test('in a meeting, watching something or away, the event does not make him think', async () => {
+  for (const self of [{ quiet: true }, { watching: 'YouTube' }, { away: true }]) {
+    const { engine, heartbeat } = upcomingMind({ thought: 'Hm.', urge: 0.9, lines: ['Hm.'], action: 'none', about: 'upcoming' }, { self });
+    await heartbeat();
+    assert.equal(engine.calls.length, 0, JSON.stringify(self));
+  }
+});
+
+test('thinking about what is coming up adds nothing new to his log, only what he said', async () => {
+  const { mind, heartbeat } = upcomingMind({ thought: 'A big exam!', urge: 0.9, lines: ['Good luck on your CS exam!'], action: 'jump', about: 'upcoming' });
+  await heartbeat();
+  assert.deepEqual([...new Set(mind.log.items.map((e) => e.kind))], ['said']);
+});
+
+test('his bubble and question carry the 📅 to the screen', () => {
+  const c = new Companion({ bounds: { left: 0, right: 1920, top: 0, floor: 1040 }, x: 500, y: 1040, halfWidth: 56, height: 142 });
+  c.enter('idle', 10);
+  assert.ok(c.say('Good luck!', 'none', { badge: 'calendar' }));
+  assert.equal(c.snapshot().speechBadge, 'calendar');
+  c.speech = null;
+  assert.ok(c.say('Hi!'));
+  assert.equal(c.snapshot().speechBadge, null);
+  assert.ok(c.ask('Nervous?', ['A little', 'Ready'], 'none', { badge: 'calendar' }));
+  assert.equal(c.snapshot().speechBadge, 'calendar');
+});
+
+test('once he has talked about it, the event is off his mind, even after the calendar is read again', async () => {
+  const { mind, engine, calendar, heartbeat } = upcomingMind({ thought: 'A big exam!', urge: 0.9, lines: ['Good luck on your CS exam!'], action: 'jump', about: 'upcoming' });
+  await heartbeat();
+  assert.equal(mind.upcoming, null);
+  // The calendar is read again every few minutes: the same event comes back as a new object.
+  calendar.splice(0, 1, { ...calendar[0] });
+  await heartbeat();
+  assert.equal(engine.calls.length, 2);
+  assert.match(engine.calls[1].user, /Just now: Nothing special\./);
+  assert.doesNotMatch(engine.calls[1].user, /Coming up/);
+  assert.equal(mind.status().upcoming, null);
+});
+
+test('it stays on his mind while he keeps quiet or talks about something else', async () => {
+  for (const answer of [
+    { thought: 'Hm, an exam.', urge: 0.1, lines: ['Hm.'], action: 'none', about: 'upcoming' },
+    { thought: 'Cozy.', urge: 0.9, lines: ['So cozy here!'], action: 'happy', about: 'yourself' },
+  ]) {
+    // Two heartbeats 8 minutes apart, both inside the window.
+    const { mind, engine, heartbeat } = upcomingMind(answer, { minsAway: 58 });
+    await heartbeat();
+    await heartbeat();
+    assert.match(engine.calls[1].user, /Your mind wanders to what Sushant has coming up: "CS exam"/, answer.about);
+    assert.equal(mind.upcoming.title, 'CS exam');
+  }
+});
+
+test('after talking about one event, the next one in the window gets its turn', async () => {
+  const { mind, engine, heartbeat } = upcomingMind(
+    (req) => ({ thought: 'Ooh!', urge: 0.9, lines: [/coming up: "CS exam"/.test(req.user) ? 'Good luck on your CS exam!' : 'Cake for Alice!'], action: 'jump', about: 'upcoming' }),
+    { minsAway: 40, more: [{ title: "Alice's birthday", minsAway: 55 }] },
+  );
+  await heartbeat();
+  assert.match(engine.calls[0].user, /"CS exam"/);
+  assert.equal(mind.upcoming.title, "Alice's birthday");
+  await heartbeat();
+  assert.match(engine.calls[1].user, /Your mind wanders to what Sushant has coming up: "Alice's birthday"/);
+  assert.equal(mind.upcoming, null);
+});
+
+test('events starting together: the shorter one first, then by title', () => {
+  const { mind } = upcomingMind({}, { minsAway: 45, title: 'Long one', more: [{ title: 'Zebra', minsAway: 45, mins: 15 }, { title: 'Apple', minsAway: 45, mins: 15 }] });
+  mind.updateUpcoming();
+  assert.equal(mind.upcoming.title, 'Apple');
+});
+
+test("a question he couldn't hold up doesn't count as talking about it", async () => {
+  const { mind, asked, heartbeat } = upcomingMind(
+    { thought: 'A test!', urge: 0.8, lines: ['You can do it!'], action: 'curious', about: 'upcoming', question: { text: 'Nervous about the exam?', answers: ['A little 😰', 'Ready ✨'], aboutSushant: true } },
+    { onAsk: () => false },
+  );
+  await heartbeat();
+  assert.equal(asked.length, 1);
+  assert.equal(mind.upcoming.title, 'CS exam');
+});
+
+test('the coming-up lines read right for a user called "they" too', () => {
+  const N = require('../src/main/mind/names');
+  N.setNames({ user: 'Alex', pronoun: 'they' });
+  try {
+    const now = new Date(2026, 9, 24, 14, 15).getTime();
+    const u = { title: 'CS exam', start: new Date(2026, 9, 24, 15, 0).getTime(), call: false };
+    assert.match(T.upcomingLine(u, now), /^Coming up: Alex has "CS exam"/);
+    assert.match(T.upcomingHeartbeat(u), /what Alex has coming up/);
+    assert.match(T.situationPrompt({ trigger: { text: 'x' }, self: {}, events: [], now, upcoming: u }), /"upcoming" \(what they have coming up\)/);
+  } finally {
+    N.setNames({ user: 'Sushant', pronoun: 'he' });
+  }
+});
+
+test('in chat he knows what is coming up during the same window, and chatting does not use it up', async () => {
+  const reply = { reply: 'Good luck!', action: 'happy' };
+  const inWindow = upcomingMind(reply);
+  assert.ok(!(await inWindow.mind.chat('What do I have later?')).error);
+  assert.match(inWindow.engine.calls[0].user, /\(Coming up: Sushant has "CS exam" at \d\d:\d\d \(in 45 minutes\)\.\)/);
+  assert.equal(inWindow.mind.upcoming.title, 'CS exam');
+  for (const minsAway of [90, 20]) {
+    const outside = upcomingMind(reply, { minsAway });
+    await outside.mind.chat('What do I have later?');
+    assert.doesNotMatch(outside.engine.calls[0].user, /Coming up/);
+  }
 });
